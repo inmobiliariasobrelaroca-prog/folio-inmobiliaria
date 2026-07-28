@@ -1,79 +1,43 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
+import React, { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 import {
-  Plus,
-  Zap,
-  Bell,
-  ChevronLeft,
-  ChevronUp,
-  ChevronDown,
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
-  TrendingDown,
-  Calculator,
-  Upload,
-  X,
-  Lock,
-  Sparkles,
-  Settings2,
-  Building2,
-  FolderOpen,
-  FileText,
-  Download,
-  Trash2,
-  Printer,
-  LogOut,
-  Pencil,
-} from 'lucide-react';
+  Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
+  AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
+  FileText, Download, Trash2, Printer, LogOut, Pencil
+} from "lucide-react";
 
 // ---------- Utilidades financieras ----------
 
-const LOCALE = 'es-GT'; // formato con coma de miles y punto decimal
+const LOCALE = "es-GT"; // formato con coma de miles y punto decimal
 
 const fmt = (n) =>
-  (isFinite(n) ? n : 0).toLocaleString(LOCALE, {
-    style: 'currency',
-    currency: 'GTQ',
-    maximumFractionDigits: 2,
-  });
+  (isFinite(n) ? n : 0).toLocaleString(LOCALE, { style: "currency", currency: "GTQ", maximumFractionDigits: 2 });
 
-const fmtNum = (n) =>
-  (isFinite(n) ? n : 0).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
+const fmtNum = (n) => (isFinite(n) ? n : 0).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 
 const fmtDate = (iso) => {
-  const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString(LOCALE, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" });
 };
 
 const fmtDateTime = (iso) => {
   const d = new Date(iso);
-  return d.toLocaleDateString(LOCALE, {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
 const addMonths = (iso, n) => {
-  const d = new Date(iso + 'T00:00:00');
+  const d = new Date(iso + "T00:00:00");
   d.setMonth(d.getMonth() + n);
   return d.toISOString().slice(0, 10);
 };
 
 const addDays = (iso, n) => {
-  const d = new Date(iso + 'T00:00:00');
+  const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 };
 
-const daysBetween = (a, b) =>
-  Math.floor((new Date(a) - new Date(b)) / 86400000);
+const daysBetween = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
 
 function pagoMensual(principal, tasaAnual, meses) {
   const i = tasaAnual / 100 / 12;
@@ -88,13 +52,7 @@ function mesesRestantes(principal, tasaAnual, pago) {
   return Math.max(1, Math.ceil(n));
 }
 
-function generarTabla({
-  precio,
-  enganche,
-  tasaAnual,
-  plazoAnios,
-  fechaInicio,
-}) {
+function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio }) {
   const principal = Math.max(0, precio - enganche);
   const meses = Math.round(plazoAnios * 12);
   const i = tasaAnual / 100 / 12;
@@ -115,7 +73,7 @@ function generarTabla({
       interes,
       capital,
       saldoFinal,
-      estado: 'pendiente', // pendiente | revision | parcial | pagado
+      estado: "pendiente", // pendiente | revision | parcial | pagado
       fechaPago: null,
       moraAplicada: 0,
       abono: 0,
@@ -144,22 +102,17 @@ function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
   let idx = idxInicial;
   while (restante > 0.009 && idx < tabla.length) {
     const fila = tabla[idx];
-    if (fila.estado === 'pagado') {
-      idx++;
-      continue;
-    }
+    if (fila.estado === "pagado") { idx++; continue; }
     if (idx > idxInicial && daysBetween(hoy, fila.fecha) <= 0) break; // aún no vence, no seguir en cascada
 
-    const { moraPendiente, cuotaPendiente, luzPendiente, luzMoraPendiente } =
-      calcularEstadoPago(fila, hoy, prop);
+    const { moraPendiente, cuotaPendiente, luzPendiente, luzMoraPendiente } = calcularEstadoPago(fila, hoy, prop);
 
     const montoParaMora = Math.min(restante, moraPendiente);
     fila.moraPagada = (fila.moraPagada || 0) + montoParaMora;
     restante -= montoParaMora;
 
     const montoParaCuota = Math.min(restante, cuotaPendiente);
-    fila.montoPagadoAcumulado =
-      (fila.montoPagadoAcumulado || 0) + montoParaCuota;
+    fila.montoPagadoAcumulado = (fila.montoPagadoAcumulado || 0) + montoParaCuota;
     restante -= montoParaCuota;
 
     if (prop.aplicaLuz) {
@@ -175,29 +128,15 @@ function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
     }
 
     const estadoNuevo = calcularEstadoPago(fila, hoy, prop);
-    const todoResuelto =
-      estadoNuevo.moraPendiente <= 0.009 &&
-      estadoNuevo.cuotaPendiente <= 0.009 &&
-      estadoNuevo.luzPendiente <= 0.009 &&
-      estadoNuevo.luzMoraPendiente <= 0.009;
+    const todoResuelto = estadoNuevo.moraPendiente <= 0.009 && estadoNuevo.cuotaPendiente <= 0.009 && estadoNuevo.luzPendiente <= 0.009 && estadoNuevo.luzMoraPendiente <= 0.009;
     if (todoResuelto) {
-      fila.moraGeneradaFinal = calcularMoraGenerada(
-        fila,
-        hoy,
-        prop.diasGracia,
-        prop.moraDiaria
-      );
-      fila.estado = 'pagado';
+      fila.moraGeneradaFinal = calcularMoraGenerada(fila, hoy, prop.diasGracia, prop.moraDiaria);
+      fila.estado = "pagado";
       fila.fechaPago = hoy;
       fila.moraAplicada = fila.moraPagada;
       idx++;
     } else {
-      if (
-        (fila.montoPagadoAcumulado || 0) > 0 ||
-        (fila.moraPagada || 0) > 0 ||
-        fila.luzPagado
-      )
-        fila.estado = 'parcial';
+      if ((fila.montoPagadoAcumulado || 0) > 0 || (fila.moraPagada || 0) > 0 || fila.luzPagado) fila.estado = "parcial";
       break;
     }
   }
@@ -206,7 +145,7 @@ function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
 
 function recalcularConAbono(tabla, indexDesde, montoAbono, tasaAnual) {
   const fila = tabla[indexDesde];
-  const pagoFijo = tabla.find((f) => f.estado !== 'pagado')?.pago || fila.pago;
+  const pagoFijo = tabla.find((f) => f.estado !== "pagado")?.pago || fila.pago;
   const nuevoPrincipal = Math.max(0, fila.saldoFinal - montoAbono);
   fila.abono = montoAbono;
   fila.saldoFinal = nuevoPrincipal;
@@ -232,7 +171,7 @@ function recalcularConAbono(tabla, indexDesde, montoAbono, tasaAnual) {
       interes,
       capital,
       saldoFinal,
-      estado: 'pendiente',
+      estado: "pendiente",
       fechaPago: null,
       moraAplicada: 0,
       abono: 0,
@@ -266,10 +205,7 @@ function calcularMoraGenerada(fila, hoy, diasGracia, moraDiaria) {
 
 function calcularMoraCredito(fila, hoy, diasGracia, moraDiaria) {
   const generada = calcularMoraGenerada(fila, hoy, diasGracia, moraDiaria);
-  return Math.max(
-    0,
-    generada - (fila.moraPagada || 0) - (fila.moraCondonada || 0)
-  );
+  return Math.max(0, generada - (fila.moraPagada || 0) - (fila.moraCondonada || 0));
 }
 
 // Mora de luz de una cuota específica (solo aplica si la propiedad tiene luz activada).
@@ -285,34 +221,39 @@ function calcularMoraLuzCuota(fila, hoy, diasGraciaLuz, moraDiariaLuz) {
 // parciales previos) + mora pendiente (después de mora ya pagada o condonada) + luz de ese
 // mes y su propia mora, si la propiedad tiene luz activada.
 function calcularEstadoPago(fila, hoy, prop) {
-  const moraPendiente = calcularMoraCredito(
-    fila,
-    hoy,
-    prop.diasGracia,
-    prop.moraDiaria
-  );
-  const cuotaPendiente = Math.max(
-    0,
-    fila.pago - (fila.montoPagadoAcumulado || 0)
-  );
+  const moraPendiente = calcularMoraCredito(fila, hoy, prop.diasGracia, prop.moraDiaria);
+  const cuotaPendiente = Math.max(0, fila.pago - (fila.montoPagadoAcumulado || 0));
   let luzPendiente = 0;
   let luzMoraPendiente = 0;
   if (prop.aplicaLuz) {
-    luzPendiente = fila.luzPagado ? 0 : prop.montoLuzMensual || 0;
-    luzMoraPendiente = calcularMoraLuzCuota(
-      fila,
-      hoy,
-      prop.diasGraciaLuz,
-      prop.moraDiariaLuz
-    );
+    luzPendiente = fila.luzPagado ? 0 : (prop.montoLuzMensual || 0);
+    luzMoraPendiente = calcularMoraLuzCuota(fila, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz);
   }
   return {
     moraPendiente,
     cuotaPendiente,
     luzPendiente,
     luzMoraPendiente,
-    montoRequerido:
-      moraPendiente + cuotaPendiente + luzPendiente + luzMoraPendiente,
+    montoRequerido: moraPendiente + cuotaPendiente + luzPendiente + luzMoraPendiente,
+  };
+}
+
+// Recalcula si un pago fue a tiempo, con excedente, o parcial, usando una fecha de
+// referencia que puede ser distinta a "hoy" — para cuando la inmobiliaria corrige la
+// fecha real del depósito (por ejemplo, si el cliente pagó a tiempo pero el registro
+// en la app se hizo después).
+function calcularResultadoPago(fila, prop, fechaReferencia, montoDepositado) {
+  const { moraPendiente, montoRequerido } = calcularEstadoPago(fila, fechaReferencia, prop);
+  const excedente = Math.max(0, montoDepositado - montoRequerido);
+  const faltante = Math.max(0, montoRequerido - montoDepositado);
+  const aTiempo = moraPendiente === 0;
+  return {
+    moraAlSubir: moraPendiente,
+    montoRequerido,
+    excedente,
+    faltante,
+    aTiempo,
+    resultado: faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo",
   };
 }
 
@@ -325,13 +266,13 @@ function calcularMoraLuz(cargo, hoy, diasGraciaLuz, moraDiariaLuz) {
 }
 
 function estadoReal(fila, hoy, diasGracia) {
-  if (fila.estado === 'pagado') return 'pagado';
-  if (fila.estado === 'revision') return 'revision';
-  if (fila.estado === 'parcial') return 'parcial';
+  if (fila.estado === "pagado") return "pagado";
+  if (fila.estado === "revision") return "revision";
+  if (fila.estado === "parcial") return "parcial";
   const diasDesdeVencimiento = daysBetween(hoy, fila.fecha);
-  if (diasDesdeVencimiento <= 0) return 'pendiente';
-  if (diasDesdeVencimiento <= diasGracia) return 'gracia';
-  return 'vencido';
+  if (diasDesdeVencimiento <= 0) return "pendiente";
+  if (diasDesdeVencimiento <= diasGracia) return "gracia";
+  return "vencido";
 }
 
 function fileToBase64(file) {
@@ -354,76 +295,40 @@ async function leerComprobanteConIA(_imagenBase64) {
 }
 
 function nuevaNotificacion(para, mensaje) {
-  return {
-    id: crypto.randomUUID(),
-    para,
-    mensaje,
-    fecha: new Date().toISOString(),
-    leida: false,
-  };
+  return { id: crypto.randomUUID(), para, mensaje, fecha: new Date().toISOString(), leida: false };
 }
 
 // Vista imprimible: solo visible cuando el navegador está imprimiendo (o guardando como PDF).
 // No depende de ninguna librería externa, así que funciona en cualquier entorno.
 function VistaImprimible({ prop, proyecto, hoy }) {
-  const saldoActual =
-    prop.tabla.find((f) => f.estado !== 'pagado')?.saldoInicial ?? 0;
+  const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
   const tarjetas = [
-    ['Precio de venta', fmt(prop.precio)],
-    ['Enganche', fmt(prop.enganche)],
-    ['Monto financiado', fmt(Math.max(0, prop.precio - prop.enganche))],
-    ['Tasa anual', `${fmtNum(prop.tasaAnual)}%`],
-    ['Plazo', `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
-    ['Mensualidad', fmt(prop.tabla[0]?.pago ?? 0)],
-    ['Saldo actual', fmt(saldoActual)],
-    [
-      'Mora crédito',
-      `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`,
-    ],
-    ...(prop.aplicaLuz
-      ? [
-          [
-            'Luz mensual',
-            `${fmt(prop.montoLuzMensual)} · ${
-              prop.diasGraciaLuz
-            } días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`,
-          ],
-        ]
-      : []),
+    ["Precio de venta", fmt(prop.precio)],
+    ["Enganche", fmt(prop.enganche)],
+    ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
+    ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
+    ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
+    ["Mensualidad", fmt(prop.tabla[0]?.pago ?? 0)],
+    ["Saldo actual", fmt(saldoActual)],
+    ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
+    ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
   ];
-  const estadoTxt = {
-    pendiente: 'Pendiente',
-    gracia: 'En gracia',
-    vencido: 'Vencido',
-    parcial: 'Parcial',
-    revision: 'En revisión',
-    pagado: 'Pagado',
-  };
+  const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
 
   return (
-    <div
-      className="hidden print:block bg-white text-[#14212f] p-8"
-      style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}
-    >
+    <div className="hidden print:block bg-white text-[#14212f] p-8" style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
       <div className="bg-[#101826] text-white rounded-md px-5 py-4 mb-5 flex justify-between items-start">
         <div>
           <div className="text-xl font-bold">Tabla de Pagos</div>
           <div className="text-sm mt-1">{prop.cliente}</div>
-          <div className="text-xs text-[#C9A227] mt-0.5">
-            {proyecto?.nombre || ''}
-          </div>
+          <div className="text-xs text-[#C9A227] mt-0.5">{proyecto?.nombre || ""}</div>
         </div>
-        <div className="text-[10px] text-gray-300 text-right">
-          Generado el {fmtDate(hoy)}
-        </div>
+        <div className="text-[10px] text-gray-300 text-right">Generado el {fmtDate(hoy)}</div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-5">
         {tarjetas.map(([label, value]) => (
-          <div
-            key={label}
-            className="border border-gray-300 rounded-sm px-2.5 py-2"
-          >
+          <div key={label} className="border border-gray-300 rounded-sm px-2.5 py-2">
             <div className="text-[8px] uppercase text-gray-500">{label}</div>
             <div className="text-[11px] font-bold">{value}</div>
           </div>
@@ -448,42 +353,21 @@ function VistaImprimible({ prop, proyecto, hoy }) {
         </thead>
         <tbody>
           {prop.tabla.map((f, i) => {
-            const mora = calcularMoraCredito(
-              f,
-              hoy,
-              prop.diasGracia,
-              prop.moraDiaria
-            );
-            const est =
-              f.estado === 'pagado'
-                ? 'pagado'
-                : estadoReal(f, hoy, prop.diasGracia);
-            const luzMora = prop.aplicaLuz
-              ? calcularMoraLuzCuota(
-                  f,
-                  hoy,
-                  prop.diasGraciaLuz,
-                  prop.moraDiariaLuz
-                )
-              : 0;
+            const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
+            const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
+            const luzMora = prop.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
             return (
-              <tr key={f.numero} className={i % 2 === 1 ? 'bg-gray-100' : ''}>
+              <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
                 <td className="p-1">{f.numero}</td>
                 <td className="p-1">{fmtDate(f.fecha)}</td>
                 <td className="p-1 text-right">{fmt(f.capital)}</td>
                 <td className="p-1 text-right">{fmt(f.interes)}</td>
                 <td className="p-1 text-right">{fmt(f.pago)}</td>
-                <td className="p-1 text-right">
-                  {f.abono > 0 ? fmt(f.abono) : '-'}
-                </td>
-                <td className="p-1 text-right">{mora > 0 ? fmt(mora) : '-'}</td>
+                <td className="p-1 text-right">{f.abono > 0 ? fmt(f.abono) : "-"}</td>
+                <td className="p-1 text-right">{mora > 0 ? fmt(mora) : "-"}</td>
                 {prop.aplicaLuz && (
                   <td className="p-1 text-right">
-                    {f.luzPagado
-                      ? 'Pagada'
-                      : `${fmt(prop.montoLuzMensual)}${
-                          luzMora > 0 ? ` +${fmt(luzMora)}` : ''
-                        }`}
+                    {f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`}
                   </td>
                 )}
                 <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
@@ -499,12 +383,7 @@ function VistaImprimible({ prop, proyecto, hoy }) {
 
 // ---------- Datos de ejemplo ----------
 
-const DEFAULTS_CONDICIONES = {
-  diasGracia: 3,
-  moraDiaria: 100,
-  diasGraciaLuz: 3,
-  moraDiariaLuz: 20,
-};
+const DEFAULTS_CONDICIONES = { diasGracia: 3, moraDiaria: 100, diasGraciaLuz: 3, moraDiariaLuz: 20 };
 
 // ---------- Puente entre el modelo local y las tablas de Supabase ----------
 
@@ -512,10 +391,10 @@ function propiedadDesdeFila(row) {
   return {
     id: row.id,
     proyectoId: row.proyecto_id,
-    folio: row.folio || '',
+    folio: row.folio || "",
     direccion: row.direccion,
     cliente: row.cliente_nombre,
-    telefono: row.telefono || '',
+    telefono: row.telefono || "",
     precio: Number(row.precio),
     enganche: Number(row.enganche),
     tasaAnual: Number(row.tasa_anual),
@@ -593,14 +472,11 @@ function cuotaDesdeFila(row) {
     fechaPago: row.fecha_pago,
     moraPagada: Number(row.mora_pagada || 0),
     moraCondonada: Number(row.mora_condonada || 0),
-    moraGeneradaFinal:
-      row.mora_generada_final != null ? Number(row.mora_generada_final) : null,
+    moraGeneradaFinal: row.mora_generada_final != null ? Number(row.mora_generada_final) : null,
     moraAplicada: Number(row.mora_pagada || 0),
     abono: Number(row.abono || 0),
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
-    ultimoRechazo: row.ultimo_rechazo_fecha
-      ? { fecha: row.ultimo_rechazo_fecha }
-      : null,
+    ultimoRechazo: row.ultimo_rechazo_fecha ? { fecha: row.ultimo_rechazo_fecha } : null,
     luzPagado: !!row.luz_pagado,
     luzFechaPago: row.luz_fecha_pago,
     luzMoraPagada: Number(row.luz_mora_pagada || 0),
@@ -614,53 +490,31 @@ function cuotaDesdeFila(row) {
 async function sincronizarCuotas(propiedadId, tabla) {
   if (tabla.length > 0) {
     const filas = tabla.map((f) => cuotaHaciaFila(f, propiedadId));
-    const { error: errUpsert } = await supabase
-      .from('cuotas')
-      .upsert(filas, { onConflict: 'propiedad_id,numero' });
-    if (errUpsert) {
-      console.error('Error guardando cuotas:', errUpsert);
-      return;
-    }
+    const { error: errUpsert } = await supabase.from("cuotas").upsert(filas, { onConflict: "propiedad_id,numero" });
+    if (errUpsert) { console.error("Error guardando cuotas:", errUpsert); return; }
   }
-  const maxNumero =
-    tabla.length > 0 ? Math.max(...tabla.map((f) => f.numero)) : 0;
-  const { error: errDelete } = await supabase
-    .from('cuotas')
-    .delete()
-    .eq('propiedad_id', propiedadId)
-    .gt('numero', maxNumero);
-  if (errDelete) console.error('Error limpiando cuotas sobrantes:', errDelete);
+  const maxNumero = tabla.length > 0 ? Math.max(...tabla.map((f) => f.numero)) : 0;
+  const { error: errDelete } = await supabase.from("cuotas").delete().eq("propiedad_id", propiedadId).gt("numero", maxNumero);
+  if (errDelete) console.error("Error limpiando cuotas sobrantes:", errDelete);
 }
 
 // ---------- Comprobantes de pago: subida real a Supabase Storage + tabla `comprobantes` ----------
 
 async function subirImagenComprobante(propiedadId, cuotaNumero, file) {
   const { data: cuotaRow, error: errCuota } = await supabase
-    .from('cuotas')
-    .select('id')
-    .eq('propiedad_id', propiedadId)
-    .eq('numero', cuotaNumero)
-    .single();
-  if (errCuota || !cuotaRow) {
-    console.error('No se encontró la cuota en Supabase:', errCuota);
-    return null;
-  }
+    .from("cuotas").select("id").eq("propiedad_id", propiedadId).eq("numero", cuotaNumero).single();
+  if (errCuota || !cuotaRow) { console.error("No se encontró la cuota en Supabase:", errCuota); return null; }
 
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${propiedadId}/${cuotaRow.id}-${Date.now()}.${ext}`;
-  const { error: errUpload } = await supabase.storage
-    .from('comprobantes')
-    .upload(path, file, { upsert: true });
-  if (errUpload) {
-    console.error('Error subiendo comprobante a Storage:', errUpload);
-    return null;
-  }
+  const { error: errUpload } = await supabase.storage.from("comprobantes").upload(path, file, { upsert: true });
+  if (errUpload) { console.error("Error subiendo comprobante a Storage:", errUpload); return null; }
 
   return { cuotaId: cuotaRow.id, path };
 }
 
 async function guardarComprobanteEnBD(cuotaId, path, datos) {
-  const { error } = await supabase.from('comprobantes').insert({
+  const { error } = await supabase.from("comprobantes").insert({
     cuota_id: cuotaId,
     imagen_url: path,
     monto_depositado: datos.montoDepositado,
@@ -670,27 +524,19 @@ async function guardarComprobanteEnBD(cuotaId, path, datos) {
     faltante: datos.faltante,
     resultado: datos.resultado,
     destino_excedente: datos.destinoExcedente,
-    estado: 'revision',
+    estado: "revision",
   });
-  if (error)
-    console.error('Error guardando el registro del comprobante:', error);
+  if (error) console.error("Error guardando el registro del comprobante:", error);
 }
 
 async function actualizarEstadoComprobanteBD(propiedadId, cuotaNumero, estado) {
-  const { data: cuotaRow } = await supabase
-    .from('cuotas')
-    .select('id')
-    .eq('propiedad_id', propiedadId)
-    .eq('numero', cuotaNumero)
-    .single();
+  const { data: cuotaRow } = await supabase.from("cuotas").select("id").eq("propiedad_id", propiedadId).eq("numero", cuotaNumero).single();
   if (!cuotaRow) return;
-  const { error } = await supabase
-    .from('comprobantes')
+  const { error } = await supabase.from("comprobantes")
     .update({ estado, revisado_en: new Date().toISOString() })
-    .eq('cuota_id', cuotaRow.id)
-    .eq('estado', 'revision');
-  if (error)
-    console.error('Error actualizando el estado del comprobante:', error);
+    .eq("cuota_id", cuotaRow.id)
+    .eq("estado", "revision");
+  if (error) console.error("Error actualizando el estado del comprobante:", error);
 }
 
 function cargarComprobantesLocal(propiedadId) {
@@ -705,11 +551,7 @@ function cargarComprobantesLocal(propiedadId) {
 function guardarComprobantesLocal(propiedadId, tabla) {
   const mapa = {};
   tabla.forEach((f) => {
-    if (f.comprobante || f.ultimoRechazo)
-      mapa[f.numero] = {
-        comprobante: f.comprobante,
-        ultimoRechazo: f.ultimoRechazo,
-      };
+    if (f.comprobante || f.ultimoRechazo) mapa[f.numero] = { comprobante: f.comprobante, ultimoRechazo: f.ultimoRechazo };
   });
   try {
     localStorage.setItem(`comprobantes_${propiedadId}`, JSON.stringify(mapa));
@@ -717,85 +559,45 @@ function guardarComprobantesLocal(propiedadId, tabla) {
 }
 
 function fusionarComprobantes(tabla, mapaComprobantes) {
-  return tabla.map((f) =>
-    mapaComprobantes[f.numero] ? { ...f, ...mapaComprobantes[f.numero] } : f
-  );
+  return tabla.map((f) => (mapaComprobantes[f.numero] ? { ...f, ...mapaComprobantes[f.numero] } : f));
 }
 
 // ---------- Cargos de luz: puente hacia la tabla `cargos_luz` de Supabase ----------
 
 function cargoLuzHaciaFila(c, propiedadId) {
-  return {
-    propiedad_id: propiedadId,
-    fecha: c.fecha,
-    monto: c.monto,
-    pagado: c.pagado,
-    fecha_pago: c.fechaPago || null,
-  };
+  return { propiedad_id: propiedadId, fecha: c.fecha, monto: c.monto, pagado: c.pagado, fecha_pago: c.fechaPago || null };
 }
 
 function cargoLuzDesdeFila(row) {
-  return {
-    id: row.id,
-    fecha: row.fecha,
-    monto: Number(row.monto),
-    pagado: row.pagado,
-    fechaPago: row.fecha_pago,
-  };
+  return { id: row.id, fecha: row.fecha, monto: Number(row.monto), pagado: row.pagado, fechaPago: row.fecha_pago };
 }
 
 async function sincronizarCargosLuz(propiedadId, cargosLuz) {
-  const { error: errDelete } = await supabase
-    .from('cargos_luz')
-    .delete()
-    .eq('propiedad_id', propiedadId);
-  if (errDelete) {
-    console.error('Error borrando cargos de luz previos:', errDelete);
-    return;
-  }
+  const { error: errDelete } = await supabase.from("cargos_luz").delete().eq("propiedad_id", propiedadId);
+  if (errDelete) { console.error("Error borrando cargos de luz previos:", errDelete); return; }
   if (cargosLuz.length === 0) return;
   const filas = cargosLuz.map((c) => cargoLuzHaciaFila(c, propiedadId));
-  const { error: errInsert } = await supabase.from('cargos_luz').insert(filas);
-  if (errInsert) console.error('Error guardando cargos de luz:', errInsert);
+  const { error: errInsert } = await supabase.from("cargos_luz").insert(filas);
+  if (errInsert) console.error("Error guardando cargos de luz:", errInsert);
 }
 
 // ---------- Notificaciones: puente hacia la tabla `notificaciones` de Supabase ----------
 
 function notifHaciaFila(n, propiedadId) {
-  return {
-    propiedad_id: propiedadId,
-    para: n.para,
-    mensaje: n.mensaje,
-    leida: n.leida,
-    created_at: n.fecha,
-  };
+  return { propiedad_id: propiedadId, para: n.para, mensaje: n.mensaje, leida: n.leida, created_at: n.fecha };
 }
 
 function notifDesdeFila(row) {
-  return {
-    id: row.id,
-    para: row.para,
-    mensaje: row.mensaje,
-    leida: row.leida,
-    fecha: row.created_at,
-  };
+  return { id: row.id, para: row.para, mensaje: row.mensaje, leida: row.leida, fecha: row.created_at };
 }
 
 async function sincronizarNotificaciones(propiedadId, notificaciones) {
-  const { error: errDelete } = await supabase
-    .from('notificaciones')
-    .delete()
-    .eq('propiedad_id', propiedadId);
-  if (errDelete) {
-    console.error('Error borrando notificaciones previas:', errDelete);
-    return;
-  }
+  const { error: errDelete } = await supabase.from("notificaciones").delete().eq("propiedad_id", propiedadId);
+  if (errDelete) { console.error("Error borrando notificaciones previas:", errDelete); return; }
   if (notificaciones.length === 0) return;
   const filas = notificaciones.map((n) => notifHaciaFila(n, propiedadId));
-  const { error: errInsert } = await supabase
-    .from('notificaciones')
-    .insert(filas);
-  if (errInsert) console.error('Error guardando notificaciones:', errInsert);
+  const { error: errInsert } = await supabase.from("notificaciones").insert(filas);
+  if (errInsert) console.error("Error guardando notificaciones:", errInsert);
 }
 
 // ---------- Documentos del contrato: Supabase Storage + tabla `documentos` ----------
@@ -803,59 +605,31 @@ async function sincronizarNotificaciones(propiedadId, notificaciones) {
 // real en Storage que no debe volver a subirse cada vez que cambia otra cosa.
 
 function documentoDesdeFila(row) {
-  return {
-    id: row.id,
-    nombre: row.nombre,
-    archivoUrl: row.archivo_url,
-    tipo: row.tipo,
-    fecha: row.created_at,
-  };
+  return { id: row.id, nombre: row.nombre, archivoUrl: row.archivo_url, tipo: row.tipo, fecha: row.created_at };
 }
 
 async function subirDocumentoStorage(propiedadId, file) {
   const path = `${propiedadId}/${crypto.randomUUID()}-${file.name}`;
-  const { error: errUpload } = await supabase.storage
-    .from('documentos')
-    .upload(path, file);
-  if (errUpload) {
-    console.error('Error subiendo documento:', errUpload);
-    return null;
-  }
+  const { error: errUpload } = await supabase.storage.from("documentos").upload(path, file);
+  if (errUpload) { console.error("Error subiendo documento:", errUpload); return null; }
   const { data, error: errInsert } = await supabase
-    .from('documentos')
-    .insert({
-      propiedad_id: propiedadId,
-      nombre: file.name,
-      archivo_url: path,
-      tipo: file.type,
-    })
-    .select()
-    .single();
-  if (errInsert) {
-    console.error('Error registrando documento:', errInsert);
-    return null;
-  }
+    .from("documentos")
+    .insert({ propiedad_id: propiedadId, nombre: file.name, archivo_url: path, tipo: file.type })
+    .select().single();
+  if (errInsert) { console.error("Error registrando documento:", errInsert); return null; }
   return documentoDesdeFila(data);
 }
 
 async function eliminarDocumentoStorage(documentoId, archivoUrl) {
-  await supabase.storage.from('documentos').remove([archivoUrl]);
-  const { error } = await supabase
-    .from('documentos')
-    .delete()
-    .eq('id', documentoId);
-  if (error) console.error('Error eliminando documento:', error);
+  await supabase.storage.from("documentos").remove([archivoUrl]);
+  const { error } = await supabase.from("documentos").delete().eq("id", documentoId);
+  if (error) console.error("Error eliminando documento:", error);
 }
 
 async function verDocumentoStorage(archivoUrl) {
-  const { data, error } = await supabase.storage
-    .from('documentos')
-    .createSignedUrl(archivoUrl, 60);
-  if (error) {
-    console.error('Error generando enlace del documento:', error);
-    return;
-  }
-  window.open(data.signedUrl, '_blank');
+  const { data, error } = await supabase.storage.from("documentos").createSignedUrl(archivoUrl, 60);
+  if (error) { console.error("Error generando enlace del documento:", error); return; }
+  window.open(data.signedUrl, "_blank");
 }
 
 function datosIniciales() {
@@ -864,10 +638,10 @@ function datosIniciales() {
   const propiedad = {
     id: crypto.randomUUID(),
     proyectoId,
-    folio: 'LT-014',
-    direccion: 'Lote 14, Fracc. Vista Real',
-    cliente: 'Marisol Hernández',
-    telefono: '55 1234 5678',
+    folio: "LT-014",
+    direccion: "Lote 14, Fracc. Vista Real",
+    cliente: "Marisol Hernández",
+    telefono: "55 1234 5678",
     precio: 850000,
     enganche: 170000,
     tasaAnual: 14,
@@ -880,33 +654,26 @@ function datosIniciales() {
     saldoAFavor: 0,
   };
   propiedad.tabla = generarTabla(propiedad);
-  const proyecto = {
-    id: proyectoId,
-    nombre: 'Vista Real',
-    ubicacion: 'Zona 16, Ciudad de Guatemala',
-  };
+  const proyecto = { id: proyectoId, nombre: "Vista Real", ubicacion: "Zona 16, Ciudad de Guatemala" };
   return { proyectos: [proyecto], propiedades: [propiedad] };
 }
 
 // ---------- Login ----------
 
 function Login({ onIngreso }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const ingresar = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setCargando(true);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setCargando(false);
     if (error) {
-      setError('Correo o contraseña incorrectos.');
+      setError("Correo o contraseña incorrectos.");
       return;
     }
     onIngreso(data.session);
@@ -916,52 +683,27 @@ function Login({ onIngreso }) {
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
       <form onSubmit={ingresar} className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-md bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-xl mx-auto mb-3">
-            F
-          </div>
+          <div className="w-12 h-12 rounded-md bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-xl mx-auto mb-3">F</div>
           <div className="font-serif text-2xl">Folio</div>
-          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">
-            Control de financiamiento
-          </div>
+          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Control de financiamiento</div>
         </div>
 
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-              Correo
-            </span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]"
-            />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Correo</span>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-              Contraseña
-            </span>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]"
-            />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Contraseña</span>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
           </label>
           {error && <div className="text-xs text-red-400">{error}</div>}
-          <button
-            type="submit"
-            disabled={cargando}
-            className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md"
-          >
-            {cargando ? 'Entrando...' : 'Iniciar sesión'}
+          <button type="submit" disabled={cargando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+            {cargando ? "Entrando..." : "Iniciar sesión"}
           </button>
         </div>
         <p className="text-[11px] text-[#8A93A3] text-center mt-4">
-          Tanto el equipo de la inmobiliaria como los clientes inician sesión
-          aquí con su correo y contraseña.
+          Tanto el equipo de la inmobiliaria como los clientes inician sesión aquí con su correo y contraseña.
         </p>
       </form>
     </div>
@@ -976,40 +718,27 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSesion(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSesion(session);
-      }
-    );
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSesion(session);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!sesion) {
-      setPerfil(null);
-      return;
-    }
+    if (!sesion) { setPerfil(null); return; }
     (async () => {
       const uid = sesion.user.id;
-      const { data: usuario } = await supabase
-        .from('usuarios')
-        .select('*, roles(*)')
-        .eq('id', uid)
-        .maybeSingle();
+      const { data: usuario } = await supabase.from("usuarios").select("*, roles(*)").eq("id", uid).maybeSingle();
       if (usuario) {
-        setPerfil({ tipo: 'staff', usuario });
+        setPerfil({ tipo: "staff", usuario });
         return;
       }
-      const { data: propiedad } = await supabase
-        .from('propiedades')
-        .select('id')
-        .eq('cliente_user_id', uid)
-        .maybeSingle();
+      const { data: propiedad } = await supabase.from("propiedades").select("id").eq("cliente_user_id", uid).maybeSingle();
       if (propiedad) {
-        setPerfil({ tipo: 'cliente', propiedadId: propiedad.id });
+        setPerfil({ tipo: "cliente", propiedadId: propiedad.id });
         return;
       }
-      setPerfil({ tipo: 'sin_acceso' });
+      setPerfil({ tipo: "sin_acceso" });
     })();
   }, [sesion]);
 
@@ -1017,31 +746,15 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
-  if (sesion === undefined)
-    return <div className="min-h-screen bg-[#101826]" />;
+  if (sesion === undefined) return <div className="min-h-screen bg-[#101826]" />;
   if (!sesion) return <Login onIngreso={setSesion} />;
-  if (!perfil)
-    return (
-      <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center text-sm">
-        Cargando tu cuenta...
-      </div>
-    );
-  if (perfil.tipo === 'sin_acceso') {
+  if (!perfil) return <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center text-sm">Cargando tu cuenta...</div>;
+  if (perfil.tipo === "sin_acceso") {
     return (
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex flex-col items-center justify-center gap-3 p-5 text-center">
-        <div className="text-sm">
-          Tu cuenta inició sesión, pero no está vinculada a ninguna propiedad ni
-          a tu equipo todavía.
-        </div>
-        <div className="text-xs text-[#8A93A3]">
-          Pide al administrador que te dé acceso.
-        </div>
-        <button
-          onClick={cerrarSesion}
-          className="text-xs bg-[#2A3547] px-3 py-2 rounded-md mt-2"
-        >
-          Cerrar sesión
-        </button>
+        <div className="text-sm">Tu cuenta inició sesión, pero no está vinculada a ninguna propiedad ni a tu equipo todavía.</div>
+        <div className="text-xs text-[#8A93A3]">Pide al administrador que te dé acceso.</div>
+        <button onClick={cerrarSesion} className="text-xs bg-[#2A3547] px-3 py-2 rounded-md mt-2">Cerrar sesión</button>
       </div>
     );
   }
@@ -1053,11 +766,11 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [proyectos, setProyectos] = useState([]);
   const [propiedades, setPropiedades] = useState([]);
   const [cargado, setCargado] = useState(false);
-  const esCliente = perfil.tipo === 'cliente';
-  const [modo, setModo] = useState(esCliente ? 'cliente' : 'inmobiliaria');
+  const esCliente = perfil.tipo === "cliente";
+  const [modo, setModo] = useState(esCliente ? "cliente" : "inmobiliaria");
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
-  const [pantalla, setPantalla] = useState('proyectos');
+  const [pantalla, setPantalla] = useState("proyectos");
   const [imprimir, setImprimir] = useState(null);
   const hoy = new Date().toISOString().slice(0, 10);
 
@@ -1065,33 +778,21 @@ function AppInterno({ perfil, cerrarSesion }) {
     if (!imprimir) return;
     const t = setTimeout(() => window.print(), 80);
     const onAfter = () => setImprimir(null);
-    window.addEventListener('afterprint', onAfter);
+    window.addEventListener("afterprint", onAfter);
     return () => {
       clearTimeout(t);
-      window.removeEventListener('afterprint', onAfter);
+      window.removeEventListener("afterprint", onAfter);
     };
   }, [imprimir]);
 
   useEffect(() => {
     (async () => {
-      const { data: proys, error: errProys } = await supabase
-        .from('proyectos')
-        .select('*')
-        .order('created_at');
-      if (errProys) console.error('Error cargando proyectos:', errProys);
-      setProyectos(
-        (proys || []).map((r) => ({
-          id: r.id,
-          nombre: r.nombre,
-          ubicacion: r.ubicacion,
-        }))
-      );
+      const { data: proys, error: errProys } = await supabase.from("proyectos").select("*").order("created_at");
+      if (errProys) console.error("Error cargando proyectos:", errProys);
+      setProyectos((proys || []).map((r) => ({ id: r.id, nombre: r.nombre, ubicacion: r.ubicacion })));
 
-      const { data: props, error: errProps } = await supabase
-        .from('propiedades')
-        .select('*')
-        .order('created_at');
-      if (errProps) console.error('Error cargando propiedades:', errProps);
+      const { data: props, error: errProps } = await supabase.from("propiedades").select("*").order("created_at");
+      if (errProps) console.error("Error cargando propiedades:", errProps);
       const propsList = props || [];
 
       const idsPropiedades = propsList.map((r) => r.id);
@@ -1102,53 +803,34 @@ function AppInterno({ perfil, cerrarSesion }) {
 
       if (idsPropiedades.length > 0) {
         const { data: cuotasRows, error: errCuotas } = await supabase
-          .from('cuotas')
-          .select('*')
-          .in('propiedad_id', idsPropiedades)
-          .order('numero');
-        if (errCuotas) console.error('Error cargando cuotas:', errCuotas);
+          .from("cuotas").select("*").in("propiedad_id", idsPropiedades).order("numero");
+        if (errCuotas) console.error("Error cargando cuotas:", errCuotas);
         (cuotasRows || []).forEach((row) => {
-          if (!cuotasPorPropiedad[row.propiedad_id])
-            cuotasPorPropiedad[row.propiedad_id] = [];
+          if (!cuotasPorPropiedad[row.propiedad_id]) cuotasPorPropiedad[row.propiedad_id] = [];
           cuotasPorPropiedad[row.propiedad_id].push(cuotaDesdeFila(row));
         });
 
         const { data: luzRows, error: errLuz } = await supabase
-          .from('cargos_luz')
-          .select('*')
-          .in('propiedad_id', idsPropiedades)
-          .order('fecha');
-        if (errLuz) console.error('Error cargando cargos de luz:', errLuz);
+          .from("cargos_luz").select("*").in("propiedad_id", idsPropiedades).order("fecha");
+        if (errLuz) console.error("Error cargando cargos de luz:", errLuz);
         (luzRows || []).forEach((row) => {
-          if (!luzPorPropiedad[row.propiedad_id])
-            luzPorPropiedad[row.propiedad_id] = [];
+          if (!luzPorPropiedad[row.propiedad_id]) luzPorPropiedad[row.propiedad_id] = [];
           luzPorPropiedad[row.propiedad_id].push(cargoLuzDesdeFila(row));
         });
 
         const { data: docRows, error: errDocs } = await supabase
-          .from('documentos')
-          .select('*')
-          .in('propiedad_id', idsPropiedades)
-          .order('created_at');
-        if (errDocs) console.error('Error cargando documentos:', errDocs);
+          .from("documentos").select("*").in("propiedad_id", idsPropiedades).order("created_at");
+        if (errDocs) console.error("Error cargando documentos:", errDocs);
         (docRows || []).forEach((row) => {
-          if (!documentosPorPropiedad[row.propiedad_id])
-            documentosPorPropiedad[row.propiedad_id] = [];
-          documentosPorPropiedad[row.propiedad_id].push(
-            documentoDesdeFila(row)
-          );
+          if (!documentosPorPropiedad[row.propiedad_id]) documentosPorPropiedad[row.propiedad_id] = [];
+          documentosPorPropiedad[row.propiedad_id].push(documentoDesdeFila(row));
         });
 
         const { data: notifRows, error: errNotifs } = await supabase
-          .from('notificaciones')
-          .select('*')
-          .in('propiedad_id', idsPropiedades)
-          .order('created_at', { ascending: false });
-        if (errNotifs)
-          console.error('Error cargando notificaciones:', errNotifs);
+          .from("notificaciones").select("*").in("propiedad_id", idsPropiedades).order("created_at", { ascending: false });
+        if (errNotifs) console.error("Error cargando notificaciones:", errNotifs);
         (notifRows || []).forEach((row) => {
-          if (!notifsPorPropiedad[row.propiedad_id])
-            notifsPorPropiedad[row.propiedad_id] = [];
+          if (!notifsPorPropiedad[row.propiedad_id]) notifsPorPropiedad[row.propiedad_id] = [];
           notifsPorPropiedad[row.propiedad_id].push(notifDesdeFila(row));
         });
       }
@@ -1179,9 +861,7 @@ function AppInterno({ perfil, cerrarSesion }) {
 
   const proySel = proyectos.find((p) => p.id === proyectoSel);
   const propSel = propiedades.find((p) => p.id === seleccion);
-  const propiedadesDelProyecto = propiedades.filter(
-    (p) => p.proyectoId === proyectoSel
-  );
+  const propiedadesDelProyecto = propiedades.filter((p) => p.proyectoId === proyectoSel);
 
   const actualizarProp = (id, fn) => {
     setPropiedades((prev) =>
@@ -1189,44 +869,23 @@ function AppInterno({ perfil, cerrarSesion }) {
         if (p.id !== id) return p;
         const actualizado = fn(structuredClone(p));
         guardarComprobantesLocal(id, actualizado.tabla);
-        supabase
-          .from('propiedades')
-          .update(propiedadHaciaFila(actualizado))
-          .eq('id', id)
-          .then(({ error }) => {
-            if (error)
-              console.error('Error guardando propiedad en Supabase:', error);
-          });
-        sincronizarCuotas(id, actualizado.tabla).catch((err) =>
-          console.error('Error guardando cuotas en Supabase:', err)
-        );
-        sincronizarCargosLuz(id, actualizado.cargosLuz).catch((err) =>
-          console.error('Error guardando cargos de luz:', err)
-        );
-        sincronizarNotificaciones(id, actualizado.notificaciones).catch((err) =>
-          console.error('Error guardando notificaciones:', err)
-        );
+        supabase.from("propiedades").update(propiedadHaciaFila(actualizado)).eq("id", id).then(({ error }) => {
+          if (error) console.error("Error guardando propiedad en Supabase:", error);
+        });
+        sincronizarCuotas(id, actualizado.tabla).catch((err) => console.error("Error guardando cuotas en Supabase:", err));
+        sincronizarCargosLuz(id, actualizado.cargosLuz).catch((err) => console.error("Error guardando cargos de luz:", err));
+        sincronizarNotificaciones(id, actualizado.notificaciones).catch((err) => console.error("Error guardando notificaciones:", err));
         return actualizado;
       })
     );
   };
 
   const crearProyecto = async (datos) => {
-    const { data, error } = await supabase
-      .from('proyectos')
-      .insert({ nombre: datos.nombre, ubicacion: datos.ubicacion })
-      .select()
-      .single();
-    if (error) {
-      alert('No se pudo crear el proyecto: ' + error.message);
-      return;
-    }
-    setProyectos((prev) => [
-      ...prev,
-      { id: data.id, nombre: data.nombre, ubicacion: data.ubicacion },
-    ]);
+    const { data, error } = await supabase.from("proyectos").insert({ nombre: datos.nombre, ubicacion: datos.ubicacion }).select().single();
+    if (error) { alert("No se pudo crear el proyecto: " + error.message); return; }
+    setProyectos((prev) => [...prev, { id: data.id, nombre: data.nombre, ubicacion: data.ubicacion }]);
     setProyectoSel(data.id);
-    setPantalla('propiedades');
+    setPantalla("propiedades");
   };
 
   const crearPropiedad = async (datos) => {
@@ -1249,15 +908,8 @@ function AppInterno({ perfil, cerrarSesion }) {
       monto_luz_mensual: datos.montoLuzMensual || 0,
       saldo_a_favor: 0,
     };
-    const { data, error } = await supabase
-      .from('propiedades')
-      .insert(fila)
-      .select()
-      .single();
-    if (error) {
-      alert('No se pudo crear la propiedad: ' + error.message);
-      return;
-    }
+    const { data, error } = await supabase.from("propiedades").insert(fila).select().single();
+    if (error) { alert("No se pudo crear la propiedad: " + error.message); return; }
     const nueva = propiedadDesdeFila(data);
     nueva.cargosLuz = [];
     nueva.notificaciones = [];
@@ -1265,21 +917,13 @@ function AppInterno({ perfil, cerrarSesion }) {
     nueva.tabla = generarTabla(nueva);
     await sincronizarCuotas(nueva.id, nueva.tabla);
     setPropiedades((prev) => [...prev, nueva]);
-    setPantalla('propiedades');
+    setPantalla("propiedades");
   };
 
   const actualizarProyecto = async (id, datos) => {
-    const { error } = await supabase
-      .from('proyectos')
-      .update({ nombre: datos.nombre, ubicacion: datos.ubicacion })
-      .eq('id', id);
-    if (error) {
-      alert('No se pudo actualizar el proyecto: ' + error.message);
-      return;
-    }
-    setProyectos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...datos } : p))
-    );
+    const { error } = await supabase.from("proyectos").update({ nombre: datos.nombre, ubicacion: datos.ubicacion }).eq("id", id);
+    if (error) { alert("No se pudo actualizar el proyecto: " + error.message); return; }
+    setProyectos((prev) => prev.map((p) => (p.id === id ? { ...p, ...datos } : p)));
   };
 
   if (!cargado) return <div className="min-h-screen bg-[#101826]" />;
@@ -1287,77 +931,43 @@ function AppInterno({ perfil, cerrarSesion }) {
   return (
     <>
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
-        <TopBar
-          modo={modo}
-          setModo={
-            esCliente
-              ? null
-              : (m) => {
-                  setModo(m);
-                  setPantalla('proyectos');
-                  setProyectoSel(null);
-                  setSeleccion(null);
-                }
-          }
-          cerrarSesion={cerrarSesion}
-        />
+        <TopBar modo={modo} setModo={esCliente ? null : (m) => { setModo(m); setPantalla("proyectos"); setProyectoSel(null); setSeleccion(null); }} cerrarSesion={cerrarSesion} />
 
-        {modo === 'inmobiliaria' && pantalla === 'proyectos' && (
+        {modo === "inmobiliaria" && pantalla === "proyectos" && (
           <ListaProyectos
             proyectos={proyectos}
             propiedades={propiedades}
             hoy={hoy}
-            onNuevo={() => setPantalla('nuevoProyecto')}
-            onAbrir={(id) => {
-              setProyectoSel(id);
-              setPantalla('propiedades');
-            }}
+            onNuevo={() => setPantalla("nuevoProyecto")}
+            onAbrir={(id) => { setProyectoSel(id); setPantalla("propiedades"); }}
             onActualizar={actualizarProyecto}
           />
         )}
 
-        {modo === 'inmobiliaria' && pantalla === 'nuevoProyecto' && (
-          <NuevoProyecto
-            onCancelar={() => setPantalla('proyectos')}
-            onCrear={crearProyecto}
-          />
+        {modo === "inmobiliaria" && pantalla === "nuevoProyecto" && (
+          <NuevoProyecto onCancelar={() => setPantalla("proyectos")} onCrear={crearProyecto} />
         )}
 
-        {modo === 'inmobiliaria' && pantalla === 'propiedades' && proySel && (
+        {modo === "inmobiliaria" && pantalla === "propiedades" && proySel && (
           <ListaPropiedades
             proyecto={proySel}
             propiedades={propiedadesDelProyecto}
             hoy={hoy}
-            onVolver={() => {
-              setPantalla('proyectos');
-              setProyectoSel(null);
-            }}
-            onNueva={() => setPantalla('nuevaPropiedad')}
-            onAbrir={(id) => {
-              setSeleccion(id);
-              setPantalla('detalle');
-            }}
+            onVolver={() => { setPantalla("proyectos"); setProyectoSel(null); }}
+            onNueva={() => setPantalla("nuevaPropiedad")}
+            onAbrir={(id) => { setSeleccion(id); setPantalla("detalle"); }}
           />
         )}
 
-        {modo === 'inmobiliaria' && pantalla === 'nuevaPropiedad' && (
-          <NuevaPropiedad
-            proyecto={proySel}
-            onCancelar={() => setPantalla('propiedades')}
-            onCrear={crearPropiedad}
-          />
+        {modo === "inmobiliaria" && pantalla === "nuevaPropiedad" && (
+          <NuevaPropiedad proyecto={proySel} onCancelar={() => setPantalla("propiedades")} onCrear={crearPropiedad} />
         )}
 
-        {modo === 'inmobiliaria' && pantalla === 'detalle' && propSel && (
-          <DetallePropiedad
-            prop={propSel}
-            hoy={hoy}
-            onVolver={() => setPantalla('propiedades')}
-            actualizar={(fn) => actualizarProp(propSel.id, fn)}
-          />
+        {modo === "inmobiliaria" && pantalla === "detalle" && propSel && (
+          <DetallePropiedad prop={propSel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} />
         )}
 
-        {modo === 'cliente' && (
+        {modo === "cliente" && (
           <VistaCliente
             propiedades={propiedades}
             proyectos={proyectos}
@@ -1369,13 +979,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           />
         )}
       </div>
-      {imprimir && (
-        <VistaImprimible
-          prop={imprimir.prop}
-          proyecto={imprimir.proyecto}
-          hoy={imprimir.hoy}
-        />
-      )}
+      {imprimir && <VistaImprimible prop={imprimir.prop} proyecto={imprimir.proyecto} hoy={imprimir.hoy} />}
     </>
   );
 }
@@ -1385,48 +989,20 @@ function TopBar({ modo, setModo, cerrarSesion }) {
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-sm bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-sm">
-            F
-          </div>
+          <div className="w-8 h-8 rounded-sm bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-sm">F</div>
           <div>
-            <div className="font-serif text-lg leading-tight tracking-tight">
-              Folio
-            </div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">
-              Control de financiamiento
-            </div>
+            <div className="font-serif text-lg leading-tight tracking-tight">Folio</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">Control de financiamiento</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {setModo && (
             <div className="flex rounded-full bg-[#1A2333] p-1 text-xs">
-              <button
-                onClick={() => setModo('inmobiliaria')}
-                className={`px-3 py-1.5 rounded-full transition ${
-                  modo === 'inmobiliaria'
-                    ? 'bg-[#C9A227] text-[#101826] font-medium'
-                    : 'text-[#8A93A3]'
-                }`}
-              >
-                Inmobiliaria
-              </button>
-              <button
-                onClick={() => setModo('cliente')}
-                className={`px-3 py-1.5 rounded-full transition ${
-                  modo === 'cliente'
-                    ? 'bg-[#C9A227] text-[#101826] font-medium'
-                    : 'text-[#8A93A3]'
-                }`}
-              >
-                Cliente
-              </button>
+              <button onClick={() => setModo("inmobiliaria")} className={`px-3 py-1.5 rounded-full transition ${modo === "inmobiliaria" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
+              <button onClick={() => setModo("cliente")} className={`px-3 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
             </div>
           )}
-          <button
-            onClick={cerrarSesion}
-            title="Cerrar sesión"
-            className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"
-          >
+          <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
             <LogOut size={16} />
           </button>
         </div>
@@ -1437,122 +1013,54 @@ function TopBar({ modo, setModo, cerrarSesion }) {
 
 function resumenProp(prop, hoy) {
   const filas = prop.tabla;
-  const saldoActual =
-    filas.find((f) => f.estado !== 'pagado')?.saldoInicial ?? 0;
-  const vencidas = filas.filter(
-    (f) => estadoReal(f, hoy, prop.diasGracia) === 'vencido'
-  );
-  const enRevision = filas.filter((f) => f.estado === 'revision');
-  const moraCredito = filas.reduce(
-    (s, f) => s + calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria),
-    0
-  );
-  const moraLuz = prop.aplicaLuz
-    ? filas.reduce(
-        (s, f) =>
-          s +
-          calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz),
-        0
-      )
-    : 0;
+  const saldoActual = filas.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
+  const vencidas = filas.filter((f) => estadoReal(f, hoy, prop.diasGracia) === "vencido");
+  const enRevision = filas.filter((f) => f.estado === "revision");
+  const moraCredito = filas.reduce((s, f) => s + calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria), 0);
+  const moraLuz = prop.aplicaLuz ? filas.reduce((s, f) => s + calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz), 0) : 0;
   const moraTotal = moraCredito + moraLuz;
-  const luzPendiente = prop.aplicaLuz
-    ? filas.reduce(
-        (s, f) => s + (f.luzPagado ? 0 : prop.montoLuzMensual || 0),
-        0
-      )
-    : 0;
-  const proximaCuota = filas.find((f) => f.estado !== 'pagado');
-  const pendienteActual = proximaCuota
-    ? calcularEstadoPago(proximaCuota, hoy, prop)
-    : null;
-  return {
-    saldoActual,
-    vencidas,
-    enRevision,
-    moraCredito,
-    moraLuz,
-    moraTotal,
-    luzPendiente,
-    proximaCuota,
-    pendienteActual,
-  };
+  const luzPendiente = prop.aplicaLuz ? filas.reduce((s, f) => s + (f.luzPagado ? 0 : (prop.montoLuzMensual || 0)), 0) : 0;
+  const proximaCuota = filas.find((f) => f.estado !== "pagado");
+  const pendienteActual = proximaCuota ? calcularEstadoPago(proximaCuota, hoy, prop) : null;
+  return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual };
 }
 
 // ---------- Proyectos ----------
 
-function ListaProyectos({
-  proyectos,
-  propiedades,
-  hoy,
-  onNuevo,
-  onAbrir,
-  onActualizar,
-}) {
+function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onActualizar }) {
   const [editando, setEditando] = useState(null);
 
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center justify-between mb-5">
         <h1 className="font-serif text-2xl">Proyectos</h1>
-        <button
-          onClick={onNuevo}
-          className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium"
-        >
+        <button onClick={onNuevo} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
           <Plus size={16} /> Nuevo proyecto
         </button>
       </div>
 
-      {proyectos.length === 0 && (
-        <div className="text-center text-[#8A93A3] mt-16 text-sm">
-          Aún no hay proyectos. Crea el primero para empezar a registrar
-          propiedades.
-        </div>
-      )}
+      {proyectos.length === 0 && <div className="text-center text-[#8A93A3] mt-16 text-sm">Aún no hay proyectos. Crea el primero para empezar a registrar propiedades.</div>}
 
       <div className="space-y-3">
         {proyectos.map((proy) => {
           const props = propiedades.filter((p) => p.proyectoId === proy.id);
-          const vencidasTotal = props.reduce(
-            (s, p) => s + resumenProp(p, hoy).vencidas.length,
-            0
-          );
+          const vencidasTotal = props.reduce((s, p) => s + resumenProp(p, hoy).vencidas.length, 0);
           return (
-            <div
-              key={proy.id}
-              className="w-full bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition flex items-center gap-3"
-            >
-              <button
-                onClick={() => onAbrir(proy.id)}
-                className="flex items-center gap-3 flex-1 text-left min-w-0"
-              >
+            <div key={proy.id} className="w-full bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition flex items-center gap-3">
+              <button onClick={() => onAbrir(proy.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
                 <div className="w-11 h-11 rounded-md bg-[#1A2333] flex items-center justify-center shrink-0">
                   <Building2 size={20} className="text-[#C9A227]" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-serif text-lg truncate">
-                    {proy.nombre}
-                  </div>
-                  <div className="text-sm text-[#8A93A3] truncate">
-                    {proy.ubicacion}
-                  </div>
+                  <div className="font-serif text-lg truncate">{proy.nombre}</div>
+                  <div className="text-sm text-[#8A93A3] truncate">{proy.ubicacion}</div>
                 </div>
               </button>
               <div className="text-right text-xs shrink-0">
-                <div className="font-mono">
-                  {props.length} propiedad{props.length !== 1 ? 'es' : ''}
-                </div>
-                {vencidasTotal > 0 && (
-                  <div className="text-red-400 mt-0.5">
-                    {vencidasTotal} vencida{vencidasTotal > 1 ? 's' : ''}
-                  </div>
-                )}
+                <div className="font-mono">{props.length} propiedad{props.length !== 1 ? "es" : ""}</div>
+                {vencidasTotal > 0 && <div className="text-red-400 mt-0.5">{vencidasTotal} vencida{vencidasTotal > 1 ? "s" : ""}</div>}
               </div>
-              <button
-                onClick={() => setEditando(proy)}
-                className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 shrink-0"
-                title="Editar proyecto"
-              >
+              <button onClick={() => setEditando(proy)} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 shrink-0" title="Editar proyecto">
                 <Pencil size={15} />
               </button>
             </div>
@@ -1564,10 +1072,7 @@ function ListaProyectos({
         <ModalEditarProyecto
           proyecto={editando}
           onCancelar={() => setEditando(null)}
-          onGuardar={(datos) => {
-            onActualizar(editando.id, datos);
-            setEditando(null);
-          }}
+          onGuardar={(datos) => { onActualizar(editando.id, datos); setEditando(null); }}
         />
       )}
     </div>
@@ -1576,37 +1081,18 @@ function ListaProyectos({
 
 function ModalEditarProyecto({ proyecto, onCancelar, onGuardar }) {
   const [nombre, setNombre] = useState(proyecto.nombre);
-  const [ubicacion, setUbicacion] = useState(proyecto.ubicacion || '');
+  const [ubicacion, setUbicacion] = useState(proyecto.ubicacion || "");
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm">
         <div className="font-serif text-lg mb-3">Editar proyecto</div>
         <div className="space-y-3">
-          <Campo
-            label="Nombre del proyecto"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-          />
-          <Campo
-            label="Ubicación"
-            value={ubicacion}
-            onChange={(e) => setUbicacion(e.target.value)}
-          />
+          <Campo label="Nombre del proyecto" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+          <Campo label="Ubicación" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
         </div>
         <div className="flex gap-2 mt-4">
-          <button
-            onClick={onCancelar}
-            className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onGuardar({ nombre, ubicacion })}
-            disabled={!nombre}
-            className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
-          >
-            Guardar
-          </button>
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={() => onGuardar({ nombre, ubicacion })} disabled={!nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">Guardar</button>
         </div>
       </div>
     </div>
@@ -1614,34 +1100,18 @@ function ModalEditarProyecto({ proyecto, onCancelar, onGuardar }) {
 }
 
 function NuevoProyecto({ onCancelar, onCrear }) {
-  const [nombre, setNombre] = useState('');
-  const [ubicacion, setUbicacion] = useState('');
+  const [nombre, setNombre] = useState("");
+  const [ubicacion, setUbicacion] = useState("");
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-5">
-        <button onClick={onCancelar} className="text-[#8A93A3]">
-          <ChevronLeft size={20} />
-        </button>
+        <button onClick={onCancelar} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Nuevo proyecto</h1>
       </div>
       <div className="space-y-4">
-        <Campo
-          label="Nombre del proyecto"
-          placeholder="Ej. Fraccionamiento Vista Real"
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-        />
-        <Campo
-          label="Ubicación"
-          placeholder="Ej. Zona 16, Ciudad de Guatemala"
-          value={ubicacion}
-          onChange={(e) => setUbicacion(e.target.value)}
-        />
-        <button
-          disabled={!nombre}
-          onClick={() => onCrear({ nombre, ubicacion })}
-          className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md mt-2"
-        >
+        <Campo label="Nombre del proyecto" placeholder="Ej. Fraccionamiento Vista Real" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="Ubicación" placeholder="Ej. Zona 16, Ciudad de Guatemala" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
+        <button disabled={!nombre} onClick={() => onCrear({ nombre, ubicacion })} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md mt-2">
           Crear proyecto
         </button>
       </div>
@@ -1651,97 +1121,45 @@ function NuevoProyecto({ onCancelar, onCrear }) {
 
 // ---------- Propiedades dentro de un proyecto ----------
 
-function ListaPropiedades({
-  proyecto,
-  propiedades,
-  hoy,
-  onVolver,
-  onNueva,
-  onAbrir,
-}) {
+function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbrir }) {
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-1">
-        <button onClick={onVolver} className="text-[#8A93A3]">
-          <ChevronLeft size={20} />
-        </button>
-        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] flex items-center gap-1">
-          <FolderOpen size={12} /> Proyecto
-        </div>
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] flex items-center gap-1"><FolderOpen size={12} /> Proyecto</div>
       </div>
       <div className="flex items-center justify-between mb-5 pl-7">
         <h1 className="font-serif text-2xl">{proyecto.nombre}</h1>
-        <button
-          onClick={onNueva}
-          className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium"
-        >
+        <button onClick={onNueva} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
           <Plus size={16} /> Nueva
         </button>
       </div>
 
-      {propiedades.length === 0 && (
-        <div className="text-center text-[#8A93A3] mt-16 text-sm">
-          Este proyecto aún no tiene propiedades registradas.
-        </div>
-      )}
+      {propiedades.length === 0 && <div className="text-center text-[#8A93A3] mt-16 text-sm">Este proyecto aún no tiene propiedades registradas.</div>}
 
       <div className="space-y-3">
         {propiedades.map((p) => {
-          const { saldoActual, vencidas, enRevision, moraTotal, luzPendiente } =
-            resumenProp(p, hoy);
+          const { saldoActual, vencidas, enRevision, moraTotal, luzPendiente } = resumenProp(p, hoy);
           const alDia = vencidas.length === 0;
           return (
-            <button
-              key={p.id}
-              onClick={() => onAbrir(p.id)}
-              className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition"
-            >
+            <button key={p.id} onClick={() => onAbrir(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition">
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
-                    {p.folio}
-                  </div>
+                  <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">{p.folio}</div>
                   <div className="font-serif text-lg">{p.direccion}</div>
                   <div className="text-sm text-[#8A93A3]">{p.cliente}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span
-                    className={`text-[10px] px-2 py-1 rounded-full border font-medium uppercase tracking-wide ${
-                      alDia
-                        ? 'border-emerald-700 text-emerald-400'
-                        : 'border-red-800 text-red-400'
-                    }`}
-                  >
-                    {alDia
-                      ? 'Al día'
-                      : `${vencidas.length} vencida${
-                          vencidas.length > 1 ? 's' : ''
-                        }`}
+                  <span className={`text-[10px] px-2 py-1 rounded-full border font-medium uppercase tracking-wide ${alDia ? "border-emerald-700 text-emerald-400" : "border-red-800 text-red-400"}`}>
+                    {alDia ? "Al día" : `${vencidas.length} vencida${vencidas.length > 1 ? "s" : ""}`}
                   </span>
-                  {enRevision.length > 0 && (
-                    <span className="text-[10px] px-2 py-1 rounded-full border border-amber-700 text-amber-400 font-medium uppercase tracking-wide">
-                      {enRevision.length} por revisar
-                    </span>
-                  )}
+                  {enRevision.length > 0 && <span className="text-[10px] px-2 py-1 rounded-full border border-amber-700 text-amber-400 font-medium uppercase tracking-wide">{enRevision.length} por revisar</span>}
                 </div>
               </div>
               <div className="flex gap-5 mt-3 text-xs font-mono">
-                <div>
-                  <div className="text-[#8A93A3]">Saldo</div>
-                  <div>{fmt(saldoActual)}</div>
-                </div>
-                {moraTotal > 0 && (
-                  <div>
-                    <div className="text-red-400/80">Mora a pagar</div>
-                    <div className="text-red-400">{fmt(moraTotal)}</div>
-                  </div>
-                )}
-                {luzPendiente > 0 && (
-                  <div>
-                    <div className="text-[#8A93A3]">Luz pend.</div>
-                    <div>{fmt(luzPendiente)}</div>
-                  </div>
-                )}
+                <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual)}</div></div>
+                {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
+                {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
               </div>
             </button>
           );
@@ -1753,20 +1171,10 @@ function ListaPropiedades({
 
 function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
   const [f, setF] = useState({
-    folio: '',
-    direccion: '',
-    cliente: '',
-    telefono: '',
-    precio: '',
-    enganche: '',
-    tasaAnual: '',
-    plazoAnios: '',
-    diasGracia: 3,
-    moraDiaria: 100,
-    diasGraciaLuz: 3,
-    moraDiariaLuz: 20,
-    aplicaLuz: false,
-    montoLuzMensual: '',
+    folio: "", direccion: "", cliente: "", telefono: "",
+    precio: "", enganche: "", tasaAnual: "", plazoAnios: "",
+    diasGracia: 3, moraDiaria: 100, diasGraciaLuz: 3, moraDiariaLuz: 20,
+    aplicaLuz: false, montoLuzMensual: "",
     fechaInicio: new Date().toISOString().slice(0, 10),
   });
 
@@ -1775,37 +1183,25 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
   const tasaNum = Number(f.tasaAnual) || 0;
   const plazoNum = Number(f.plazoAnios) || 0;
   const principal = Math.max(0, precioNum - engancheNum);
-  const mensualidad =
-    plazoNum > 0
-      ? pagoMensual(principal, tasaNum, Math.round(plazoNum * 12))
-      : 0;
-  const datosCompletos =
-    f.direccion && f.cliente && precioNum > 0 && tasaNum > 0 && plazoNum > 0;
+  const mensualidad = plazoNum > 0 ? pagoMensual(principal, tasaNum, Math.round(plazoNum * 12)) : 0;
+  const datosCompletos = f.direccion && f.cliente && precioNum > 0 && tasaNum > 0 && plazoNum > 0;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-1">
-        <button onClick={onCancelar} className="text-[#8A93A3]">
-          <ChevronLeft size={20} />
-        </button>
-        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">
-          {proyecto?.nombre}
-        </div>
+        <button onClick={onCancelar} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">{proyecto?.nombre}</div>
       </div>
       <h1 className="font-serif text-2xl mb-5 pl-7">Nuevo contrato</h1>
       <div className="space-y-4">
         <div className="border border-dashed border-[#2A3547] rounded-lg p-4 flex items-start gap-3">
           <Sparkles size={18} className="text-[#6b7280] mt-0.5 shrink-0" />
           <div>
-            <div className="text-sm text-[#8A93A3]">
-              Autocompletar con el PDF del contrato (próximamente)
-            </div>
+            <div className="text-sm text-[#8A93A3]">Autocompletar con el PDF del contrato (próximamente)</div>
             <p className="text-[11px] text-[#6b7280] mt-1">
-              Cuando esta función esté activa, podrás subir el contrato de
-              promesa de compraventa aquí y la IA leerá precio, enganche, tasa,
-              plazo y datos del cliente para llenar los campos de abajo
-              automáticamente. Por ahora, complétalos a mano.
+              Cuando esta función esté activa, podrás subir el contrato de promesa de compraventa aquí y la IA leerá precio,
+              enganche, tasa, plazo y datos del cliente para llenar los campos de abajo automáticamente. Por ahora, complétalos a mano.
             </p>
             <label className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] text-[#6b7280] border border-dashed border-[#2A3547] rounded-md px-3 py-1.5 cursor-not-allowed">
               <FileText size={12} /> Subir contrato (desactivado)
@@ -1815,112 +1211,44 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Campo label="Folio / Lote" value={f.folio} onChange={set('folio')} />
-          <Campo label="Cliente" value={f.cliente} onChange={set('cliente')} />
+          <Campo label="Folio / Lote" value={f.folio} onChange={set("folio")} />
+          <Campo label="Cliente" value={f.cliente} onChange={set("cliente")} />
         </div>
-        <Campo
-          label="Dirección"
-          value={f.direccion}
-          onChange={set('direccion')}
-        />
-        <Campo
-          label="Teléfono (para avisos)"
-          value={f.telefono}
-          onChange={set('telefono')}
-        />
+        <Campo label="Dirección" value={f.direccion} onChange={set("direccion")} />
+        <Campo label="Teléfono (para avisos)" value={f.telefono} onChange={set("telefono")} />
         <div className="grid grid-cols-2 gap-3">
-          <CampoMoneda
-            label="Precio de venta"
-            value={f.precio}
-            onChange={(n) => setF({ ...f, precio: n })}
-          />
-          <CampoMoneda
-            label="Enganche"
-            value={f.enganche}
-            onChange={(n) => setF({ ...f, enganche: n })}
-          />
+          <CampoMoneda label="Precio de venta" value={f.precio} onChange={(n) => setF({ ...f, precio: n })} />
+          <CampoMoneda label="Enganche" value={f.enganche} onChange={(n) => setF({ ...f, enganche: n })} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Campo
-            label="Tasa anual %"
-            type="number"
-            value={f.tasaAnual}
-            onChange={set('tasaAnual')}
-          />
-          <Campo
-            label="Plazo (años)"
-            type="number"
-            value={f.plazoAnios}
-            onChange={set('plazoAnios')}
-          />
+          <Campo label="Tasa anual %" type="number" value={f.tasaAnual} onChange={set("tasaAnual")} />
+          <Campo label="Plazo (años)" type="number" value={f.plazoAnios} onChange={set("plazoAnios")} />
         </div>
-        <Campo
-          label="Fecha de inicio"
-          type="date"
-          value={f.fechaInicio}
-          onChange={set('fechaInicio')}
-        />
+        <Campo label="Fecha de inicio" type="date" value={f.fechaInicio} onChange={set("fechaInicio")} />
 
         <div className="border-t border-[#2A3547] pt-4">
-          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">
-            Mora del crédito
-          </div>
+          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">Mora del crédito</div>
           <div className="grid grid-cols-2 gap-3">
-            <Campo
-              label="Días de gracia"
-              type="number"
-              value={f.diasGracia}
-              onChange={set('diasGracia')}
-            />
-            <CampoMoneda
-              label="Mora diaria"
-              value={f.moraDiaria}
-              onChange={(n) => setF({ ...f, moraDiaria: n })}
-            />
+            <Campo label="Días de gracia" type="number" value={f.diasGracia} onChange={set("diasGracia")} />
+            <CampoMoneda label="Mora diaria" value={f.moraDiaria} onChange={(n) => setF({ ...f, moraDiaria: n })} />
           </div>
-          <p className="text-[11px] text-[#8A93A3] mt-1.5">
-            Durante los días de gracia no se cobra mora. Al pasar ese plazo, se
-            cobra este monto fijo por cada día de atraso.
-          </p>
+          <p className="text-[11px] text-[#8A93A3] mt-1.5">Durante los días de gracia no se cobra mora. Al pasar ese plazo, se cobra este monto fijo por cada día de atraso.</p>
         </div>
 
         <div className="border-t border-[#2A3547] pt-4">
           <label className="flex items-center justify-between cursor-pointer">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-              ¿Se cobra luz en esta propiedad?
-            </span>
-            <input
-              type="checkbox"
-              checked={f.aplicaLuz}
-              onChange={(e) => setF({ ...f, aplicaLuz: e.target.checked })}
-              className="w-4 h-4 accent-[#C9A227]"
-            />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Se cobra luz en esta propiedad?</span>
+            <input type="checkbox" checked={f.aplicaLuz} onChange={(e) => setF({ ...f, aplicaLuz: e.target.checked })} className="w-4 h-4 accent-[#C9A227]" />
           </label>
 
           {f.aplicaLuz && (
             <div className="mt-3 space-y-3">
-              <CampoMoneda
-                label="Monto mensual de luz"
-                value={f.montoLuzMensual}
-                onChange={(n) => setF({ ...f, montoLuzMensual: n })}
-              />
+              <CampoMoneda label="Monto mensual de luz" value={f.montoLuzMensual} onChange={(n) => setF({ ...f, montoLuzMensual: n })} />
               <div className="grid grid-cols-2 gap-3">
-                <Campo
-                  label="Días de gracia (luz)"
-                  type="number"
-                  value={f.diasGraciaLuz}
-                  onChange={set('diasGraciaLuz')}
-                />
-                <CampoMoneda
-                  label="Mora diaria (luz)"
-                  value={f.moraDiariaLuz}
-                  onChange={(n) => setF({ ...f, moraDiariaLuz: n })}
-                />
+                <Campo label="Días de gracia (luz)" type="number" value={f.diasGraciaLuz} onChange={set("diasGraciaLuz")} />
+                <CampoMoneda label="Mora diaria (luz)" value={f.moraDiariaLuz} onChange={(n) => setF({ ...f, moraDiariaLuz: n })} />
               </div>
-              <p className="text-[11px] text-[#8A93A3]">
-                Este monto se agregará automáticamente a cada cuota, junto con
-                su propia mora si no se paga a tiempo.
-              </p>
+              <p className="text-[11px] text-[#8A93A3]">Este monto se agregará automáticamente a cada cuota, junto con su propia mora si no se paga a tiempo.</p>
             </div>
           )}
         </div>
@@ -1928,33 +1256,16 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 flex items-center gap-3">
           <Calculator size={18} className="text-[#C9A227]" />
           <div>
-            <div className="text-xs text-[#8A93A3]">
-              Monto a financiar: {plazoNum > 0 ? fmt(principal) : '—'}
-            </div>
-            <div className="font-mono text-lg">
-              {plazoNum > 0 ? fmt(mensualidad) : '—'}{' '}
-              <span className="text-xs text-[#8A93A3]">/ mes</span>
-            </div>
+            <div className="text-xs text-[#8A93A3]">Monto a financiar: {plazoNum > 0 ? fmt(principal) : "—"}</div>
+            <div className="font-mono text-lg">{plazoNum > 0 ? fmt(mensualidad) : "—"} <span className="text-xs text-[#8A93A3]">/ mes</span></div>
           </div>
         </div>
 
-        <p className="text-[11px] text-[#8A93A3] flex items-center gap-1.5">
-          <Lock size={12} /> Estos datos de mora se podrán modificar después
-          confirmando tu contraseña.
-        </p>
+        <p className="text-[11px] text-[#8A93A3] flex items-center gap-1.5"><Lock size={12} /> Estos datos de mora se podrán modificar después confirmando tu contraseña.</p>
 
         <button
           disabled={!datosCompletos}
-          onClick={() =>
-            onCrear({
-              ...f,
-              precio: precioNum,
-              enganche: engancheNum,
-              tasaAnual: tasaNum,
-              plazoAnios: plazoNum,
-              montoLuzMensual: Number(f.montoLuzMensual) || 0,
-            })
-          }
+          onClick={() => onCrear({ ...f, precio: precioNum, enganche: engancheNum, tasaAnual: tasaNum, plazoAnios: plazoNum, montoLuzMensual: Number(f.montoLuzMensual) || 0 })}
           className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md mt-2"
         >
           Generar tabla de pagos
@@ -1967,13 +1278,8 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
 function Campo({ label, ...props }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-        {label}
-      </span>
-      <input
-        {...props}
-        className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227]"
-      />
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
+      <input {...props} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227]" />
     </label>
   );
 }
@@ -1981,26 +1287,21 @@ function Campo({ label, ...props }) {
 // Campo de dinero: muestra el número con comas de miles mientras el usuario escribe,
 // para que no se confunda si está poniendo cientos, miles o millones.
 function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
-  const formatear = (n) =>
-    (n || n === 0) && n !== '' ? Number(n).toLocaleString('es-GT') : '';
+  const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT") : "";
   const [texto, setTexto] = useState(formatear(value));
 
   const manejarCambio = (e) => {
-    const crudo = e.target.value.replace(/[^0-9]/g, '');
-    const numero = crudo === '' ? 0 : parseInt(crudo, 10);
-    setTexto(crudo === '' ? '' : numero.toLocaleString('es-GT'));
+    const crudo = e.target.value.replace(/[^0-9]/g, "");
+    const numero = crudo === "" ? 0 : parseInt(crudo, 10);
+    setTexto(crudo === "" ? "" : numero.toLocaleString("es-GT"));
     onChange(numero);
   };
 
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-        {label}
-      </span>
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
       <div className="relative mt-1">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A93A3] text-sm">
-          Q
-        </span>
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A93A3] text-sm">Q</span>
         <input
           type="text"
           inputMode="numeric"
@@ -2018,33 +1319,21 @@ function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
 // ---------- Modal de confirmación con contraseña ----------
 
 function ModalPin({ onCancelar, onExito }) {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [verificando, setVerificando] = useState(false);
   const [enviandoReset, setEnviandoReset] = useState(false);
   const [resetEnviado, setResetEnviado] = useState(false);
 
   const confirmar = async () => {
-    setError('');
+    setError("");
     setVerificando(true);
     const { data: userData } = await supabase.auth.getUser();
     const email = userData?.user?.email;
-    if (!email) {
-      setError(
-        'No se pudo confirmar tu sesión. Intenta cerrar sesión y volver a entrar.'
-      );
-      setVerificando(false);
-      return;
-    }
-    const { error: errAuth } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    if (!email) { setError("No se pudo confirmar tu sesión. Intenta cerrar sesión y volver a entrar."); setVerificando(false); return; }
+    const { error: errAuth } = await supabase.auth.signInWithPassword({ email, password });
     setVerificando(false);
-    if (errAuth) {
-      setError('Contraseña incorrecta.');
-      return;
-    }
+    if (errAuth) { setError("Contraseña incorrecta."); return; }
     onExito();
   };
 
@@ -2066,48 +1355,22 @@ function ModalPin({ onCancelar, onExito }) {
           <Lock size={16} className="text-[#C9A227]" />
           <div className="font-serif text-lg">Confirma tu contraseña</div>
         </div>
-        <p className="text-xs text-[#8A93A3] mb-3">
-          Para modificar esto, escribe la contraseña de tu cuenta.
-        </p>
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm mb-2 focus:outline-none focus:border-[#C9A227]"
-        />
+        <p className="text-xs text-[#8A93A3] mb-3">Para modificar esto, escribe la contraseña de tu cuenta.</p>
+        <input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm mb-2 focus:outline-none focus:border-[#C9A227]" />
         {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
 
         {resetEnviado ? (
-          <div className="text-xs text-emerald-400 mb-2">
-            Te enviamos un correo para restablecer tu contraseña. Revisa tu
-            bandeja de entrada.
-          </div>
+          <div className="text-xs text-emerald-400 mb-2">Te enviamos un correo para restablecer tu contraseña. Revisa tu bandeja de entrada.</div>
         ) : (
-          <button
-            onClick={olvidoContrasena}
-            disabled={enviandoReset}
-            className="text-[11px] text-[#8A93A3] underline mb-2"
-          >
-            {enviandoReset
-              ? 'Enviando...'
-              : '¿Olvidaste tu contraseña? Enviarme un correo para restablecerla'}
+          <button onClick={olvidoContrasena} disabled={enviandoReset} className="text-[11px] text-[#8A93A3] underline mb-2">
+            {enviandoReset ? "Enviando..." : "¿Olvidaste tu contraseña? Enviarme un correo para restablecerla"}
           </button>
         )}
 
         <div className="flex gap-2 mt-2">
-          <button
-            onClick={onCancelar}
-            className="flex-1 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={confirmar}
-            disabled={verificando || !password}
-            className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
-          >
-            {verificando ? 'Verificando...' : 'Confirmar'}
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">Cancelar</button>
+          <button onClick={confirmar} disabled={verificando || !password} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+            {verificando ? "Verificando..." : "Confirmar"}
           </button>
         </div>
       </div>
@@ -2120,7 +1383,7 @@ function ModalPin({ onCancelar, onExito }) {
 function useVentana(tabla) {
   const [extraAnt, setExtraAnt] = useState(0);
   const [extraSig, setExtraSig] = useState(0);
-  const cursor = tabla.findIndex((f) => f.estado !== 'pagado');
+  const cursor = tabla.findIndex((f) => f.estado !== "pagado");
   const cursorIdx = cursor === -1 ? tabla.length : cursor;
   const pasadas = tabla.slice(0, cursorIdx);
   const futuras = tabla.slice(cursorIdx);
@@ -2130,96 +1393,54 @@ function useVentana(tabla) {
   const visiblesSig = futuras.slice(0, nSig);
   const hayMasAnt = pasadas.length > nAnt;
   const hayMasSig = futuras.length > nSig;
-  return {
-    visiblesAnt,
-    visiblesSig,
-    hayMasAnt,
-    hayMasSig,
-    setExtraAnt,
-    setExtraSig,
-  };
+  return { visiblesAnt, visiblesSig, hayMasAnt, hayMasSig, setExtraAnt, setExtraSig };
 }
 
 function BotonMas({ onClick, texto, direccion }) {
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center justify-center gap-1.5 text-xs text-[#C9A227] py-2 border border-dashed border-[#2A3547] rounded-md hover:border-[#C9A227]/50"
-    >
-      {direccion === 'arriba' && <ChevronUp size={14} />}
+    <button onClick={onClick} className="w-full flex items-center justify-center gap-1.5 text-xs text-[#C9A227] py-2 border border-dashed border-[#2A3547] rounded-md hover:border-[#C9A227]/50">
+      {direccion === "arriba" && <ChevronUp size={14} />}
       {texto}
-      {direccion === 'abajo' && <ChevronDown size={14} />}
+      {direccion === "abajo" && <ChevronDown size={14} />}
     </button>
   );
 }
 
 // Fila de detalle numérico reutilizada en admin y cliente
 function DetalleFila({ f, mora, prop, hoy }) {
-  const luzMora = prop?.aplicaLuz
-    ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz)
-    : 0;
+  const luzMora = prop?.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
   return (
     <div className="grid grid-cols-4 gap-2 mt-2.5 pt-2.5 border-t border-[#2A3547] text-[11px]">
-      <div>
-        <div className="text-[#8A93A3]">Capital</div>
-        <div className="font-mono">{fmt(f.capital)}</div>
-      </div>
-      <div>
-        <div className="text-[#8A93A3]">Interés</div>
-        <div className="font-mono">{fmt(f.interes)}</div>
-      </div>
-      <div>
-        <div className="text-[#8A93A3]">Saldo restante</div>
-        <div className="font-mono">{fmt(f.saldoFinal)}</div>
-      </div>
+      <div><div className="text-[#8A93A3]">Capital</div><div className="font-mono">{fmt(f.capital)}</div></div>
+      <div><div className="text-[#8A93A3]">Interés</div><div className="font-mono">{fmt(f.interes)}</div></div>
+      <div><div className="text-[#8A93A3]">Saldo restante</div><div className="font-mono">{fmt(f.saldoFinal)}</div></div>
       <div>
         <div className="text-[#8A93A3]">Mora</div>
-        <div
-          className={`font-mono ${
-            mora > 0 ? 'text-red-400' : 'text-emerald-400'
-          }`}
-        >
-          {mora > 0 ? fmt(mora) : 'Sin mora'}
-        </div>
+        <div className={`font-mono ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
       </div>
       {prop?.aplicaLuz && (
         <div className="col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
-          <span className="flex items-center gap-1.5 text-[#8A93A3]">
-            <Zap size={12} className="text-[#C9A227]" /> Luz de este mes:{' '}
-            <span className="font-mono text-[#EDE7D9]">
-              {fmt(prop.montoLuzMensual)}
-            </span>
-          </span>
+          <span className="flex items-center gap-1.5 text-[#8A93A3]"><Zap size={12} className="text-[#C9A227]" /> Luz de este mes: <span className="font-mono text-[#EDE7D9]">{fmt(prop.montoLuzMensual)}</span></span>
           {f.luzPagado ? (
             <span className="text-emerald-400">Pagada</span>
           ) : (
-            <span className="text-red-400">
-              {luzMora > 0 ? `Pendiente + ${fmt(luzMora)} mora` : 'Pendiente'}
-            </span>
+            <span className="text-red-400">{luzMora > 0 ? `Pendiente + ${fmt(luzMora)} mora` : "Pendiente"}</span>
           )}
         </div>
       )}
       {f.abono > 0 && (
         <div className="col-span-4 -mt-0.5">
-          <span className="text-[#C9A227]">
-            Abono a capital aplicado: {fmt(f.abono)}
-          </span>
+          <span className="text-[#C9A227]">Abono a capital aplicado: {fmt(f.abono)}</span>
         </div>
       )}
       {f.moraCondonada > 0 && (
         <div className="col-span-4 -mt-0.5">
-          <span className="text-emerald-400">
-            Mora condonada: {fmt(f.moraCondonada)}
-          </span>
+          <span className="text-emerald-400">Mora condonada: {fmt(f.moraCondonada)}</span>
         </div>
       )}
-      {f.estado === 'parcial' && (
+      {f.estado === "parcial" && (
         <div className="col-span-4 -mt-0.5">
-          <span className="text-red-400">
-            Pago parcial recibido: {fmt(f.montoPagadoAcumulado || 0)} de{' '}
-            {fmt(f.pago)} — falta{' '}
-            {fmt(Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)))}
-          </span>
+          <span className="text-red-400">Pago parcial recibido: {fmt(f.montoPagadoAcumulado || 0)} de {fmt(f.pago)} — falta {fmt(Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)))}</span>
         </div>
       )}
     </div>
@@ -2229,43 +1450,35 @@ function DetalleFila({ f, mora, prop, hoy }) {
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
 function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
-  const [tab, setTab] = useState('tabla');
+  const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
-  const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] =
-    useState(false);
+  const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
   const [condForm, setCondForm] = useState(null);
   const [condonarIdx, setCondonarIdx] = useState(null);
-  const [condonoMonto, setCondonoMonto] = useState('');
+  const [condonoMonto, setCondonoMonto] = useState("");
   const [editandoDatos, setEditandoDatos] = useState(false);
+  const [corrigiendoIdx, setCorrigiendoIdx] = useState(null);
+  const [fechaCorregida, setFechaCorregida] = useState("");
+  const [previewCorregido, setPreviewCorregido] = useState(null);
+  const [destinoCorregido, setDestinoCorregido] = useState(null);
 
-  const { saldoActual, moraCredito, moraLuz, moraTotal, luzPendiente } =
-    resumenProp(prop, hoy);
+  const { saldoActual, moraCredito, moraLuz, moraTotal, luzPendiente } = resumenProp(prop, hoy);
   const ventana = useVentana(prop.tabla);
 
   const marcarPagado = (idx) => {
     actualizar((p) => {
       const fila = p.tabla[idx];
       const mora = calcularMoraCredito(fila, hoy, p.diasGracia, p.moraDiaria);
-      fila.moraGeneradaFinal = calcularMoraGenerada(
-        fila,
-        hoy,
-        p.diasGracia,
-        p.moraDiaria
-      );
+      fila.moraGeneradaFinal = calcularMoraGenerada(fila, hoy, p.diasGracia, p.moraDiaria);
       fila.moraPagada = (fila.moraPagada || 0) + mora;
-      fila.estado = 'pagado';
+      fila.estado = "pagado";
       fila.fechaPago = hoy;
       fila.montoPagadoAcumulado = fila.pago;
       fila.moraAplicada = fila.moraPagada;
       if (p.aplicaLuz && !fila.luzPagado) {
-        const luzMora = calcularMoraLuzCuota(
-          fila,
-          hoy,
-          p.diasGraciaLuz,
-          p.moraDiariaLuz
-        );
+        const luzMora = calcularMoraLuzCuota(fila, hoy, p.diasGraciaLuz, p.moraDiariaLuz);
         fila.luzMoraPagada = (fila.luzMoraPagada || 0) + luzMora;
         fila.luzPagado = true;
         fila.luzFechaPago = hoy;
@@ -2276,83 +1489,49 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
 
   const aprobarComprobante = (idx) => {
     const numero = prop.tabla[idx].numero;
-    actualizarEstadoComprobanteBD(prop.id, numero, 'aprobado').catch((err) =>
-      console.error(err)
-    );
+    actualizarEstadoComprobanteBD(prop.id, numero, "aprobado").catch((err) => console.error(err));
     actualizar((p) => {
       const fila = p.tabla[idx];
       const c = fila.comprobante;
       if (!c) return p;
 
-      const { restante, idxDetenido } = aplicarPagoCascada(
-        p.tabla,
-        idx,
-        c.montoDepositado,
-        hoy,
-        p
-      );
+      const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado, hoy, p);
 
-      if (fila.estado !== 'pagado' && fila.estado !== 'parcial') {
+      if (fila.estado !== "pagado" && fila.estado !== "parcial") {
         // la fila objetivo no cambió de estado dentro de la cascada (caso raro), la dejamos consistente
-        fila.estado = 'pendiente';
+        fila.estado = "pendiente";
       }
 
       if (restante > 0.009) {
         // ya no quedan meses atrasados por cubrir: el sobrante sigue el destino que eligió el cliente
-        if (c.destinoExcedente === 'abono') {
-          p.tabla = recalcularConAbono(
-            p.tabla,
-            idxDetenido - 1,
-            restante,
-            p.tasaAnual
-          );
+        if (c.destinoExcedente === "abono") {
+          p.tabla = recalcularConAbono(p.tabla, idxDetenido - 1, restante, p.tasaAnual);
         } else {
           p.saldoAFavor = (p.saldoAFavor || 0) + restante;
         }
       }
 
       p.notificaciones = p.notificaciones || [];
-      if (fila.estado === 'parcial') {
-        p.notificaciones.unshift(
-          nuevaNotificacion(
-            'cliente',
-            `Recibimos tu pago parcial de la cuota #${
-              fila.numero
-            }. Aún falta ${fmt(
-              Math.max(0, fila.pago - (fila.montoPagadoAcumulado || 0))
-            )}.`
-          )
-        );
+      if (fila.estado === "parcial") {
+        p.notificaciones.unshift(nuevaNotificacion("cliente", `Recibimos tu pago parcial de la cuota #${fila.numero}. Aún falta ${fmt(Math.max(0, fila.pago - (fila.montoPagadoAcumulado || 0)))}.`));
       } else {
-        p.notificaciones.unshift(
-          nuevaNotificacion(
-            'cliente',
-            `Tu pago de la cuota #${fila.numero} fue confirmado. ¡Gracias!`
-          )
-        );
+        p.notificaciones.unshift(nuevaNotificacion("cliente", `Tu pago de la cuota #${fila.numero} fue confirmado. ¡Gracias!`));
       }
-      if (c) c.estado = 'aprobado';
+      if (c) c.estado = "aprobado";
       return p;
     });
   };
 
   const rechazarComprobante = (idx) => {
     const numero = prop.tabla[idx].numero;
-    actualizarEstadoComprobanteBD(prop.id, numero, 'rechazado').catch((err) =>
-      console.error(err)
-    );
+    actualizarEstadoComprobanteBD(prop.id, numero, "rechazado").catch((err) => console.error(err));
     actualizar((p) => {
       const fila = p.tabla[idx];
-      fila.estado = 'pendiente';
+      fila.estado = "pendiente";
       fila.comprobante = null;
       fila.ultimoRechazo = { fecha: hoy };
       p.notificaciones = p.notificaciones || [];
-      p.notificaciones.unshift(
-        nuevaNotificacion(
-          'cliente',
-          `Tu comprobante de la cuota #${fila.numero} fue rechazado. Por favor sube uno nuevo o contáctanos.`
-        )
-      );
+      p.notificaciones.unshift(nuevaNotificacion("cliente", `Tu comprobante de la cuota #${fila.numero} fue rechazado. Por favor sube uno nuevo o contáctanos.`));
       return p;
     });
   };
@@ -2361,7 +1540,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
     const monto = Number(abonoMonto);
     if (!monto || monto <= 0) return;
     actualizar((p) => {
-      const idx = p.tabla.findIndex((f) => f.estado !== 'pagado');
+      const idx = p.tabla.findIndex((f) => f.estado !== "pagado");
       if (idx === -1) return p;
       p.tabla = recalcularConAbono(p.tabla, idx, monto, p.tasaAnual);
       return p;
@@ -2399,12 +1578,45 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
     });
   };
 
-  const abrirCondiciones = () => {
-    if (!condicionesDesbloqueadas) setPidiendoPin('condiciones');
+  const abrirCondiciones = () => { if (!condicionesDesbloqueadas) setPidiendoPin("condiciones"); };
+
+  const abrirCondonar = (idx) => { setPidiendoPin(idx); };
+
+  const abrirCorreccion = (idx) => {
+    const c = prop.tabla[idx].comprobante;
+    setCorrigiendoIdx(idx);
+    setFechaCorregida((c.fecha || hoy).slice(0, 10));
+    setPreviewCorregido(null);
+    setDestinoCorregido(null);
   };
 
-  const abrirCondonar = (idx) => {
-    setPidiendoPin(idx);
+  const recalcularConFecha = (idx) => {
+    const fila = prop.tabla[idx];
+    const c = fila.comprobante;
+    const resultado = calcularResultadoPago(fila, prop, fechaCorregida, c.montoDepositado);
+    setPreviewCorregido(resultado);
+    setDestinoCorregido(null);
+  };
+
+  const guardarCorreccion = (idx) => {
+    if (!previewCorregido) return;
+    const necesitaDestino = previewCorregido.resultado === "excedente" && previewCorregido.aTiempo;
+    if (necesitaDestino && !destinoCorregido) return;
+    actualizar((p) => {
+      const fila = p.tabla[idx];
+      const c = fila.comprobante;
+      c.fecha = `${fechaCorregida}T00:00:00.000Z`;
+      c.moraAlSubir = previewCorregido.moraAlSubir;
+      c.montoRequerido = previewCorregido.montoRequerido;
+      c.excedente = previewCorregido.excedente;
+      c.faltante = previewCorregido.faltante;
+      c.resultado = previewCorregido.resultado;
+      c.destinoExcedente = previewCorregido.resultado === "excedente" ? (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente") : null;
+      return p;
+    });
+    setCorrigiendoIdx(null);
+    setPreviewCorregido(null);
+    setDestinoCorregido(null);
   };
 
   const confirmarCondonacion = () => {
@@ -2412,53 +1624,26 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
     if (!monto || monto <= 0 || condonarIdx == null) return;
     actualizar((p) => {
       const fila = p.tabla[condonarIdx];
-      const pendienteAntes = calcularMoraCredito(
-        fila,
-        hoy,
-        p.diasGracia,
-        p.moraDiaria
-      );
+      const pendienteAntes = calcularMoraCredito(fila, hoy, p.diasGracia, p.moraDiaria);
       const aplicar = Math.min(monto, pendienteAntes);
       fila.moraCondonada = (fila.moraCondonada || 0) + aplicar;
-      const cuotaPendiente = Math.max(
-        0,
-        fila.pago - (fila.montoPagadoAcumulado || 0)
-      );
-      const moraPendienteNueva = calcularMoraCredito(
-        fila,
-        hoy,
-        p.diasGracia,
-        p.moraDiaria
-      );
-      if (
-        cuotaPendiente <= 0.01 &&
-        moraPendienteNueva <= 0.01 &&
-        fila.estado !== 'pagado'
-      ) {
-        fila.moraGeneradaFinal = calcularMoraGenerada(
-          fila,
-          hoy,
-          p.diasGracia,
-          p.moraDiaria
-        );
-        fila.estado = 'pagado';
+      const cuotaPendiente = Math.max(0, fila.pago - (fila.montoPagadoAcumulado || 0));
+      const moraPendienteNueva = calcularMoraCredito(fila, hoy, p.diasGracia, p.moraDiaria);
+      if (cuotaPendiente <= 0.01 && moraPendienteNueva <= 0.01 && fila.estado !== "pagado") {
+        fila.moraGeneradaFinal = calcularMoraGenerada(fila, hoy, p.diasGracia, p.moraDiaria);
+        fila.estado = "pagado";
         fila.fechaPago = hoy;
         fila.moraAplicada = fila.moraPagada;
       }
       p.notificaciones = p.notificaciones || [];
-      p.notificaciones.unshift(
-        nuevaNotificacion(
-          'cliente',
-          `Se te condonó ${fmt(aplicar)} de mora de la cuota #${fila.numero}.`
-        )
-      );
+      p.notificaciones.unshift(nuevaNotificacion("cliente", `Se te condonó ${fmt(aplicar)} de mora de la cuota #${fila.numero}.`));
       return p;
     });
     setCondonarIdx(null);
-    setCondonoMonto('');
+    setCondonoMonto("");
   };
 
-  const hayPagosRegistrados = prop.tabla.some((f) => f.estado === 'pagado');
+  const hayPagosRegistrados = prop.tabla.some((f) => f.estado === "pagado");
 
   const guardarCondiciones = () => {
     actualizar((p) => {
@@ -2481,50 +1666,26 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
     setCondForm(null);
   };
 
-  const notifsAdmin = (prop.notificaciones || []).filter(
-    (n) => n.para === 'inmobiliaria'
-  );
+  const notifsAdmin = (prop.notificaciones || []).filter((n) => n.para === "inmobiliaria");
 
   const renderFila = (f, idx) => {
     const est = estadoReal(f, hoy, prop.diasGracia);
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
     return (
-      <div
-        key={idx}
-        className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3"
-      >
+      <div key={idx} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs text-[#8A93A3] font-mono">
-              #{f.numero} · {fmtDate(f.fecha)}
-            </div>
+            <div className="text-xs text-[#8A93A3] font-mono">#{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago)}</div>
-            {f.ultimoRechazo && est !== 'pagado' && est !== 'revision' && (
-              <div className="text-[11px] text-red-400/80">
-                último comprobante rechazado
-              </div>
-            )}
+            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400/80">último comprobante rechazado</div>}
           </div>
           <div className="flex items-center gap-2">
             <Badge estado={est} />
-            {mora > 0 && est !== 'pagado' && condonarIdx !== idx && (
-              <button
-                onClick={() => abrirCondonar(idx)}
-                className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md"
-              >
-                Perdonar mora
-              </button>
+            {mora > 0 && est !== "pagado" && condonarIdx !== idx && (
+              <button onClick={() => abrirCondonar(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Perdonar mora</button>
             )}
-            {(est === 'vencido' ||
-              est === 'pendiente' ||
-              est === 'gracia' ||
-              est === 'parcial') && (
-              <button
-                onClick={() => marcarPagado(idx)}
-                className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md"
-              >
-                Marcar pagado
-              </button>
+            {(est === "vencido" || est === "pendiente" || est === "gracia" || est === "parcial") && (
+              <button onClick={() => marcarPagado(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Marcar pagado</button>
             )}
           </div>
         </div>
@@ -2532,91 +1693,86 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
         {condonarIdx === idx && (
           <div className="mt-2.5 pt-2.5 border-t border-[#2A3547] flex items-center gap-2">
             <Lock size={13} className="text-[#C9A227] shrink-0" />
-            <input
-              type="number"
-              value={condonoMonto}
-              onChange={(e) => setCondonoMonto(e.target.value)}
-              className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#C9A227]"
-            />
-            <button
-              onClick={() => {
-                setCondonarIdx(null);
-                setCondonoMonto('');
-              }}
-              className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={confirmarCondonacion}
-              className="text-xs bg-[#C9A227] text-[#101826] font-medium px-2.5 py-1.5 rounded-md"
-            >
-              Confirmar
-            </button>
+            <input type="number" value={condonoMonto} onChange={(e) => setCondonoMonto(e.target.value)} className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#C9A227]" />
+            <button onClick={() => { setCondonarIdx(null); setCondonoMonto(""); }} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md">Cancelar</button>
+            <button onClick={confirmarCondonacion} className="text-xs bg-[#C9A227] text-[#101826] font-medium px-2.5 py-1.5 rounded-md">Confirmar</button>
           </div>
         )}
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
 
-        {est === 'revision' && f.comprobante && (
+        {est === "revision" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setImagenAmpliada(f.comprobante.imagen)}
-                className="shrink-0"
-              >
-                <img
-                  src={f.comprobante.imagen}
-                  alt="Comprobante"
-                  className="w-16 h-16 object-cover rounded-md border border-[#2A3547]"
-                />
+              <button onClick={() => setImagenAmpliada(f.comprobante.imagen)} className="shrink-0">
+                <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
               </button>
               <div className="flex-1">
-                <div className="text-[11px] text-[#8A93A3] mb-1">
-                  Comprobante subido {fmtDateTime(f.comprobante.fecha)}
-                </div>
-                <div className="text-xs font-mono">
-                  Depositó {fmt(f.comprobante.montoDepositado)}
-                </div>
-                {f.comprobante.resultado === 'parcial' && (
-                  <div className="text-[11px] text-blue-300">
-                    Pago parcial — faltarían {fmt(f.comprobante.faltante)}
-                  </div>
+                <div className="text-[11px] text-[#8A93A3] mb-1">Comprobante subido {fmtDateTime(f.comprobante.fecha)}</div>
+                <div className="text-xs font-mono">Depositó {fmt(f.comprobante.montoDepositado)}</div>
+                {f.comprobante.resultado === "parcial" && (
+                  <div className="text-[11px] text-blue-300">Pago parcial — faltarían {fmt(f.comprobante.faltante)}</div>
                 )}
-                {f.comprobante.resultado === 'excedente' && (
+                {f.comprobante.resultado === "excedente" && (
                   <div className="text-[11px] text-[#C9A227]">
-                    Excedente de {fmt(f.comprobante.excedente)} →{' '}
-                    {f.comprobante.destinoExcedente === 'abono'
-                      ? 'el cliente eligió abono a capital'
-                      : 'queda como saldo a favor'}
+                    Excedente de {fmt(f.comprobante.excedente)} → {f.comprobante.destinoExcedente === "abono" ? "el cliente eligió abono a capital" : "queda como saldo a favor"}
                   </div>
                 )}
-                {f.comprobante.resultado === 'completo' && (
-                  <div className="text-[11px] text-emerald-400">
-                    Cubre exactamente lo que debía
-                  </div>
-                )}
+                {f.comprobante.resultado === "completo" && <div className="text-[11px] text-emerald-400">Cubre exactamente lo que debía</div>}
               </div>
             </div>
+
+            {corrigiendoIdx !== idx ? (
+              <button onClick={() => abrirCorreccion(idx)} className="mt-2 text-[11px] text-[#8A93A3] underline">
+                ¿El cliente pagó antes de esta fecha? Corregir fecha del depósito
+              </button>
+            ) : (
+              <div className="mt-2.5 pt-2.5 border-t border-[#2A3547] space-y-2">
+                <div className="text-[11px] text-[#8A93A3]">Fecha real en que el cliente depositó:</div>
+                <div className="flex gap-2">
+                  <input type="date" value={fechaCorregida} onChange={(e) => { setFechaCorregida(e.target.value); setPreviewCorregido(null); }} className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#C9A227]" />
+                  <button onClick={() => recalcularConFecha(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Recalcular</button>
+                </div>
+
+                {previewCorregido && (
+                  <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 text-[11px] space-y-1.5">
+                    <div className="text-[#8A93A3]">
+                      Con esa fecha, el pago {previewCorregido.aTiempo ? <span className="text-emerald-400">llegó a tiempo</span> : <span className="text-red-400">seguiría llegando tarde</span>}.
+                    </div>
+                    {previewCorregido.resultado === "excedente" && previewCorregido.aTiempo && (
+                      <div className="space-y-1.5">
+                        <div className="text-[#C9A227]">Hay un excedente de {fmt(previewCorregido.excedente)}. ¿Qué hacer con él?</div>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name={`destino-correccion-${idx}`} checked={destinoCorregido === "abono"} onChange={() => setDestinoCorregido("abono")} />
+                          Abonarlo a capital
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name={`destino-correccion-${idx}`} checked={destinoCorregido === "creditoSiguiente"} onChange={() => setDestinoCorregido("creditoSiguiente")} />
+                          Dejarlo como crédito para la siguiente cuota
+                        </label>
+                      </div>
+                    )}
+                    {previewCorregido.resultado === "parcial" && <div className="text-blue-300">Con esa fecha, faltarían {fmt(previewCorregido.faltante)}.</div>}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button onClick={() => { setCorrigiendoIdx(null); setPreviewCorregido(null); }} className="flex-1 text-xs bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
+                  <button
+                    onClick={() => guardarCorreccion(idx)}
+                    disabled={!previewCorregido || (previewCorregido.resultado === "excedente" && previewCorregido.aTiempo && !destinoCorregido)}
+                    className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md"
+                  >
+                    Guardar corrección
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 mt-2.5">
-              <button
-                onClick={() => aprobarComprobante(idx)}
-                className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md"
-              >
-                Aprobar
-              </button>
-              <button
-                onClick={() => rechazarComprobante(idx)}
-                className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md"
-              >
-                Rechazar
-              </button>
+              <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
+              <button onClick={() => rechazarComprobante(idx)} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
             </div>
-            <button
-              disabled
-              title="Se activará cuando la app esté en la nube"
-              className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-[#6b7280] border border-dashed border-[#2A3547] rounded-md py-1.5 cursor-not-allowed"
-            >
+            <button disabled title="Se activará cuando la app esté en la nube" className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-[#6b7280] border border-dashed border-[#2A3547] rounded-md py-1.5 cursor-not-allowed">
               <Sparkles size={12} /> Leer comprobante con IA (próximamente)
             </button>
           </div>
@@ -2628,205 +1784,95 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-4">
-        <button onClick={onVolver} className="text-[#8A93A3]">
-          <ChevronLeft size={20} />
-        </button>
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <div className="flex-1">
-          <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
-            {prop.folio}
-          </div>
+          <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">{prop.folio}</div>
           <h1 className="font-serif text-xl leading-tight">{prop.direccion}</h1>
-          <div className="text-xs text-[#8A93A3] mt-0.5">
-            {prop.cliente}
-            {prop.telefono ? ` · ${prop.telefono}` : ''}
-          </div>
+          <div className="text-xs text-[#8A93A3] mt-0.5">{prop.cliente}{prop.telefono ? ` · ${prop.telefono}` : ""}</div>
         </div>
-        <button
-          onClick={() => setEditandoDatos(true)}
-          className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"
-          title="Editar datos generales"
-        >
+        <button onClick={() => setEditandoDatos(true)} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5" title="Editar datos generales">
           <Pencil size={16} />
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-2">
         <Stat label="Saldo" value={fmt(saldoActual)} />
-        <Stat
-          label="Mora a pagar"
-          value={fmt(moraTotal)}
-          warn={moraTotal > 0}
-        />
-        <Stat
-          label="Luz pendiente"
-          value={fmt(luzPendiente)}
-          warn={luzPendiente > 0}
-        />
+        <Stat label="Mora a pagar" value={fmt(moraTotal)} warn={moraTotal > 0} />
+        <Stat label="Luz pendiente" value={fmt(luzPendiente)} warn={luzPendiente > 0} />
       </div>
       {moraTotal > 0 && (
         <div className="text-[11px] text-[#8A93A3] mb-2">
-          Desglose:{' '}
-          {moraCredito > 0 && <span>mora crédito {fmt(moraCredito)}</span>}
-          {moraCredito > 0 && moraLuz > 0 && ' · '}
-          {moraLuz > 0 && <span>mora luz {fmt(moraLuz)}</span>}
+          Desglose: {moraCredito > 0 && <span>mora crédito {fmt(moraCredito)}</span>}{moraCredito > 0 && moraLuz > 0 && " · "}{moraLuz > 0 && <span>mora luz {fmt(moraLuz)}</span>}
         </div>
       )}
       {prop.saldoAFavor > 0 && (
-        <div className="text-[11px] text-emerald-400 mb-4">
-          El cliente tiene {fmt(prop.saldoAFavor)} de saldo a favor pendiente de
-          aplicar.
-        </div>
+        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} de saldo a favor pendiente de aplicar.</div>
       )}
 
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
         {[
-          ['tabla', 'Tabla de pagos', Clock],
-          ['abono', 'Abono a capital', TrendingDown],
-          [
-            'contrato',
-            `Contrato${
-              (prop.documentos || []).length
-                ? ` (${prop.documentos.length})`
-                : ''
-            }`,
-            FileText,
-          ],
-          ['condiciones', 'Condiciones', Settings2],
-          [
-            'avisos',
-            `Avisos${
-              notifsAdmin.filter((n) => !n.leida).length
-                ? ` (${notifsAdmin.filter((n) => !n.leida).length})`
-                : ''
-            }`,
-            Bell,
-          ],
+          ["tabla", "Tabla de pagos", Clock],
+          ["abono", "Abono a capital", TrendingDown],
+          ["contrato", `Contrato${(prop.documentos || []).length ? ` (${prop.documentos.length})` : ""}`, FileText],
+          ["condiciones", "Condiciones", Settings2],
+          ["avisos", `Avisos${notifsAdmin.filter((n) => !n.leida).length ? ` (${notifsAdmin.filter((n) => !n.leida).length})` : ""}`, Bell],
         ].map(([id, label, Icon]) => (
-          <button
-            key={id}
-            onClick={() => {
-              setTab(id);
-              if (id === 'avisos')
-                actualizar((p) => {
-                  p.notificaciones = (p.notificaciones || []).map((n) =>
-                    n.para === 'inmobiliaria' ? { ...n, leida: true } : n
-                  );
-                  return p;
-                });
-            }}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs border-b-2 -mb-px whitespace-nowrap ${
-              tab === id
-                ? 'border-[#C9A227] text-[#EDE7D9]'
-                : 'border-transparent text-[#8A93A3]'
-            }`}
-          >
+          <button key={id} onClick={() => { setTab(id); if (id === "avisos") actualizar((p) => { p.notificaciones = (p.notificaciones || []).map((n) => (n.para === "inmobiliaria" ? { ...n, leida: true } : n)); return p; }); }}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs border-b-2 -mb-px whitespace-nowrap ${tab === id ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}>
             <Icon size={14} /> {label}
           </button>
         ))}
       </div>
 
-      {tab === 'tabla' && (
+      {tab === "tabla" && (
         <div className="space-y-2">
-          {ventana.hayMasAnt && (
-            <BotonMas
-              direccion="arriba"
-              texto="Ver cuotas anteriores"
-              onClick={() => ventana.setExtraAnt((v) => v + 6)}
-            />
-          )}
+          {ventana.hayMasAnt && <BotonMas direccion="arriba" texto="Ver cuotas anteriores" onClick={() => ventana.setExtraAnt((v) => v + 6)} />}
           {ventana.visiblesAnt.map((f) => renderFila(f, prop.tabla.indexOf(f)))}
-          <div className="text-center text-[10px] uppercase tracking-widest text-[#8A93A3] py-1">
-            Hoy
-          </div>
+          <div className="text-center text-[10px] uppercase tracking-widest text-[#8A93A3] py-1">Hoy</div>
           {ventana.visiblesSig.map((f) => renderFila(f, prop.tabla.indexOf(f)))}
-          {ventana.hayMasSig && (
-            <BotonMas
-              direccion="abajo"
-              texto="Ver cuotas siguientes"
-              onClick={() => ventana.setExtraSig((v) => v + 6)}
-            />
-          )}
+          {ventana.hayMasSig && <BotonMas direccion="abajo" texto="Ver cuotas siguientes" onClick={() => ventana.setExtraSig((v) => v + 6)} />}
         </div>
       )}
 
-      {tab === 'abono' && (
+      {tab === "abono" && (
         <div>
-          <p className="text-sm text-[#8A93A3] mb-3">
-            Registra un pago extra a capital. Se aplicará al saldo de la próxima
-            cuota pendiente y la tabla se recalculará manteniendo la misma
-            mensualidad, reduciendo el plazo restante.
-          </p>
+          <p className="text-sm text-[#8A93A3] mb-3">Registra un pago extra a capital. Se aplicará al saldo de la próxima cuota pendiente y la tabla se recalculará manteniendo la misma mensualidad, reduciendo el plazo restante.</p>
           <div className="flex gap-2 items-end">
             <div className="flex-1">
-              <CampoMoneda
-                label="Monto del abono"
-                value={abonoMonto}
-                onChange={setAbonoMonto}
-              />
+              <CampoMoneda label="Monto del abono" value={abonoMonto} onChange={setAbonoMonto} />
             </div>
-            <button
-              onClick={aplicarAbono}
-              className="bg-[#C9A227] text-[#101826] px-4 py-2 rounded-md text-sm font-medium"
-            >
-              Aplicar
-            </button>
+            <button onClick={aplicarAbono} className="bg-[#C9A227] text-[#101826] px-4 py-2 rounded-md text-sm font-medium">Aplicar</button>
           </div>
-          <div className="mt-4 text-xs text-[#8A93A3]">
-            Meses restantes en la tabla:{' '}
-            <span className="text-[#EDE7D9] font-mono">
-              {fmtNum(prop.tabla.filter((f) => f.estado !== 'pagado').length)}
-            </span>
-          </div>
+          <div className="mt-4 text-xs text-[#8A93A3]">Meses restantes en la tabla: <span className="text-[#EDE7D9] font-mono">{fmtNum(prop.tabla.filter((f) => f.estado !== "pagado").length)}</span></div>
         </div>
       )}
 
-      {tab === 'contrato' && (
+
+
+      {tab === "contrato" && (
         <div className="space-y-4">
           <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-[#2A3547] rounded-lg py-8 cursor-pointer hover:border-[#C9A227]/50">
             <FileText size={22} className="text-[#8A93A3]" />
-            <span className="text-sm text-[#8A93A3]">
-              {subiendoContrato
-                ? 'Subiendo...'
-                : 'Subir documentos (contrato, addendums, identificaciones...)'}
-            </span>
-            <span className="text-[11px] text-[#6b7280]">
-              Puedes seleccionar varios PDF o fotos a la vez
-            </span>
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => subirDocumentos(e.target.files)}
-            />
+            <span className="text-sm text-[#8A93A3]">{subiendoContrato ? "Subiendo..." : "Subir documentos (contrato, addendums, identificaciones...)"}</span>
+            <span className="text-[11px] text-[#6b7280]">Puedes seleccionar varios PDF o fotos a la vez</span>
+            <input type="file" accept="application/pdf,image/*" multiple className="hidden" onChange={(e) => subirDocumentos(e.target.files)} />
           </label>
 
           {(prop.documentos || []).length > 0 && (
             <div className="space-y-2">
               {prop.documentos.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3"
-                >
+                <div key={doc.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-md bg-[#1A2333] flex items-center justify-center shrink-0">
                     <FileText size={18} className="text-[#C9A227]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">{doc.nombre}</div>
-                    <div className="text-[11px] text-[#8A93A3]">
-                      Subido {fmtDateTime(doc.fecha)}
-                    </div>
+                    <div className="text-[11px] text-[#8A93A3]">Subido {fmtDateTime(doc.fecha)}</div>
                   </div>
-                  <button
-                    onClick={() => verDocumentoStorage(doc.archivoUrl)}
-                    className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md flex items-center gap-1.5 shrink-0"
-                  >
+                  <button onClick={() => verDocumentoStorage(doc.archivoUrl)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md flex items-center gap-1.5 shrink-0">
                     <Download size={13} /> Ver
                   </button>
-                  <button
-                    onClick={() => eliminarDocumento(doc)}
-                    className="text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md shrink-0"
-                  >
+                  <button onClick={() => eliminarDocumento(doc)} className="text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md shrink-0">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -2835,101 +1881,45 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
           )}
 
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">
-              Condiciones pactadas en el contrato
-            </div>
+            <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones pactadas en el contrato</div>
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={fmt(prop.enganche)} />
-              <Fila2
-                label="Monto financiado"
-                value={fmt(Math.max(0, prop.precio - prop.enganche))}
-              />
-              <Fila2
-                label="Tasa de interés anual"
-                value={`${fmtNum(prop.tasaAnual)}%`}
-              />
-              <Fila2
-                label="Plazo"
-                value={`${fmtNum(prop.plazoAnios)} años (${
-                  prop.tabla.length
-                } cuotas)`}
-              />
-              <Fila2
-                label="Mensualidad"
-                value={fmt(prop.tabla[0]?.pago ?? 0)}
-              />
-              <Fila2
-                label="Mora crédito"
-                value={`${prop.diasGracia} días de gracia · ${fmt(
-                  prop.moraDiaria
-                )}/día después`}
-              />
-              <Fila2
-                label="Mora luz"
-                value={`${prop.diasGraciaLuz} días de gracia · ${fmt(
-                  prop.moraDiariaLuz
-                )}/día después`}
-              />
-              <Fila2
-                label="Fecha de inicio"
-                value={fmtDate(prop.fechaInicio)}
-              />
+              <Fila2 label="Monto financiado" value={fmt(Math.max(0, prop.precio - prop.enganche))} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
+              <Fila2 label="Mensualidad" value={fmt(prop.tabla[0]?.pago ?? 0)} />
+              <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
+              <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
+              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicio)} />
             </div>
           </div>
         </div>
       )}
 
-      {tab === 'condiciones' && (
+      {tab === "condiciones" && (
         <div>
           {!condicionesDesbloqueadas ? (
             <div className="space-y-3">
               <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
                 <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
                 <Fila2 label="Enganche" value={fmt(prop.enganche)} />
-                <Fila2
-                  label="Tasa anual"
-                  value={`${fmtNum(prop.tasaAnual)}%`}
-                />
-                <Fila2
-                  label="Plazo"
-                  value={`${fmtNum(prop.plazoAnios)} años`}
-                />
+                <Fila2 label="Tasa anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+                <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años`} />
                 <div className="border-t border-[#2A3547] my-1"></div>
-                <Fila2
-                  label="Días de gracia (crédito)"
-                  value={`${prop.diasGracia} días`}
-                />
-                <Fila2
-                  label="Mora diaria (crédito)"
-                  value={fmt(prop.moraDiaria)}
-                />
+                <Fila2 label="Días de gracia (crédito)" value={`${prop.diasGracia} días`} />
+                <Fila2 label="Mora diaria (crédito)" value={fmt(prop.moraDiaria)} />
                 <div className="border-t border-[#2A3547] my-1"></div>
-                <Fila2
-                  label="¿Se cobra luz?"
-                  value={prop.aplicaLuz ? 'Sí' : 'No'}
-                />
+                <Fila2 label="¿Se cobra luz?" value={prop.aplicaLuz ? "Sí" : "No"} />
                 {prop.aplicaLuz && (
                   <>
-                    <Fila2
-                      label="Monto mensual de luz"
-                      value={fmt(prop.montoLuzMensual)}
-                    />
-                    <Fila2
-                      label="Días de gracia (luz)"
-                      value={`${prop.diasGraciaLuz} días`}
-                    />
-                    <Fila2
-                      label="Mora diaria (luz)"
-                      value={fmt(prop.moraDiariaLuz)}
-                    />
+                    <Fila2 label="Monto mensual de luz" value={fmt(prop.montoLuzMensual)} />
+                    <Fila2 label="Días de gracia (luz)" value={`${prop.diasGraciaLuz} días`} />
+                    <Fila2 label="Mora diaria (luz)" value={fmt(prop.moraDiariaLuz)} />
                   </>
                 )}
               </div>
-              <button
-                onClick={abrirCondiciones}
-                className="flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-2 rounded-md"
-              >
+              <button onClick={abrirCondiciones} className="flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-2 rounded-md">
                 <Lock size={13} /> Modificar (requiere confirmar tu contraseña)
               </button>
             </div>
@@ -2937,162 +1927,60 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
             <div className="space-y-3">
               {hayPagosRegistrados && (
                 <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5">
-                  Esta propiedad ya tiene cuotas pagadas, así que precio,
-                  enganche, tasa y plazo quedan bloqueados para no alterar el
-                  historial. Si necesitas corregirlos, contáctanos.
+                  Esta propiedad ya tiene cuotas pagadas, así que precio, enganche, tasa y plazo quedan bloqueados para no alterar el historial. Si necesitas corregirlos, contáctanos.
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <CampoMoneda
-                  label="Precio de venta"
-                  disabled={hayPagosRegistrados}
-                  value={condForm.precio}
-                  onChange={(n) => setCondForm({ ...condForm, precio: n })}
-                />
-                <CampoMoneda
-                  label="Enganche"
-                  disabled={hayPagosRegistrados}
-                  value={condForm.enganche}
-                  onChange={(n) => setCondForm({ ...condForm, enganche: n })}
-                />
-                <Campo
-                  label="Tasa anual %"
-                  type="number"
-                  disabled={hayPagosRegistrados}
-                  value={condForm.tasaAnual}
-                  onChange={(e) =>
-                    setCondForm({ ...condForm, tasaAnual: e.target.value })
-                  }
-                />
-                <Campo
-                  label="Plazo (años)"
-                  type="number"
-                  disabled={hayPagosRegistrados}
-                  value={condForm.plazoAnios}
-                  onChange={(e) =>
-                    setCondForm({ ...condForm, plazoAnios: e.target.value })
-                  }
-                />
+                <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
+                <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
+                <Campo label="Tasa anual %" type="number" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
+                <Campo label="Plazo (años)" type="number" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Campo
-                  label="Días de gracia (crédito)"
-                  type="number"
-                  value={condForm.diasGracia}
-                  onChange={(e) =>
-                    setCondForm({ ...condForm, diasGracia: e.target.value })
-                  }
-                />
-                <CampoMoneda
-                  label="Mora diaria (crédito)"
-                  value={condForm.moraDiaria}
-                  onChange={(n) => setCondForm({ ...condForm, moraDiaria: n })}
-                />
+                <Campo label="Días de gracia (crédito)" type="number" value={condForm.diasGracia} onChange={(e) => setCondForm({ ...condForm, diasGracia: e.target.value })} />
+                <CampoMoneda label="Mora diaria (crédito)" value={condForm.moraDiaria} onChange={(n) => setCondForm({ ...condForm, moraDiaria: n })} />
               </div>
 
               <div className="border-t border-[#2A3547] pt-3">
                 <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
-                    ¿Se cobra luz en esta propiedad?
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={condForm.aplicaLuz}
-                    onChange={(e) =>
-                      setCondForm({ ...condForm, aplicaLuz: e.target.checked })
-                    }
-                    className="w-4 h-4 accent-[#C9A227]"
-                  />
+                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Se cobra luz en esta propiedad?</span>
+                  <input type="checkbox" checked={condForm.aplicaLuz} onChange={(e) => setCondForm({ ...condForm, aplicaLuz: e.target.checked })} className="w-4 h-4 accent-[#C9A227]" />
                 </label>
                 {condForm.aplicaLuz && (
                   <div className="mt-3 space-y-3">
-                    <CampoMoneda
-                      label="Monto mensual de luz"
-                      value={condForm.montoLuzMensual}
-                      onChange={(n) =>
-                        setCondForm({ ...condForm, montoLuzMensual: n })
-                      }
-                    />
+                    <CampoMoneda label="Monto mensual de luz" value={condForm.montoLuzMensual} onChange={(n) => setCondForm({ ...condForm, montoLuzMensual: n })} />
                     <div className="grid grid-cols-2 gap-3">
-                      <Campo
-                        label="Días de gracia (luz)"
-                        type="number"
-                        value={condForm.diasGraciaLuz}
-                        onChange={(e) =>
-                          setCondForm({
-                            ...condForm,
-                            diasGraciaLuz: e.target.value,
-                          })
-                        }
-                      />
-                      <CampoMoneda
-                        label="Mora diaria (luz)"
-                        value={condForm.moraDiariaLuz}
-                        onChange={(n) =>
-                          setCondForm({ ...condForm, moraDiariaLuz: n })
-                        }
-                      />
+                      <Campo label="Días de gracia (luz)" type="number" value={condForm.diasGraciaLuz} onChange={(e) => setCondForm({ ...condForm, diasGraciaLuz: e.target.value })} />
+                      <CampoMoneda label="Mora diaria (luz)" value={condForm.moraDiariaLuz} onChange={(n) => setCondForm({ ...condForm, moraDiariaLuz: n })} />
                     </div>
                   </div>
                 )}
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setCondicionesDesbloqueadas(false);
-                    setCondForm(null);
-                  }}
-                  className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={guardarCondiciones}
-                  className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md"
-                >
-                  Guardar cambios
-                </button>
+                <button onClick={() => { setCondicionesDesbloqueadas(false); setCondForm(null); }} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+                <button onClick={guardarCondiciones} className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">Guardar cambios</button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {tab === 'avisos' && (
+      {tab === "avisos" && (
         <div className="space-y-2">
-          {notifsAdmin.length === 0 && (
-            <div className="text-sm text-[#8A93A3]">Sin avisos por ahora.</div>
-          )}
+          {notifsAdmin.length === 0 && <div className="text-sm text-[#8A93A3]">Sin avisos por ahora.</div>}
           {notifsAdmin.map((n) => (
-            <div
-              key={n.id}
-              className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3"
-            >
+            <div key={n.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
               <div className="text-sm">{n.mensaje}</div>
-              <div className="text-[11px] text-[#8A93A3] mt-1">
-                {fmtDateTime(n.fecha)}
-              </div>
+              <div className="text-[11px] text-[#8A93A3] mt-1">{fmtDateTime(n.fecha)}</div>
             </div>
           ))}
         </div>
       )}
 
       {imagenAmpliada && (
-        <div
-          onClick={() => setImagenAmpliada(null)}
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6"
-        >
-          <img
-            src={imagenAmpliada}
-            alt="Comprobante ampliado"
-            className="max-w-full max-h-full rounded-md"
-          />
-          <button
-            onClick={() => setImagenAmpliada(null)}
-            className="absolute top-5 right-5 text-white"
-          >
-            <X size={24} />
-          </button>
+        <div onClick={() => setImagenAmpliada(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
+          <img src={imagenAmpliada} alt="Comprobante ampliado" className="max-w-full max-h-full rounded-md" />
+          <button onClick={() => setImagenAmpliada(null)} className="absolute top-5 right-5 text-white"><X size={24} /></button>
         </div>
       )}
 
@@ -3100,29 +1988,17 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
         <ModalPin
           onCancelar={() => setPidiendoPin(null)}
           onExito={() => {
-            if (pidiendoPin === 'condiciones') {
+            if (pidiendoPin === "condiciones") {
               setCondicionesDesbloqueadas(true);
               setCondForm({
-                precio: prop.precio,
-                enganche: prop.enganche,
-                tasaAnual: prop.tasaAnual,
-                plazoAnios: prop.plazoAnios,
-                diasGracia: prop.diasGracia,
-                moraDiaria: prop.moraDiaria,
-                diasGraciaLuz: prop.diasGraciaLuz,
-                moraDiariaLuz: prop.moraDiariaLuz,
-                aplicaLuz: prop.aplicaLuz,
-                montoLuzMensual: prop.montoLuzMensual,
+                precio: prop.precio, enganche: prop.enganche, tasaAnual: prop.tasaAnual, plazoAnios: prop.plazoAnios,
+                diasGracia: prop.diasGracia, moraDiaria: prop.moraDiaria, diasGraciaLuz: prop.diasGraciaLuz, moraDiariaLuz: prop.moraDiariaLuz,
+                aplicaLuz: prop.aplicaLuz, montoLuzMensual: prop.montoLuzMensual,
               });
             } else {
               const idx = pidiendoPin;
               const fila = prop.tabla[idx];
-              const moraPendiente = calcularMoraCredito(
-                fila,
-                hoy,
-                prop.diasGracia,
-                prop.moraDiaria
-              );
+              const moraPendiente = calcularMoraCredito(fila, hoy, prop.diasGracia, prop.moraDiaria);
               setCondonarIdx(idx);
               setCondonoMonto(String(Math.round(moraPendiente * 100) / 100));
             }
@@ -3146,50 +2022,23 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
 }
 
 function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
-  const [folio, setFolio] = useState(prop.folio || '');
-  const [direccion, setDireccion] = useState(prop.direccion || '');
-  const [cliente, setCliente] = useState(prop.cliente || '');
-  const [telefono, setTelefono] = useState(prop.telefono || '');
+  const [folio, setFolio] = useState(prop.folio || "");
+  const [direccion, setDireccion] = useState(prop.direccion || "");
+  const [cliente, setCliente] = useState(prop.cliente || "");
+  const [telefono, setTelefono] = useState(prop.telefono || "");
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm">
         <div className="font-serif text-lg mb-3">Editar datos generales</div>
         <div className="space-y-3">
-          <Campo
-            label="Folio / Lote"
-            value={folio}
-            onChange={(e) => setFolio(e.target.value)}
-          />
-          <Campo
-            label="Dirección"
-            value={direccion}
-            onChange={(e) => setDireccion(e.target.value)}
-          />
-          <Campo
-            label="Cliente"
-            value={cliente}
-            onChange={(e) => setCliente(e.target.value)}
-          />
-          <Campo
-            label="Teléfono"
-            value={telefono}
-            onChange={(e) => setTelefono(e.target.value)}
-          />
+          <Campo label="Folio / Lote" value={folio} onChange={(e) => setFolio(e.target.value)} />
+          <Campo label="Dirección" value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+          <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
+          <Campo label="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} />
         </div>
         <div className="flex gap-2 mt-4">
-          <button
-            onClick={onCancelar}
-            className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onGuardar({ folio, direccion, cliente, telefono })}
-            disabled={!direccion || !cliente}
-            className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
-          >
-            Guardar
-          </button>
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={() => onGuardar({ folio, direccion, cliente, telefono })} disabled={!direccion || !cliente} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">Guardar</button>
         </div>
       </div>
     </div>
@@ -3208,54 +2057,24 @@ function Fila2({ label, value }) {
 function Stat({ label, value, warn }) {
   return (
     <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
-      <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">
-        {label}
-      </div>
-      <div className={`font-mono text-sm mt-0.5 ${warn ? 'text-red-400' : ''}`}>
-        {value}
-      </div>
+      <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">{label}</div>
+      <div className={`font-mono text-sm mt-0.5 ${warn ? "text-red-400" : ""}`}>{value}</div>
     </div>
   );
 }
 
 function Badge({ estado }) {
   const map = {
-    pagado: {
-      icon: CheckCircle2,
-      cls: 'text-emerald-400 border-emerald-700',
-      txt: 'Pagado',
-    },
-    vencido: {
-      icon: AlertTriangle,
-      cls: 'text-red-400 border-red-800',
-      txt: 'Vencido',
-    },
-    gracia: {
-      icon: Clock,
-      cls: 'text-orange-300 border-orange-700',
-      txt: 'En gracia',
-    },
-    pendiente: {
-      icon: Clock,
-      cls: 'text-[#8A93A3] border-[#3a4864]',
-      txt: 'Pendiente',
-    },
-    revision: {
-      icon: Upload,
-      cls: 'text-amber-400 border-amber-700',
-      txt: 'En revisión',
-    },
-    parcial: {
-      icon: TrendingDown,
-      cls: 'text-blue-300 border-blue-700',
-      txt: 'Parcial',
-    },
+    pagado: { icon: CheckCircle2, cls: "text-emerald-400 border-emerald-700", txt: "Pagado" },
+    vencido: { icon: AlertTriangle, cls: "text-red-400 border-red-800", txt: "Vencido" },
+    gracia: { icon: Clock, cls: "text-orange-300 border-orange-700", txt: "En gracia" },
+    pendiente: { icon: Clock, cls: "text-[#8A93A3] border-[#3a4864]", txt: "Pendiente" },
+    revision: { icon: Upload, cls: "text-amber-400 border-amber-700", txt: "En revisión" },
+    parcial: { icon: TrendingDown, cls: "text-blue-300 border-blue-700", txt: "Parcial" },
   }[estado];
   const Icon = map.icon;
   return (
-    <span
-      className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border ${map.cls}`}
-    >
+    <span className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border ${map.cls}`}>
       <Icon size={11} /> {map.txt}
     </span>
   );
@@ -3269,8 +2088,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const [archivo, setArchivo] = useState(null);
 
   const montoNum = Number(monto) || 0;
-  const { moraPendiente, luzPendiente, luzMoraPendiente, montoRequerido } =
-    calcularEstadoPago(f, hoy, prop);
+  const { moraPendiente, luzPendiente, luzMoraPendiente, montoRequerido } = calcularEstadoPago(f, hoy, prop);
   const aTiempo = moraPendiente === 0;
   const excedente = montoNum > 0 ? Math.max(0, montoNum - montoRequerido) : 0;
   const faltante = montoNum > 0 ? Math.max(0, montoRequerido - montoNum) : 0;
@@ -3278,12 +2096,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const puedeEnviar = montoNum > 0 && archivo && (!necesitaDestino || destino);
 
   const enviar = () => {
-    const resultado =
-      faltante > 0.009
-        ? 'parcial'
-        : excedente > 0.009
-        ? 'excedente'
-        : 'completo';
+    const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
     onEnviar({
       archivo,
       montoDepositado: montoNum,
@@ -3292,95 +2105,53 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       excedente,
       faltante,
       resultado,
-      destinoExcedente:
-        resultado === 'excedente'
-          ? necesitaDestino
-            ? destino
-            : 'creditoSiguiente'
-          : null,
+      destinoExcedente: resultado === "excedente" ? (necesitaDestino ? destino : "creditoSiguiente") : null,
     });
   };
 
   return (
     <div className="mt-3 space-y-2.5">
-      <div className="text-[11px] text-[#8A93A3]">
-        Debes:{' '}
-        <span className="font-mono text-[#EDE7D9]">{fmt(montoRequerido)}</span>
-      </div>
+      <div className="text-[11px] text-[#8A93A3]">Debes: <span className="font-mono text-[#EDE7D9]">{fmt(montoRequerido)}</span></div>
       {prop.aplicaLuz && (luzPendiente > 0 || luzMoraPendiente > 0) && (
         <div className="text-[11px] text-[#C9A227]">
-          Incluye luz de este mes: {fmt(luzPendiente)}
-          {luzMoraPendiente > 0 ? ` + ${fmt(luzMoraPendiente)} de mora` : ''}
+          Incluye luz de este mes: {fmt(luzPendiente)}{luzMoraPendiente > 0 ? ` + ${fmt(luzMoraPendiente)} de mora` : ""}
         </div>
       )}
       {moraPendiente > 0.009 && (
         <div className="text-[11px] text-red-400 bg-red-950/30 border border-red-800 rounded-md p-2">
-          Ya tienes {fmt(moraPendiente)} de mora pendiente. De tu depósito,
-          primero se cubrirá esa mora y el resto se aplicará a la cuota.
+          Ya tienes {fmt(moraPendiente)} de mora pendiente. De tu depósito, primero se cubrirá esa mora y el resto se aplicará a la cuota.
         </div>
       )}
-      <CampoMoneda
-        label="¿Cuánto depositaste?"
-        value={monto}
-        onChange={setMonto}
-      />
+      <CampoMoneda label="¿Cuánto depositaste?" value={monto} onChange={setMonto} />
 
       {montoNum > 0 && faltante > 0.009 && (
-        <div className="text-[11px] text-blue-300">
-          Depositando esto, quedarían pendientes {fmt(faltante)} que se sumarán
-          a tu siguiente cuota.
-        </div>
+        <div className="text-[11px] text-blue-300">Depositando esto, quedarían pendientes {fmt(faltante)} que se sumarán a tu siguiente cuota.</div>
       )}
 
       {necesitaDestino && (
         <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-1.5">
-          <div className="text-[11px] text-[#C9A227]">
-            Depositaste {fmt(excedente)} de más. ¿Qué quieres hacer con eso?
-          </div>
+          <div className="text-[11px] text-[#C9A227]">Depositaste {fmt(excedente)} de más. ¿Qué quieres hacer con eso?</div>
           <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="radio"
-              name={`destino-${f.numero}`}
-              checked={destino === 'abono'}
-              onChange={() => setDestino('abono')}
-            />
+            <input type="radio" name={`destino-${f.numero}`} checked={destino === "abono"} onChange={() => setDestino("abono")} />
             Abonarlo a capital (reduce el plazo de tu crédito)
           </label>
           <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="radio"
-              name={`destino-${f.numero}`}
-              checked={destino === 'creditoSiguiente'}
-              onChange={() => setDestino('creditoSiguiente')}
-            />
+            <input type="radio" name={`destino-${f.numero}`} checked={destino === "creditoSiguiente"} onChange={() => setDestino("creditoSiguiente")} />
             Dejarlo como crédito para mi siguiente cuota
           </label>
         </div>
       )}
       {montoNum > 0 && excedente > 0.009 && !aTiempo && (
-        <div className="text-[11px] text-[#8A93A3]">
-          Como este pago llega después de los días de gracia, el excedente de{' '}
-          {fmt(excedente)} se guardará como crédito para tu siguiente cuota.
-        </div>
+        <div className="text-[11px] text-[#8A93A3]">Como este pago llega después de los días de gracia, el excedente de {fmt(excedente)} se guardará como crédito para tu siguiente cuota.</div>
       )}
 
       <label className="flex items-center justify-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
-        <Upload size={13} />{' '}
-        {archivo ? archivo.name : 'Adjuntar foto del depósito'}
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
-        />
+        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar foto del depósito"}
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
       </label>
 
-      <button
-        disabled={!puedeEnviar || subiendo}
-        onClick={enviar}
-        className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
-      >
-        {subiendo ? 'Enviando...' : 'Enviar comprobante'}
+      <button disabled={!puedeEnviar || subiendo} onClick={enviar} className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+        {subiendo ? "Enviando..." : "Enviar comprobante"}
       </button>
     </div>
   );
@@ -3388,40 +2159,18 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
 
 // ---------- Vista Cliente ----------
 
-function VistaCliente({
-  propiedades,
-  proyectos,
-  seleccion,
-  setSeleccion,
-  hoy,
-  actualizar,
-  onImprimir,
-}) {
+function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, actualizar, onImprimir }) {
   const prop = propiedades.find((p) => p.id === seleccion) || propiedades[0];
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
 
-  if (!prop)
-    return (
-      <div className="text-center text-[#8A93A3] mt-16 text-sm">
-        No hay propiedades registradas.
-      </div>
-    );
+  if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
   const proyecto = proyectos.find((py) => py.id === prop.proyectoId);
-  const {
-    saldoActual,
-    vencidas,
-    moraTotal,
-    luzPendiente,
-    proximaCuota,
-    pendienteActual,
-  } = resumenProp(prop, hoy);
+  const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual } = resumenProp(prop, hoy);
   const alDia = vencidas.length === 0;
   const ventana = useVentana(prop.tabla);
-  const notifsCliente = (prop.notificaciones || []).filter(
-    (n) => n.para === 'cliente'
-  );
+  const notifsCliente = (prop.notificaciones || []).filter((n) => n.para === "cliente");
 
   const historialMoras = prop.tabla
     .map((f) => ({
@@ -3434,10 +2183,7 @@ function VistaCliente({
     }))
     .filter((r) => r.generada > 0 || r.pagada > 0 || r.condonada > 0);
   const totalPagadaHist = historialMoras.reduce((s, r) => s + r.pagada, 0);
-  const totalCondonadaHist = historialMoras.reduce(
-    (s, r) => s + r.condonada,
-    0
-  );
+  const totalCondonadaHist = historialMoras.reduce((s, r) => s + r.condonada, 0);
 
   const subirComprobante = async (idx, datos) => {
     setSubiendoIdx(idx);
@@ -3446,17 +2192,11 @@ function VistaCliente({
       const base64 = await fileToBase64(datos.archivo);
 
       // Sube la imagen real a Supabase Storage y registra el comprobante en la base de datos.
-      const subido = await subirImagenComprobante(
-        prop.id,
-        numero,
-        datos.archivo
-      );
+      const subido = await subirImagenComprobante(prop.id, numero, datos.archivo);
       if (subido) {
         await guardarComprobanteEnBD(subido.cuotaId, subido.path, datos);
       } else {
-        console.error(
-          'No se pudo respaldar el comprobante en la nube; se guarda solo localmente por ahora.'
-        );
+        console.error("No se pudo respaldar el comprobante en la nube; se guarda solo localmente por ahora.");
       }
 
       actualizar(prop.id, (p) => {
@@ -3464,7 +2204,7 @@ function VistaCliente({
         fila.comprobante = {
           imagen: base64,
           fecha: new Date().toISOString(),
-          estado: 'revision',
+          estado: "revision",
           montoDepositado: datos.montoDepositado,
           moraAlSubir: datos.moraAlSubir,
           montoRequerido: datos.montoRequerido,
@@ -3473,20 +2213,12 @@ function VistaCliente({
           resultado: datos.resultado,
           destinoExcedente: datos.destinoExcedente,
         };
-        fila.estado = 'revision';
+        fila.estado = "revision";
         p.notificaciones = p.notificaciones || [];
-        let msg = `${p.cliente} subió un comprobante de pago para la cuota #${
-          fila.numero
-        } (${fmt(datos.montoDepositado)}).`;
-        if (datos.resultado === 'parcial')
-          msg += ` Es un pago parcial, falta ${fmt(datos.faltante)}.`;
-        if (datos.resultado === 'excedente')
-          msg += ` Tiene un excedente de ${fmt(datos.excedente)} (${
-            datos.destinoExcedente === 'abono'
-              ? 'para abono a capital'
-              : 'como crédito'
-          }).`;
-        p.notificaciones.unshift(nuevaNotificacion('inmobiliaria', msg));
+        let msg = `${p.cliente} subió un comprobante de pago para la cuota #${fila.numero} (${fmt(datos.montoDepositado)}).`;
+        if (datos.resultado === "parcial") msg += ` Es un pago parcial, falta ${fmt(datos.faltante)}.`;
+        if (datos.resultado === "excedente") msg += ` Tiene un excedente de ${fmt(datos.excedente)} (${datos.destinoExcedente === "abono" ? "para abono a capital" : "como crédito"}).`;
+        p.notificaciones.unshift(nuevaNotificacion("inmobiliaria", msg));
         return p;
       });
     } finally {
@@ -3502,76 +2234,39 @@ function VistaCliente({
       const aplicado = disponible - restante;
       p.saldoAFavor = restante;
       p.notificaciones = p.notificaciones || [];
-      p.notificaciones.unshift(
-        nuevaNotificacion(
-          'inmobiliaria',
-          `${p.cliente} aplicó ${fmt(
-            aplicado
-          )} de su saldo a favor a sus cuotas pendientes.`
-        )
-      );
+      p.notificaciones.unshift(nuevaNotificacion("inmobiliaria", `${p.cliente} aplicó ${fmt(aplicado)} de su saldo a favor a sus cuotas pendientes.`));
       return p;
     });
   };
 
-  const cursorIdx = prop.tabla.findIndex((f) => f.estado !== 'pagado');
+  const cursorIdx = prop.tabla.findIndex((f) => f.estado !== "pagado");
 
   const renderFila = (f, idx) => {
     const est = estadoReal(f, hoy, prop.diasGracia);
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
     const esLaQueToca = idx === cursorIdx;
     return (
-      <div
-        key={idx}
-        className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3"
-      >
+      <div key={idx} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs text-[#8A93A3] font-mono">
-              Cuota #{f.numero} · {fmtDate(f.fecha)}
-            </div>
+            <div className="text-xs text-[#8A93A3] font-mono">Cuota #{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago)}</div>
-            {f.ultimoRechazo && est !== 'pagado' && est !== 'revision' && (
-              <div className="text-[11px] text-red-400">
-                tu comprobante anterior fue rechazado, sube uno nuevo
-              </div>
-            )}
+            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado, sube uno nuevo</div>}
           </div>
           <Badge estado={est} />
         </div>
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
 
-        {(est === 'pendiente' ||
-          est === 'vencido' ||
-          est === 'gracia' ||
-          est === 'parcial') &&
-          esLaQueToca && (
-            <FormularioComprobante
-              f={f}
-              prop={prop}
-              hoy={hoy}
-              subiendo={subiendoIdx === idx}
-              onEnviar={(datos) => subirComprobante(idx, datos)}
-            />
-          )}
-        {(est === 'pendiente' ||
-          est === 'vencido' ||
-          est === 'gracia' ||
-          est === 'parcial') &&
-          !esLaQueToca &&
-          cursorIdx > -1 && (
-            <div className="mt-3 text-[11px] text-[#8A93A3] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
-              Ponte al día con tu cuota #{prop.tabla[cursorIdx].numero} de{' '}
-              {fmtDate(prop.tabla[cursorIdx].fecha)} antes de poder pagar esta.
-            </div>
-          )}
-        {est === 'revision' && (
-          <div className="mt-3 text-[11px] text-amber-400 flex items-center gap-1.5">
-            <Upload size={12} /> Tu comprobante está en revisión por la
-            inmobiliaria.
+        {(est === "pendiente" || est === "vencido" || est === "gracia" || est === "parcial") && esLaQueToca && (
+          <FormularioComprobante f={f} prop={prop} hoy={hoy} subiendo={subiendoIdx === idx} onEnviar={(datos) => subirComprobante(idx, datos)} />
+        )}
+        {(est === "pendiente" || est === "vencido" || est === "gracia" || est === "parcial") && !esLaQueToca && cursorIdx > -1 && (
+          <div className="mt-3 text-[11px] text-[#8A93A3] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+            Ponte al día con tu cuota #{prop.tabla[cursorIdx].numero} de {fmtDate(prop.tabla[cursorIdx].fecha)} antes de poder pagar esta.
           </div>
         )}
+        {est === "revision" && <div className="mt-3 text-[11px] text-amber-400 flex items-center gap-1.5"><Upload size={12} /> Tu comprobante está en revisión por la inmobiliaria.</div>}
       </div>
     );
   };
@@ -3579,33 +2274,16 @@ function VistaCliente({
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       {propiedades.length > 1 && (
-        <select
-          value={prop.id}
-          onChange={(e) => setSeleccion(e.target.value)}
-          className="mb-4 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm w-full"
-        >
-          {propiedades.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.cliente} · {p.direccion}
-            </option>
-          ))}
+        <select value={prop.id} onChange={(e) => setSeleccion(e.target.value)} className="mb-4 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm w-full">
+          {propiedades.map((p) => <option key={p.id} value={p.id}>{p.cliente} · {p.direccion}</option>)}
         </select>
       )}
 
       <div className="text-center mb-6">
-        {proyecto && (
-          <div className="text-[10px] uppercase tracking-widest text-[#C9A227] mb-1">
-            {proyecto.nombre}
-          </div>
-        )}
-        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">
-          Hola, {prop.cliente.split(' ')[0]}
-        </div>
+        {proyecto && <div className="text-[10px] uppercase tracking-widest text-[#C9A227] mb-1">{proyecto.nombre}</div>}
+        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">Hola, {prop.cliente.split(" ")[0]}</div>
         <div className="font-serif text-2xl mt-1">{prop.direccion}</div>
-        <button
-          onClick={() => onImprimir({ prop, proyecto, hoy })}
-          className="mt-3 inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md"
-        >
+        <button onClick={() => onImprimir({ prop, proyecto, hoy })} className="mt-3 inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md">
           <Printer size={13} /> Descargar tabla de pagos (PDF)
         </button>
       </div>
@@ -3614,45 +2292,27 @@ function VistaCliente({
         <div className="bg-red-950/40 border border-red-800 rounded-lg p-4 mb-4 flex gap-3 items-start">
           <Bell size={18} className="text-red-400 mt-0.5 shrink-0" />
           <div className="text-sm">
-            <div className="font-medium text-red-300">
-              Tienes {vencidas.length} pago{vencidas.length > 1 ? 's' : ''}{' '}
-              vencido{vencidas.length > 1 ? 's' : ''}
-            </div>
-            <div className="text-red-400/80 text-xs mt-0.5">
-              Se está generando un cargo por mora de {fmt(moraTotal)}. Ponte al
-              corriente para evitar que siga creciendo.
-            </div>
+            <div className="font-medium text-red-300">Tienes {vencidas.length} pago{vencidas.length > 1 ? "s" : ""} vencido{vencidas.length > 1 ? "s" : ""}</div>
+            <div className="text-red-400/80 text-xs mt-0.5">Se está generando un cargo por mora de {fmt(moraTotal)}. Ponte al corriente para evitar que siga creciendo.</div>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <div className="text-[10px] uppercase text-[#8A93A3]">
-            Saldo del crédito
-          </div>
+          <div className="text-[10px] uppercase text-[#8A93A3]">Saldo del crédito</div>
           <div className="font-mono text-xl mt-1">{fmt(saldoActual)}</div>
         </div>
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <div className="text-[10px] uppercase text-[#8A93A3]">
-            Próximo pago
-          </div>
-          <div className="font-mono text-xl mt-1">
-            {proximaCuota ? fmt(pendienteActual.montoRequerido) : '—'}
-          </div>
-          {proximaCuota && (
-            <div className="text-[11px] text-[#8A93A3] mt-0.5">
-              vence {fmtDate(proximaCuota.fecha)}
-            </div>
-          )}
+          <div className="text-[10px] uppercase text-[#8A93A3]">Próximo pago</div>
+          <div className="font-mono text-xl mt-1">{proximaCuota ? fmt(pendienteActual.montoRequerido) : "—"}</div>
+          {proximaCuota && <div className="text-[11px] text-[#8A93A3] mt-0.5">vence {fmtDate(proximaCuota.fecha)}</div>}
         </div>
       </div>
 
       {luzPendiente > 0 && (
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 mb-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-sm">
-            <Zap size={16} className="text-[#C9A227]" /> Luz pendiente
-          </div>
+          <div className="flex items-center gap-2 text-sm"><Zap size={16} className="text-[#C9A227]" /> Luz pendiente</div>
           <div className="font-mono text-sm">{fmt(luzPendiente)}</div>
         </div>
       )}
@@ -3660,16 +2320,9 @@ function VistaCliente({
       {prop.saldoAFavor > 0 && (
         <div className="bg-emerald-950/30 border border-emerald-800 rounded-lg p-4 mb-4">
           <div className="flex justify-between items-center">
-            <div className="text-sm text-emerald-300">
-              Tienes {fmt(prop.saldoAFavor)} de saldo a favor
-            </div>
+            <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} de saldo a favor</div>
             {proximaCuota && (
-              <button
-                onClick={() =>
-                  aplicarSaldoAFavor(prop.tabla.indexOf(proximaCuota))
-                }
-                className="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded-md shrink-0"
-              >
+              <button onClick={() => aplicarSaldoAFavor(prop.tabla.indexOf(proximaCuota))} className="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded-md shrink-0">
                 Aplicar a mi próxima cuota
               </button>
             )}
@@ -3679,118 +2332,48 @@ function VistaCliente({
 
       {notifsCliente.length > 0 && (
         <div className="mb-4">
-          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">
-            Avisos
-          </div>
+          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Avisos</div>
           <div className="space-y-2">
             {notifsCliente.slice(0, 3).map((n) => (
-              <div
-                key={n.id}
-                className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-sm flex gap-2 items-start"
-              >
+              <div key={n.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-sm flex gap-2 items-start">
                 <Bell size={14} className="text-[#C9A227] mt-0.5 shrink-0" />
-                <div>
-                  <div>{n.mensaje}</div>
-                  <div className="text-[11px] text-[#8A93A3] mt-0.5">
-                    {fmtDateTime(n.fecha)}
-                  </div>
-                </div>
+                <div><div>{n.mensaje}</div><div className="text-[11px] text-[#8A93A3] mt-0.5">{fmtDateTime(n.fecha)}</div></div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2 mt-6">
-        Tus cuotas
-      </div>
+      <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2 mt-6">Tus cuotas</div>
       <div className="space-y-2">
-        {ventana.hayMasAnt && (
-          <BotonMas
-            direccion="arriba"
-            texto="Ver cuotas anteriores"
-            onClick={() => ventana.setExtraAnt((v) => v + 6)}
-          />
-        )}
+        {ventana.hayMasAnt && <BotonMas direccion="arriba" texto="Ver cuotas anteriores" onClick={() => ventana.setExtraAnt((v) => v + 6)} />}
         {ventana.visiblesAnt.map((f) => renderFila(f, prop.tabla.indexOf(f)))}
-        <div className="text-center text-[10px] uppercase tracking-widest text-[#8A93A3] py-1">
-          Hoy
-        </div>
+        <div className="text-center text-[10px] uppercase tracking-widest text-[#8A93A3] py-1">Hoy</div>
         {ventana.visiblesSig.map((f) => renderFila(f, prop.tabla.indexOf(f)))}
-        {ventana.hayMasSig && (
-          <BotonMas
-            direccion="abajo"
-            texto="Ver cuotas siguientes"
-            onClick={() => ventana.setExtraSig((v) => v + 6)}
-          />
-        )}
+        {ventana.hayMasSig && <BotonMas direccion="abajo" texto="Ver cuotas siguientes" onClick={() => ventana.setExtraSig((v) => v + 6)} />}
       </div>
 
       {historialMoras.length > 0 && (
         <div className="mt-6">
-          <button
-            onClick={() => setVerHistorialMoras((v) => !v)}
-            className="w-full flex items-center justify-between text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2"
-          >
+          <button onClick={() => setVerHistorialMoras((v) => !v)} className="w-full flex items-center justify-between text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">
             <span>Historial de moras</span>
-            {verHistorialMoras ? (
-              <ChevronUp size={14} />
-            ) : (
-              <ChevronDown size={14} />
-            )}
+            {verHistorialMoras ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {verHistorialMoras && (
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-2 mb-1">
-                <Stat
-                  label="Mora pagada (histórico)"
-                  value={fmt(totalPagadaHist)}
-                />
-                <Stat
-                  label="Mora condonada (histórico)"
-                  value={fmt(totalCondonadaHist)}
-                />
-                <Stat
-                  label="Mora pendiente hoy"
-                  value={fmt(moraTotal)}
-                  warn={moraTotal > 0}
-                />
+                <Stat label="Mora pagada (histórico)" value={fmt(totalPagadaHist)} />
+                <Stat label="Mora condonada (histórico)" value={fmt(totalCondonadaHist)} />
+                <Stat label="Mora pendiente hoy" value={fmt(moraTotal)} warn={moraTotal > 0} />
               </div>
               {historialMoras.map((r) => (
-                <div
-                  key={r.numero}
-                  className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]"
-                >
-                  <div className="text-[#8A93A3] font-mono mb-1.5">
-                    Cuota #{r.numero} · {fmtDate(r.fecha)}
-                  </div>
+                <div key={r.numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]">
+                  <div className="text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDate(r.fecha)}</div>
                   <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <div className="text-[#8A93A3]">Generada</div>
-                      <div className="font-mono">{fmt(r.generada)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[#8A93A3]">Pagada</div>
-                      <div className="font-mono text-emerald-400">
-                        {fmt(r.pagada)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[#8A93A3]">Condonada</div>
-                      <div className="font-mono text-[#C9A227]">
-                        {fmt(r.condonada)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[#8A93A3]">Pendiente</div>
-                      <div
-                        className={`font-mono ${
-                          r.pendiente > 0 ? 'text-red-400' : ''
-                        }`}
-                      >
-                        {fmt(r.pendiente)}
-                      </div>
-                    </div>
+                    <div><div className="text-[#8A93A3]">Generada</div><div className="font-mono">{fmt(r.generada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Pagada</div><div className="font-mono text-emerald-400">{fmt(r.pagada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Condonada</div><div className="font-mono text-[#C9A227]">{fmt(r.condonada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Pendiente</div><div className={`font-mono ${r.pendiente > 0 ? "text-red-400" : ""}`}>{fmt(r.pendiente)}</div></div>
                   </div>
                 </div>
               ))}
@@ -3800,9 +2383,7 @@ function VistaCliente({
       )}
 
       <div className="text-[11px] text-[#8A93A3] mt-6 text-center leading-relaxed">
-        Los avisos automáticos por SMS, WhatsApp o correo no se envían desde
-        esta vista de demostración — requieren conectar un servicio como Twilio
-        o un proveedor de email al backend.
+        Los avisos automáticos por SMS, WhatsApp o correo no se envían desde esta vista de demostración — requieren conectar un servicio como Twilio o un proveedor de email al backend.
       </div>
     </div>
   );

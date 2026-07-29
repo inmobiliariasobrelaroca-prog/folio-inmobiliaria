@@ -820,6 +820,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [cargado, setCargado] = useState(false);
   const esCliente = perfil.tipo === "cliente";
   const esAdmin = perfil.tipo === "staff" && !!perfil.usuario?.roles?.es_administrador;
+  const puede = (clave) => esAdmin || !!perfil.usuario?.roles?.permisos?.[clave];
   const [modo, setModo] = useState(esCliente ? "cliente" : "inmobiliaria");
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
@@ -1024,11 +1025,12 @@ function AppInterno({ perfil, cerrarSesion }) {
           setModo={esCliente ? null : (m) => { setModo(m); setPantalla("proyectos"); setProyectoSel(null); setSeleccion(null); }}
           cerrarSesion={cerrarSesion}
           esAdmin={esAdmin}
+          puedeVerEquipo={esAdmin || puede("crear_usuarios")}
           onEquipo={() => setPantalla("equipo")}
         />
 
         {modo === "inmobiliaria" && pantalla === "equipo" && (
-          <PantallaEquipo onVolver={() => setPantalla("proyectos")} />
+          <PantallaEquipo onVolver={() => setPantalla("proyectos")} esAdmin={esAdmin} />
         )}
 
         {modo === "inmobiliaria" && pantalla === "proyectos" && (
@@ -1039,6 +1041,7 @@ function AppInterno({ perfil, cerrarSesion }) {
             onNuevo={() => setPantalla("nuevoProyecto")}
             onAbrir={(id) => { setProyectoSel(id); setPantalla("propiedades"); }}
             onActualizar={actualizarProyecto}
+            puedeCrear={puede("crear_proyectos_propiedades")}
           />
         )}
 
@@ -1054,6 +1057,7 @@ function AppInterno({ perfil, cerrarSesion }) {
             onVolver={() => { setPantalla("proyectos"); setProyectoSel(null); }}
             onNueva={() => setPantalla("nuevaPropiedad")}
             onAbrir={(id) => { setSeleccion(id); setPantalla("detalle"); }}
+            puedeCrear={puede("crear_proyectos_propiedades")}
           />
         )}
 
@@ -1062,7 +1066,7 @@ function AppInterno({ perfil, cerrarSesion }) {
         )}
 
         {modo === "inmobiliaria" && pantalla === "detalle" && propSel && (
-          <DetallePropiedad prop={propSel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} />
+          <DetallePropiedad prop={propSel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} />
         )}
 
         {modo === "cliente" && (
@@ -1082,7 +1086,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion, esAdmin, onEquipo }) {
+function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -1100,7 +1104,7 @@ function TopBar({ modo, setModo, cerrarSesion, esAdmin, onEquipo }) {
               <button onClick={() => setModo("cliente")} className={`px-3 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
             </div>
           )}
-          {esAdmin && modo === "inmobiliaria" && (
+          {puedeVerEquipo && modo === "inmobiliaria" && (
             <button onClick={onEquipo} title="Equipo y roles" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Users size={16} />
             </button>
@@ -1127,7 +1131,7 @@ const PERMISOS_DISPONIBLES = [
   ["crear_usuarios", "Crear otros usuarios"],
 ];
 
-function PantallaEquipo({ onVolver }) {
+function PantallaEquipo({ onVolver, esAdmin }) {
   const [tab, setTab] = useState("usuarios");
   const [roles, setRoles] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -1153,15 +1157,19 @@ function PantallaEquipo({ onVolver }) {
 
       <div className="flex gap-1 mb-4 border-b border-[#2A3547]">
         <button onClick={() => setTab("usuarios")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "usuarios" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Users size={14} /> Usuarios</button>
-        <button onClick={() => setTab("roles")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "roles" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Shield size={14} /> Roles</button>
+        {esAdmin && (
+          <button onClick={() => setTab("roles")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "roles" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Shield size={14} /> Roles</button>
+        )}
       </div>
 
       {cargando ? (
         <div className="text-sm text-[#8A93A3]">Cargando...</div>
       ) : tab === "usuarios" ? (
         <PestanaUsuarios usuarios={usuarios} roles={roles} onCreado={cargar} />
-      ) : (
+      ) : esAdmin ? (
         <PestanaRoles roles={roles} onCreado={cargar} />
+      ) : (
+        <div className="text-sm text-[#8A93A3]">Solo el Administrador puede ver y editar roles.</div>
       )}
     </div>
   );
@@ -1377,16 +1385,18 @@ function resumenProp(prop, hoy) {
 
 // ---------- Proyectos ----------
 
-function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onActualizar }) {
+function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onActualizar, puedeCrear }) {
   const [editando, setEditando] = useState(null);
 
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center justify-between mb-5">
         <h1 className="font-serif text-2xl">Proyectos</h1>
-        <button onClick={onNuevo} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
-          <Plus size={16} /> Nuevo proyecto
-        </button>
+        {puedeCrear && (
+          <button onClick={onNuevo} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
+            <Plus size={16} /> Nuevo proyecto
+          </button>
+        )}
       </div>
 
       {proyectos.length === 0 && <div className="text-center text-[#8A93A3] mt-16 text-sm">Aún no hay proyectos. Crea el primero para empezar a registrar propiedades.</div>}
@@ -1471,7 +1481,7 @@ function NuevoProyecto({ onCancelar, onCrear }) {
 
 // ---------- Propiedades dentro de un proyecto ----------
 
-function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbrir }) {
+function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbrir, puedeCrear }) {
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-1">
@@ -1480,9 +1490,11 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
       </div>
       <div className="flex items-center justify-between mb-5 pl-7">
         <h1 className="font-serif text-2xl">{proyecto.nombre}</h1>
-        <button onClick={onNueva} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
-          <Plus size={16} /> Nueva
-        </button>
+        {puedeCrear && (
+          <button onClick={onNueva} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium">
+            <Plus size={16} /> Nueva
+          </button>
+        )}
       </div>
 
       {propiedades.length === 0 && <div className="text-center text-[#8A93A3] mt-16 text-sm">Este proyecto aún no tiene propiedades registradas.</div>}
@@ -1807,7 +1819,7 @@ function DetalleFila({ f, mora, prop, hoy }) {
 
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
-function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
+function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
@@ -2060,10 +2072,10 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
           </div>
           <div className="flex items-center gap-2">
             <Badge estado={est} />
-            {mora > 0 && est !== "pagado" && condonarIdx !== idx && (
+            {mora > 0 && est !== "pagado" && condonarIdx !== idx && puede("condonar_mora") && (
               <button onClick={() => abrirCondonar(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Perdonar mora</button>
             )}
-            {(est === "vencido" || est === "pendiente" || est === "gracia" || est === "parcial") && (
+            {(est === "vencido" || est === "pendiente" || est === "gracia" || est === "parcial") && puede("aprobar_rechazar_pagos") && (
               <button onClick={() => marcarPagado(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Marcar pagado</button>
             )}
           </div>
@@ -2147,10 +2159,14 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
                 </div>
               </div>
             )}
-            <div className="flex gap-2 mt-2.5">
-              <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
-              <button onClick={() => rechazarComprobante(idx)} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
-            </div>
+            {puede("aprobar_rechazar_pagos") ? (
+              <div className="flex gap-2 mt-2.5">
+                <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
+                <button onClick={() => rechazarComprobante(idx)} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
+              </div>
+            ) : (
+              <div className="mt-2.5 text-[11px] text-[#8A93A3]">No tienes permiso para aprobar o rechazar pagos.</div>
+            )}
             <button disabled title="Se activará cuando la app esté en la nube" className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-[#6b7280] border border-dashed border-[#2A3547] rounded-md py-1.5 cursor-not-allowed">
               <Sparkles size={12} /> Leer comprobante con IA (próximamente)
             </button>
@@ -2230,12 +2246,14 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
 
       {tab === "contrato" && (
         <div className="space-y-4">
-          <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-[#2A3547] rounded-lg py-8 cursor-pointer hover:border-[#C9A227]/50">
-            <FileText size={22} className="text-[#8A93A3]" />
-            <span className="text-sm text-[#8A93A3]">{subiendoContrato ? "Subiendo..." : "Subir documentos (contrato, addendums, identificaciones...)"}</span>
-            <span className="text-[11px] text-[#6b7280]">Puedes seleccionar varios PDF o fotos a la vez</span>
-            <input type="file" accept="application/pdf,image/*" multiple className="hidden" onChange={(e) => subirDocumentos(e.target.files)} />
-          </label>
+          {puede("subir_documentos") && (
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-[#2A3547] rounded-lg py-8 cursor-pointer hover:border-[#C9A227]/50">
+              <FileText size={22} className="text-[#8A93A3]" />
+              <span className="text-sm text-[#8A93A3]">{subiendoContrato ? "Subiendo..." : "Subir documentos (contrato, addendums, identificaciones...)"}</span>
+              <span className="text-[11px] text-[#6b7280]">Puedes seleccionar varios PDF o fotos a la vez</span>
+              <input type="file" accept="application/pdf,image/*" multiple className="hidden" onChange={(e) => subirDocumentos(e.target.files)} />
+            </label>
+          )}
 
           {(prop.documentos || []).length > 0 && (
             <div className="space-y-2">
@@ -2321,9 +2339,11 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
                   </>
                 )}
               </div>
-              <button onClick={abrirCondiciones} className="flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-2 rounded-md">
-                <Lock size={13} /> Modificar (requiere confirmar tu contraseña)
-              </button>
+              {puede("modificar_condiciones") && (
+                <button onClick={abrirCondiciones} className="flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-2 rounded-md">
+                  <Lock size={13} /> Modificar (requiere confirmar tu contraseña)
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

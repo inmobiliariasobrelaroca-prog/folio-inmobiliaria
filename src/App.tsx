@@ -2299,7 +2299,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
             )}
           </div>
 
-          {!condicionesDesbloqueadas ? (
+          {!condicionesDesbloqueadas || !condForm ? (
             <div className="space-y-3">
               <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
                 <Fila2 label="Precio de venta" value={fmt(prop.precio)} />

@@ -1574,13 +1574,21 @@ function Campo({ label, ...props }) {
 // Campo de dinero: muestra el número con comas de miles mientras el usuario escribe,
 // para que no se confunda si está poniendo cientos, miles o millones.
 function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
-  const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT") : "";
+  const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT", { maximumFractionDigits: 2 }) : "";
   const [texto, setTexto] = useState(formatear(value));
 
   const manejarCambio = (e) => {
-    const crudo = e.target.value.replace(/[^0-9]/g, "");
-    const numero = crudo === "" ? 0 : parseInt(crudo, 10);
-    setTexto(crudo === "" ? "" : numero.toLocaleString("es-GT"));
+    let crudo = e.target.value.replace(/[^0-9.]/g, "");
+    const partes = crudo.split(".");
+    if (partes.length > 2) crudo = partes[0] + "." + partes.slice(1).join("");
+    let [enteroStr, decimalStr] = crudo.split(".");
+    if (decimalStr !== undefined) decimalStr = decimalStr.slice(0, 2);
+
+    const numero = crudo === "" || crudo === "." ? 0 : parseFloat(crudo.endsWith(".") ? crudo.slice(0, -1) : crudo) || 0;
+    const enteroFormateado = enteroStr === "" ? "" : parseInt(enteroStr || "0", 10).toLocaleString("es-GT");
+    const nuevoTexto = decimalStr !== undefined ? `${enteroFormateado}.${decimalStr}` : crudo.endsWith(".") ? `${enteroFormateado}.` : enteroFormateado;
+
+    setTexto(nuevoTexto);
     onChange(numero);
   };
 
@@ -1591,7 +1599,7 @@ function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A93A3] text-sm">Q</span>
         <input
           type="text"
-          inputMode="numeric"
+          inputMode="decimal"
           value={texto}
           onChange={manejarCambio}
           placeholder={placeholder}

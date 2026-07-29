@@ -1571,15 +1571,15 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
           <CampoMoneda label="Enganche" value={f.enganche} onChange={(n) => setF({ ...f, enganche: n })} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Campo label="Tasa anual %" type="number" value={f.tasaAnual} onChange={set("tasaAnual")} />
-          <Campo label="Plazo (años)" type="number" value={f.plazoAnios} onChange={set("plazoAnios")} />
+          <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={f.tasaAnual} onChange={set("tasaAnual")} />
+          <Campo label="Plazo (años)" type="number" min="0" step="1" value={f.plazoAnios} onChange={set("plazoAnios")} />
         </div>
         <Campo label="Fecha de inicio" type="date" value={f.fechaInicio} onChange={set("fechaInicio")} />
 
         <div className="border-t border-[#2A3547] pt-4">
           <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">Mora del crédito</div>
           <div className="grid grid-cols-2 gap-3">
-            <Campo label="Días de gracia" type="number" value={f.diasGracia} onChange={set("diasGracia")} />
+            <Campo label="Días de gracia" type="number" min="0" step="1" value={f.diasGracia} onChange={(e) => setF({ ...f, diasGracia: e.target.value.replace(/[^0-9]/g, "") })} />
             <CampoMoneda label="Mora diaria" value={f.moraDiaria} onChange={(n) => setF({ ...f, moraDiaria: n })} />
           </div>
           <p className="text-[11px] text-[#8A93A3] mt-1.5">Durante los días de gracia no se cobra mora. Al pasar ese plazo, se cobra este monto fijo por cada día de atraso.</p>
@@ -1595,7 +1595,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
             <div className="mt-3 space-y-3">
               <CampoMoneda label="Monto mensual de luz" value={f.montoLuzMensual} onChange={(n) => setF({ ...f, montoLuzMensual: n })} />
               <div className="grid grid-cols-2 gap-3">
-                <Campo label="Días de gracia (luz)" type="number" value={f.diasGraciaLuz} onChange={set("diasGraciaLuz")} />
+                <Campo label="Días de gracia (luz)" type="number" min="0" step="1" value={f.diasGraciaLuz} onChange={(e) => setF({ ...f, diasGraciaLuz: e.target.value.replace(/[^0-9]/g, "") })} />
                 <CampoMoneda label="Mora diaria (luz)" value={f.moraDiariaLuz} onChange={(n) => setF({ ...f, moraDiariaLuz: n })} />
               </div>
               <p className="text-[11px] text-[#8A93A3]">Este monto se agregará automáticamente a cada cuota, junto con su propia mora si no se paga a tiempo.</p>
@@ -2335,11 +2335,11 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
               <div className="grid grid-cols-2 gap-3">
                 <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
                 <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
-                <Campo label="Tasa anual %" type="number" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
-                <Campo label="Plazo (años)" type="number" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
+                <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
+                <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Campo label="Días de gracia (crédito)" type="number" value={condForm.diasGracia} onChange={(e) => setCondForm({ ...condForm, diasGracia: e.target.value })} />
+                <Campo label="Días de gracia (crédito)" type="number" min="0" step="1" value={condForm.diasGracia} onChange={(e) => setCondForm({ ...condForm, diasGracia: e.target.value.replace(/[^0-9]/g, "") })} />
                 <CampoMoneda label="Mora diaria (crédito)" value={condForm.moraDiaria} onChange={(n) => setCondForm({ ...condForm, moraDiaria: n })} />
               </div>
 
@@ -2352,7 +2352,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
                   <div className="mt-3 space-y-3">
                     <CampoMoneda label="Monto mensual de luz" value={condForm.montoLuzMensual} onChange={(n) => setCondForm({ ...condForm, montoLuzMensual: n })} />
                     <div className="grid grid-cols-2 gap-3">
-                      <Campo label="Días de gracia (luz)" type="number" value={condForm.diasGraciaLuz} onChange={(e) => setCondForm({ ...condForm, diasGraciaLuz: e.target.value })} />
+                      <Campo label="Días de gracia (luz)" type="number" min="0" step="1" value={condForm.diasGraciaLuz} onChange={(e) => setCondForm({ ...condForm, diasGraciaLuz: e.target.value.replace(/[^0-9]/g, "") })} />
                       <CampoMoneda label="Mora diaria (luz)" value={condForm.moraDiariaLuz} onChange={(n) => setCondForm({ ...condForm, moraDiariaLuz: n })} />
                     </div>
                   </div>

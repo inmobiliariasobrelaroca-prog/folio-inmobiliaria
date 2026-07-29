@@ -1334,6 +1334,33 @@ function ModalNuevoRol({ onCancelar, onCreado }) {
   );
 }
 
+// Compara el estado real del crédito (con los abonos a capital ya aplicados) contra cómo
+// habría estado si nunca se hubiera hecho ningún abono — para mostrarle al cliente el
+// beneficio concreto: cuántas cuotas se ahorró y cuánto menos debe hoy.
+function calcularComparativaAbono(prop) {
+  const totalAbonado = prop.tabla.reduce((s, f) => s + (f.abono || 0), 0);
+  if (totalAbonado <= 0) return null;
+
+  const original = generarTabla(prop); // misma tasa/plazo original, sin abonos
+  const idxActual = prop.tabla.findIndex((f) => f.estado !== "pagado");
+  const numeroActual = idxActual === -1 ? prop.tabla.length + 1 : prop.tabla[idxActual].numero;
+  const filaOriginal = original.find((f) => f.numero === numeroActual) || original[original.length - 1];
+
+  const saldoSinAbono = filaOriginal ? filaOriginal.saldoInicial : 0;
+  const saldoConAbono = idxActual === -1 ? 0 : prop.tabla[idxActual].saldoInicial;
+  const cuotasExoneradas = Math.max(0, original.length - prop.tabla.length);
+
+  return {
+    totalAbonado,
+    saldoSinAbono,
+    saldoConAbono,
+    ahorroSaldo: Math.max(0, saldoSinAbono - saldoConAbono),
+    cuotasExoneradas,
+    cuotasTotalesOriginal: original.length,
+    cuotasTotalesActual: prop.tabla.length,
+  };
+}
+
 function resumenProp(prop, hoy) {
   const filas = prop.tabla;
   const saldoActual = filas.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
@@ -2541,6 +2568,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
 
   const proyecto = proyectos.find((py) => py.id === prop.proyectoId);
   const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual } = resumenProp(prop, hoy);
+  const comparativaAbono = calcularComparativaAbono(prop);
   const alDia = vencidas.length === 0;
   const ventana = useVentana(prop.tabla);
   const notifsCliente = (prop.notificaciones || []).filter((n) => n.para === "cliente");
@@ -2700,6 +2728,31 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {comparativaAbono && (
+        <div className="bg-[#161F2E] border border-[#C9A227]/30 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingDown size={16} className="text-[#C9A227]" />
+            <div className="text-sm font-medium">El beneficio de tus abonos a capital</div>
+          </div>
+          <div className="text-[11px] text-[#8A93A3] mb-3">
+            Has abonado {fmt(comparativaAbono.totalAbonado)} a capital en total. Gracias a eso, te ahorraste{" "}
+            <span className="text-[#C9A227] font-medium">{comparativaAbono.cuotasExoneradas} cuota{comparativaAbono.cuotasExoneradas !== 1 ? "s" : ""}</span> de tu crédito
+            ({comparativaAbono.cuotasTotalesOriginal} cuotas originales → {comparativaAbono.cuotasTotalesActual} ahora).
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-3">
+              <div className="text-[10px] uppercase text-[#8A93A3]">Saldo sin tus abonos</div>
+              <div className="font-mono text-sm mt-1 line-through text-[#8A93A3]">{fmt(comparativaAbono.saldoSinAbono)}</div>
+            </div>
+            <div className="bg-[#0C121C] border border-emerald-800 rounded-md p-3">
+              <div className="text-[10px] uppercase text-[#8A93A3]">Tu saldo real hoy</div>
+              <div className="font-mono text-sm mt-1 text-emerald-400">{fmt(comparativaAbono.saldoConAbono)}</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-emerald-400 mt-2 text-center">Debes {fmt(comparativaAbono.ahorroSaldo)} menos gracias a tus abonos.</div>
         </div>
       )}
 

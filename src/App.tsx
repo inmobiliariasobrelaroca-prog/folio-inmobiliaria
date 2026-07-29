@@ -2269,7 +2269,9 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Mensualidad" value={fmt(prop.tabla[0]?.pago ?? 0)} />
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
-              <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
+              {prop.aplicaLuz && (
+                <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
+              )}
               <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicio)} />
             </div>
           </div>

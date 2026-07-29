@@ -2753,6 +2753,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
             </div>
           </div>
           <div className="text-[11px] text-emerald-400 mt-2 text-center">Debes {fmt(comparativaAbono.ahorroSaldo)} menos gracias a tus abonos.</div>
+          {proximaCuota && (
+            <div className="text-[11px] text-[#8A93A3] mt-3 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+              💡 En tu próxima cuota, {Math.round((proximaCuota.interes / proximaCuota.pago) * 100)}% es interés y solo {Math.round((proximaCuota.capital / proximaCuota.pago) * 100)}% reduce tu deuda. Por eso entre más pronto abones a capital, más plazo te ahorras — con los años esa proporción se va invirtiendo poco a poco.
+            </div>
+          )}
         </div>
       )}
 

@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -296,6 +296,30 @@ async function leerComprobanteConIA(_imagenBase64) {
 
 function nuevaNotificacion(para, mensaje) {
   return { id: crypto.randomUUID(), para, mensaje, fecha: new Date().toISOString(), leida: false };
+}
+
+// ---------- Llamada a la Edge Function segura (crea/gestiona usuarios con la llave secreta,
+// que solo vive en el servidor de Supabase, nunca en el navegador) ----------
+
+const SUPABASE_URL_FUNCIONES = import.meta.env.VITE_SUPABASE_URL || "https://knquysqjhprnyztkgmwb.supabase.co";
+
+async function llamarGestionUsuarios(body) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL_FUNCIONES}/functions/v1/gestionar-usuarios`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Error en el servidor");
+  return json;
+}
+
+function generarCodigoNumerico() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 // Vista imprimible: solo visible cuando el navegador está imprimiendo (o guardando como PDF).
@@ -661,51 +685,78 @@ function datosIniciales() {
 // ---------- Login ----------
 
 function Login({ onIngreso }) {
+  const [modo, setModo] = useState("cliente"); // 'cliente' | 'staff'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [codigo, setCodigo] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
 
-  const ingresar = async (e) => {
+  const ingresarStaff = async (e) => {
     e.preventDefault();
     setError("");
     setCargando(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setCargando(false);
-    if (error) {
-      setError("Correo o contraseña incorrectos.");
-      return;
-    }
+    if (error) { setError("Correo o contraseña incorrectos."); return; }
+    onIngreso(data.session);
+  };
+
+  const ingresarCliente = async (e) => {
+    e.preventDefault();
+    setError("");
+    setCargando(true);
+    const codigoLimpio = codigo.trim();
+    const emailSintetico = `cliente${codigoLimpio}@cliente.folio`;
+    const { data, error } = await supabase.auth.signInWithPassword({ email: emailSintetico, password: codigoLimpio });
+    setCargando(false);
+    if (error) { setError("Código incorrecto."); return; }
     onIngreso(data.session);
   };
 
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
-      <form onSubmit={ingresar} className="w-full max-w-sm">
+      <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="w-12 h-12 rounded-md bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-xl mx-auto mb-3">F</div>
           <div className="font-serif text-2xl">Folio</div>
           <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Control de financiamiento</div>
         </div>
 
-        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
-          <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Correo</span>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
-          </label>
-          <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Contraseña</span>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
-          </label>
-          {error && <div className="text-xs text-red-400">{error}</div>}
-          <button type="submit" disabled={cargando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
-            {cargando ? "Entrando..." : "Iniciar sesión"}
-          </button>
+        <div className="flex rounded-full bg-[#1A2333] p-1 text-xs mb-4">
+          <button type="button" onClick={() => { setModo("cliente"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Soy cliente</button>
+          <button type="button" onClick={() => { setModo("staff"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "staff" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Soy inmobiliaria</button>
         </div>
-        <p className="text-[11px] text-[#8A93A3] text-center mt-4">
-          Tanto el equipo de la inmobiliaria como los clientes inician sesión aquí con su correo y contraseña.
-        </p>
-      </form>
+
+        {modo === "cliente" ? (
+          <form onSubmit={ingresarCliente} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu código de acceso</span>
+              <input type="text" inputMode="numeric" placeholder="Ej. 384729" required value={codigo} onChange={(e) => setCodigo(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
+            </label>
+            {error && <div className="text-xs text-red-400">{error}</div>}
+            <button type="submit" disabled={cargando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+              {cargando ? "Entrando..." : "Iniciar sesión"}
+            </button>
+            <p className="text-[11px] text-[#8A93A3] text-center">Tu código te lo dio la inmobiliaria. Si lo perdiste, pídeles que te lo regeneren.</p>
+          </form>
+        ) : (
+          <form onSubmit={ingresarStaff} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Correo</span>
+              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Contraseña</span>
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+            </label>
+            {error && <div className="text-xs text-red-400">{error}</div>}
+            <button type="submit" disabled={cargando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+              {cargando ? "Entrando..." : "Iniciar sesión"}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
@@ -767,6 +818,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [propiedades, setPropiedades] = useState([]);
   const [cargado, setCargado] = useState(false);
   const esCliente = perfil.tipo === "cliente";
+  const esAdmin = perfil.tipo === "staff" && !!perfil.usuario?.roles?.es_administrador;
   const [modo, setModo] = useState(esCliente ? "cliente" : "inmobiliaria");
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
@@ -931,7 +983,17 @@ function AppInterno({ perfil, cerrarSesion }) {
   return (
     <>
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
-        <TopBar modo={modo} setModo={esCliente ? null : (m) => { setModo(m); setPantalla("proyectos"); setProyectoSel(null); setSeleccion(null); }} cerrarSesion={cerrarSesion} />
+        <TopBar
+          modo={modo}
+          setModo={esCliente ? null : (m) => { setModo(m); setPantalla("proyectos"); setProyectoSel(null); setSeleccion(null); }}
+          cerrarSesion={cerrarSesion}
+          esAdmin={esAdmin}
+          onEquipo={() => setPantalla("equipo")}
+        />
+
+        {modo === "inmobiliaria" && pantalla === "equipo" && (
+          <PantallaEquipo onVolver={() => setPantalla("proyectos")} />
+        )}
 
         {modo === "inmobiliaria" && pantalla === "proyectos" && (
           <ListaProyectos
@@ -984,7 +1046,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion }) {
+function TopBar({ modo, setModo, cerrarSesion, esAdmin, onEquipo }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -1002,8 +1064,233 @@ function TopBar({ modo, setModo, cerrarSesion }) {
               <button onClick={() => setModo("cliente")} className={`px-3 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
             </div>
           )}
+          {esAdmin && modo === "inmobiliaria" && (
+            <button onClick={onEquipo} title="Equipo y roles" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Users size={16} />
+            </button>
+          )}
           <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
             <LogOut size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Equipo: usuarios de la inmobiliaria y roles con permisos ----------
+
+const PERMISOS_DISPONIBLES = [
+  ["crear_proyectos_propiedades", "Crear proyectos y propiedades"],
+  ["aprobar_rechazar_pagos", "Aprobar/rechazar comprobantes de pago"],
+  ["condonar_mora", "Condonar mora"],
+  ["modificar_condiciones", "Modificar precio/tasa/plazo/mora"],
+  ["agregar_cargos_luz", "Agregar cargos de luz"],
+  ["subir_documentos", "Subir documentos del contrato"],
+  ["ver_reportes", "Ver reportes e historial de moras"],
+  ["crear_usuarios", "Crear otros usuarios"],
+];
+
+function PantallaEquipo({ onVolver }) {
+  const [tab, setTab] = useState("usuarios");
+  const [roles, setRoles] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data: rolesData } = await supabase.from("roles").select("*").order("created_at");
+    const { data: usuariosData } = await supabase.from("usuarios").select("*, roles(*)").order("created_at");
+    setRoles(rolesData || []);
+    setUsuarios(usuariosData || []);
+    setCargando(false);
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Equipo y roles</h1>
+      </div>
+
+      <div className="flex gap-1 mb-4 border-b border-[#2A3547]">
+        <button onClick={() => setTab("usuarios")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "usuarios" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Users size={14} /> Usuarios</button>
+        <button onClick={() => setTab("roles")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "roles" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Shield size={14} /> Roles</button>
+      </div>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : tab === "usuarios" ? (
+        <PestanaUsuarios usuarios={usuarios} roles={roles} onCreado={cargar} />
+      ) : (
+        <PestanaRoles roles={roles} onCreado={cargar} />
+      )}
+    </div>
+  );
+}
+
+function PestanaUsuarios({ usuarios, roles, onCreado }) {
+  const [creando, setCreando] = useState(false);
+  return (
+    <div>
+      <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium mb-4">
+        <Plus size={16} /> Nuevo usuario
+      </button>
+      <div className="space-y-2">
+        {usuarios.length === 0 && <div className="text-sm text-[#8A93A3]">Sin usuarios registrados todavía.</div>}
+        {usuarios.map((u) => (
+          <div key={u.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center justify-between">
+            <div>
+              <div className="text-sm">{u.nombre}</div>
+              <div className="text-xs text-[#8A93A3]">{u.email}</div>
+            </div>
+            <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
+          </div>
+        ))}
+      </div>
+      {creando && <ModalNuevoUsuario roles={roles} onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
+    </div>
+  );
+}
+
+function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
+  const [nombre, setNombre] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rolId, setRolId] = useState(roles[0]?.id || "");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const crear = async () => {
+    setError("");
+    setGuardando(true);
+    try {
+      await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });
+      onCreado();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+        <div className="font-serif text-lg">Nuevo usuario de equipo</div>
+        <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Campo label="Contraseña inicial" type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Rol</span>
+          <select value={rolId} onChange={(e) => setRolId(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm">
+            {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          </select>
+        </label>
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        <div className="flex gap-2">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={crear} disabled={guardando || !nombre || !email || !password || !rolId} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+            {guardando ? "Creando..." : "Crear"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PestanaRoles({ roles, onCreado }) {
+  const [creando, setCreando] = useState(false);
+  return (
+    <div>
+      <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium mb-4">
+        <Plus size={16} /> Nuevo rol
+      </button>
+      <div className="space-y-3">
+        {roles.map((r) => <TarjetaRol key={r.id} rol={r} onActualizado={onCreado} />)}
+      </div>
+      {creando && <ModalNuevoRol onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
+    </div>
+  );
+}
+
+function TarjetaRol({ rol, onActualizado }) {
+  const [editando, setEditando] = useState(false);
+  const [permisos, setPermisos] = useState(rol.permisos || {});
+
+  const guardar = async () => {
+    await supabase.from("roles").update({ permisos }).eq("id", rol.id);
+    setEditando(false);
+    onActualizado();
+  };
+
+  if (rol.es_administrador) {
+    return (
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="text-[#C9A227]" />
+          <div className="font-serif">{rol.nombre}</div>
+        </div>
+        <div className="text-xs text-[#8A93A3] mt-1">Tiene todos los permisos siempre. No se puede editar.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-serif">{rol.nombre}</div>
+        {!editando && <button onClick={() => setEditando(true)} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1"><Pencil size={12} /> Editar</button>}
+      </div>
+      <div className="space-y-1.5">
+        {PERMISOS_DISPONIBLES.map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 text-xs cursor-pointer">
+            <input type="checkbox" disabled={!editando} checked={!!permisos[key]} onChange={(e) => setPermisos({ ...permisos, [key]: e.target.checked })} />
+            {label}
+          </label>
+        ))}
+      </div>
+      {editando && (
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => { setPermisos(rol.permisos || {}); setEditando(false); }} className="flex-1 text-xs bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
+          <button onClick={guardar} className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-1.5 rounded-md">Guardar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModalNuevoRol({ onCancelar, onCreado }) {
+  const [nombre, setNombre] = useState("");
+  const [permisos, setPermisos] = useState({});
+  const [guardando, setGuardando] = useState(false);
+
+  const crear = async () => {
+    setGuardando(true);
+    await supabase.from("roles").insert({ nombre, permisos, es_administrador: false });
+    setGuardando(false);
+    onCreado();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+        <div className="font-serif text-lg">Nuevo rol</div>
+        <Campo label="Nombre del rol" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <div className="space-y-1.5">
+          {PERMISOS_DISPONIBLES.map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={!!permisos[key]} onChange={(e) => setPermisos({ ...permisos, [key]: e.target.checked })} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={crear} disabled={guardando || !nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+            {guardando ? "Creando..." : "Crear"}
           </button>
         </div>
       </div>
@@ -1459,6 +1746,27 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
   const [condonarIdx, setCondonarIdx] = useState(null);
   const [condonoMonto, setCondonoMonto] = useState("");
   const [editandoDatos, setEditandoDatos] = useState(false);
+  const [generandoCodigo, setGenerandoCodigo] = useState(false);
+  const [codigoGenerado, setCodigoGenerado] = useState(null);
+  const [errorCodigo, setErrorCodigo] = useState("");
+
+  const generarCodigoCliente = async () => {
+    setErrorCodigo("");
+    setGenerandoCodigo(true);
+    const codigo = generarCodigoNumerico();
+    try {
+      if (prop.clienteUserId) {
+        await llamarGestionUsuarios({ accion: "regenerar_codigo_cliente", codigo, cliente_user_id: prop.clienteUserId });
+      } else {
+        await llamarGestionUsuarios({ accion: "crear_cliente", codigo, propiedad_id: prop.id });
+      }
+      setCodigoGenerado(codigo);
+    } catch (e) {
+      setErrorCodigo(e.message);
+    } finally {
+      setGenerandoCodigo(false);
+    }
+  };
   const [corrigiendoIdx, setCorrigiendoIdx] = useState(null);
   const [fechaCorregida, setFechaCorregida] = useState("");
   const [previewCorregido, setPreviewCorregido] = useState(null);
@@ -1899,6 +2207,27 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar }) {
 
       {tab === "condiciones" && (
         <div>
+          <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <KeyRound size={15} className="text-[#C9A227]" />
+              <div className="text-sm font-medium">Acceso del cliente</div>
+            </div>
+            <div className="text-[11px] text-[#8A93A3] mb-3">
+              {prop.clienteUserId ? "Este cliente ya tiene un código de acceso." : "Este cliente todavía no tiene código para entrar a la app."}
+            </div>
+            <button onClick={generarCodigoCliente} disabled={generandoCodigo} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-2 rounded-md disabled:opacity-40">
+              {generandoCodigo ? "Generando..." : prop.clienteUserId ? "Regenerar código" : "Generar código de acceso"}
+            </button>
+            {errorCodigo && <div className="text-xs text-red-400 mt-2">{errorCodigo}</div>}
+            {codigoGenerado && (
+              <div className="mt-3 bg-[#0C121C] border border-[#C9A227]/40 rounded-md p-3">
+                <div className="text-[11px] text-[#8A93A3]">Código para {prop.cliente}:</div>
+                <div className="font-mono text-2xl tracking-widest text-[#C9A227]">{codigoGenerado}</div>
+                <div className="text-[11px] text-[#8A93A3] mt-1">Compárteselo por WhatsApp o en persona. Lo usa junto con "Soy cliente" en la pantalla de inicio.</div>
+              </div>
+            )}
+          </div>
+
           {!condicionesDesbloqueadas ? (
             <div className="space-y-3">
               <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">

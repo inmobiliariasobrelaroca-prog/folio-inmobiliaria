@@ -485,6 +485,7 @@ function cuotaHaciaFila(f, propiedadId) {
 
 function cuotaDesdeFila(row) {
   return {
+    id: row.id,
     numero: row.numero,
     fecha: row.fecha,
     saldoInicial: Number(row.saldo_inicial),
@@ -583,7 +584,7 @@ function guardarComprobantesLocal(propiedadId, tabla) {
 }
 
 function fusionarComprobantes(tabla, mapaComprobantes) {
-  return tabla.map((f) => (mapaComprobantes[f.numero] ? { ...f, ...mapaComprobantes[f.numero] } : f));
+  return tabla.map((f) => (!f.comprobante && mapaComprobantes[f.numero] ? { ...f, ...mapaComprobantes[f.numero] } : f));
 }
 
 // ---------- Cargos de luz: puente hacia la tabla `cargos_luz` de Supabase ----------
@@ -857,9 +858,44 @@ function AppInterno({ perfil, cerrarSesion }) {
         const { data: cuotasRows, error: errCuotas } = await supabase
           .from("cuotas").select("*").in("propiedad_id", idsPropiedades).order("numero");
         if (errCuotas) console.error("Error cargando cuotas:", errCuotas);
+
+        // Comprobantes reales (con su imagen en Supabase Storage), para que se vean igual
+        // sin importar en qué navegador/dispositivo se esté revisando.
+        const idsCuotas = (cuotasRows || []).map((r) => r.id);
+        let comprobantesPorCuota = {};
+        if (idsCuotas.length > 0) {
+          const { data: compRows, error: errComp } = await supabase
+            .from("comprobantes").select("*").in("cuota_id", idsCuotas).order("created_at", { ascending: false });
+          if (errComp) console.error("Error cargando comprobantes:", errComp);
+          for (const row of compRows || []) {
+            if (comprobantesPorCuota[row.cuota_id]) continue; // ya tenemos el más reciente de esa cuota
+            let imagenUrl = null;
+            try {
+              const { data: signed } = await supabase.storage.from("comprobantes").createSignedUrl(row.imagen_url, 3600);
+              imagenUrl = signed?.signedUrl || null;
+            } catch (e) {
+              console.error("Error generando enlace del comprobante:", e);
+            }
+            comprobantesPorCuota[row.cuota_id] = {
+              imagen: imagenUrl,
+              fecha: row.created_at,
+              estado: row.estado,
+              montoDepositado: Number(row.monto_depositado),
+              moraAlSubir: Number(row.mora_al_subir || 0),
+              montoRequerido: Number(row.monto_requerido || 0),
+              excedente: Number(row.excedente || 0),
+              faltante: Number(row.faltante || 0),
+              resultado: row.resultado,
+              destinoExcedente: row.destino_excedente,
+            };
+          }
+        }
+
         (cuotasRows || []).forEach((row) => {
           if (!cuotasPorPropiedad[row.propiedad_id]) cuotasPorPropiedad[row.propiedad_id] = [];
-          cuotasPorPropiedad[row.propiedad_id].push(cuotaDesdeFila(row));
+          const fila = cuotaDesdeFila(row);
+          fila.comprobante = comprobantesPorCuota[row.id] || null;
+          cuotasPorPropiedad[row.propiedad_id].push(fila);
         });
 
         const { data: luzRows, error: errLuz } = await supabase

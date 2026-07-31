@@ -1107,7 +1107,12 @@ function AppInterno({ perfil, cerrarSesion }) {
             onVolver={() => setPantalla("proyectos")}
             onAbrirProyecto={(id) => { setCatalogoProyectoSel(id); setPantalla("catalogoPropiedades"); }}
             onAsesores={() => setPantalla("catalogoAsesores")}
+            onActividad={() => setPantalla("catalogoActividad")}
           />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "catalogoActividad" && (
+          <PantallaActividadVenta onVolver={() => setPantalla("catalogoVentas")} />
         )}
 
         {modo === "inmobiliaria" && pantalla === "catalogoPropiedades" && catalogoProyectoSel && (
@@ -1488,7 +1493,7 @@ const ESTADOS_VENTA = [
   ["en_construccion", "En construcción"],
 ];
 
-function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores }) {
+function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores, onActividad }) {
   const [proyectos, setProyectos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
@@ -1509,9 +1514,10 @@ function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores }) {
       </div>
       <p className="text-xs text-[#8A93A3] mb-5">Esto alimenta directo el sitio público de ventas. Los cambios que hagas aquí aparecen ahí automáticamente.</p>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 flex-wrap">
         <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium"><Plus size={16} /> Nuevo proyecto</button>
         <button onClick={onAsesores} className="flex items-center gap-1.5 bg-[#2A3547] px-3.5 py-2 rounded-md text-sm"><Users size={16} /> Asesores</button>
+        <button onClick={onActividad} className="flex items-center gap-1.5 bg-[#2A3547] px-3.5 py-2 rounded-md text-sm"><Bell size={16} /> Actividad</button>
       </div>
 
       {cargando ? (
@@ -1970,6 +1976,54 @@ function PantallaAsesoresVenta({ onVolver }) {
           onCancelar={() => { setCreando(false); setEditando(null); }}
           onGuardado={() => { setCreando(false); setEditando(null); cargar(); }}
         />
+      )}
+    </div>
+  );
+}
+
+function PantallaActividadVenta({ onVolver }) {
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setCargando(true);
+      const { data } = await supabase.from("contactos_asesor").select("*").order("created_at", { ascending: false }).limit(100);
+      setSolicitudes(data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Actividad</h1>
+      </div>
+      <p className="text-xs text-[#8A93A3] mb-5">Cada vez que alguien elige un asesor en el sitio y envía sus preguntas, queda registrado aquí (más reciente primero).</p>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : solicitudes.length === 0 ? (
+        <div className="text-center text-[#8A93A3] mt-16 text-sm">Todavía no hay solicitudes registradas.</div>
+      ) : (
+        <div className="space-y-2">
+          {solicitudes.map((s) => (
+            <div key={s.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-sm font-medium">Preguntó a {s.asesor_nombre}</div>
+                <div className="text-[11px] text-[#8A93A3]">{new Date(s.created_at).toLocaleString("es-GT", { dateStyle: "medium", timeStyle: "short" })}</div>
+              </div>
+              {s.propiedad && <div className="text-xs text-[#C9A227] mb-1.5">{s.propiedad}{s.proyecto ? ` · ${s.proyecto}` : ""}</div>}
+              {(s.preguntas || []).length > 0 && (
+                <ul className="text-xs text-[#dfe4ec] list-disc list-inside space-y-0.5 mb-1">
+                  {s.preguntas.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+              )}
+              {s.mensaje_libre && <div className="text-xs text-[#8A93A3] italic mt-1">"{s.mensaje_libre}"</div>}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

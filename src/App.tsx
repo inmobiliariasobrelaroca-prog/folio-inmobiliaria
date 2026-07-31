@@ -1918,6 +1918,7 @@ function ModalAsesor({ asesor, onCancelar, onGuardado }) {
   const [whatsapp, setWhatsapp] = useState(asesor?.whatsapp || "502");
   const [fotoUrl, setFotoUrl] = useState(asesor?.foto_url || "");
   const [activo, setActivo] = useState(asesor?.activo ?? true);
+  const [orden, setOrden] = useState(asesor?.orden ?? 0);
   const [subiendo, setSubiendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -1932,10 +1933,15 @@ function ModalAsesor({ asesor, onCancelar, onGuardado }) {
     setSubiendo(false);
   };
 
+  const generarAvatar = () => {
+    const semilla = nombre.trim() || "asesor";
+    setFotoUrl(`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(semilla)}&backgroundColor=161f2e`);
+  };
+
   const guardar = async () => {
     setGuardando(true);
     setError("");
-    const datos = { nombre, whatsapp: whatsapp.replace(/[^0-9]/g, ""), foto_url: fotoUrl || null, activo };
+    const datos = { nombre, whatsapp: whatsapp.replace(/[^0-9]/g, ""), foto_url: fotoUrl || null, activo, orden: Number(orden) || 0 };
     const { error } = asesor
       ? await supabase.from("asesores").update(datos).eq("id", asesor.id)
       : await supabase.from("asesores").insert(datos);
@@ -1950,10 +1956,15 @@ function ModalAsesor({ asesor, onCancelar, onGuardado }) {
         <div className="font-serif text-lg">{asesor ? "Editar asesor" : "Nuevo asesor"}</div>
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
         <Campo label="WhatsApp (con 502 al inicio)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+        <Campo label="Orden (1, 2, 3...)" type="number" min="0" value={orden} onChange={(e) => setOrden(e.target.value)} />
         <div>
-          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto</span>
-          {fotoUrl && <img src={fotoUrl} className="w-20 h-20 rounded-full object-cover mb-2" />}
-          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirFoto(e.target.files[0])} className="text-xs" />
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto (avatar, no foto real)</span>
+          {fotoUrl && <img src={fotoUrl} className="w-20 h-20 rounded-full object-cover mb-2 bg-[#0C121C]" />}
+          <div className="flex gap-2 items-center flex-wrap">
+            <button type="button" onClick={generarAvatar} disabled={!nombre} className="text-xs bg-[#2A3547] disabled:opacity-40 px-3 py-1.5 rounded-md">Generar avatar automático</button>
+            <span className="text-[11px] text-[#8A93A3]">o</span>
+            <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirFoto(e.target.files[0])} className="text-xs" />
+          </div>
           {subiendo && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
         </div>
         <label className="flex items-center justify-between cursor-pointer">

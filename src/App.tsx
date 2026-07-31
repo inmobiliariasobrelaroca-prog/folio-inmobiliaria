@@ -1697,6 +1697,7 @@ function PantallaPropiedadesVenta({ proyectoId, onVolver, onAbrirPropiedad }) {
 
 function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
   const [p, setP] = useState(null);
+  const [proyecto, setProyecto] = useState(null);
   const [fotos, setFotos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -1708,13 +1709,25 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
     setCargando(true);
     const { data: prop } = await supabase.from("propiedades_venta").select("*").eq("id", propiedadId).maybeSingle();
     const { data: fs } = await supabase.from("fotos_propiedad_venta").select("*").eq("propiedad_venta_id", propiedadId).order("orden");
+    let proy = null;
+    if (prop?.proyecto_venta_id) {
+      const { data } = await supabase.from("proyectos_venta").select("id, nombre, foto_portada, foto_destacada").eq("id", prop.proyecto_venta_id).maybeSingle();
+      proy = data;
+    }
     setP(prop);
+    setProyecto(proy);
     setFotos(fs || []);
     setCargando(false);
   };
   useEffect(() => { cargar(); }, [propiedadId]);
 
   const set = (campo) => (valor) => setP({ ...p, [campo]: valor });
+
+  const usarComoPortadaProyecto = async (foto) => {
+    if (!proyecto) return;
+    await supabase.from("proyectos_venta").update({ foto_portada: foto.archivo_url }).eq("id", proyecto.id);
+    setProyecto({ ...proyecto, foto_portada: foto.archivo_url });
+  };
 
   const guardar = async () => {
     setGuardando(true);
@@ -1859,16 +1872,20 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
 
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Fotos</span>
-          <p className="text-[11px] text-[#6b7280] mb-2.5">La portada (⭐) es la primera que se ve. La destacada (🖼) es la que acompaña la descripción en la página de detalle.</p>
+          <p className="text-[11px] text-[#6b7280] mb-2.5">La portada (⭐) es la primera que se ve. La destacada (🖼) es la que acompaña la descripción. La del proyecto (🏢) es la que aparece en la lista de proyectos.</p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {fotosOrdenadas.map((f, i) => (
               <div key={f.id} className="relative group">
                 <img src={f.archivo_url} className="w-full h-24 object-cover rounded-md" />
-                {i === 0 && <span className="absolute top-1 left-1 bg-[#C9A227] text-[#101826] text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Star size={9} fill="currentColor" /> Portada</span>}
+                <div className="absolute top-1 left-1 flex gap-1">
+                  {i === 0 && <span className="bg-[#C9A227] text-[#101826] text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Star size={9} fill="currentColor" /> Portada</span>}
+                  {proyecto?.foto_portada === f.archivo_url && <span className="bg-blue-700 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Building2 size={9} /> Del proyecto</span>}
+                </div>
                 {p.foto_secundaria === f.archivo_url && <span className="absolute top-1 right-1 bg-emerald-700 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><ImageIcon size={9} /> Destacada</span>}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 flex-wrap px-1">
                   {i !== 0 && <button onClick={() => marcarPortada(f)} title="Marcar como portada" className="bg-[#161F2E] p-1.5 rounded-md"><Star size={13} /></button>}
                   {p.foto_secundaria !== f.archivo_url && <button onClick={() => marcarDestacada(f)} title="Marcar como destacada" className="bg-[#161F2E] p-1.5 rounded-md"><ImageIcon size={13} /></button>}
+                  {proyecto && proyecto.foto_portada !== f.archivo_url && <button onClick={() => usarComoPortadaProyecto(f)} title="Usar como portada del proyecto" className="bg-[#161F2E] p-1.5 rounded-md"><Building2 size={13} /></button>}
                   <button onClick={() => eliminarFoto(f.id)} title="Eliminar" className="bg-red-900 p-1.5 rounded-md"><Trash2 size={13} /></button>
                 </div>
               </div>

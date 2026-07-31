@@ -833,6 +833,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Si el navegador restaura la página desde su caché de atrás/adelante (bfcache),
+    // forzamos una recarga real en vez de mostrar el estado guardado en memoria.
+    const alRestaurar = (evento) => {
+      if (evento.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", alRestaurar);
+    return () => window.removeEventListener("pageshow", alRestaurar);
+  }, []);
+
+  useEffect(() => {
     if (!sesion) { setPerfil(null); return; }
     (async () => {
       const uid = sesion.user.id;
@@ -852,6 +862,7 @@ export default function App() {
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut();
+    window.location.reload();
   };
 
   if (sesion === undefined) return <div className="min-h-screen bg-[#101826]" />;

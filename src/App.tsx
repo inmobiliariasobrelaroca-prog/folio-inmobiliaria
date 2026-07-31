@@ -1522,7 +1522,7 @@ function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores }) {
         <div className="space-y-2">
           {proyectos.map((p) => (
             <button key={p.id} onClick={() => onAbrirProyecto(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3 hover:border-[#C9A227]/50">
-              {p.foto_portada ? <img src={p.foto_portada} className="w-14 h-14 rounded-md object-cover bg-[#0C121C]" /> : <div className="w-14 h-14 rounded-md bg-[#0C121C] flex items-center justify-center"><ImageIcon size={18} className="text-[#8A93A3]" /></div>}
+              <MiniaturaCarrusel fotoA={p.foto_portada} fotoB={p.foto_destacada} nombre={p.nombre} />
               <div className="flex-1">
                 <div className="text-sm font-medium">{p.nombre}</div>
                 <div className="text-xs text-[#8A93A3]">{p.ubicacion}</div>
@@ -1538,29 +1538,52 @@ function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores }) {
   );
 }
 
+// Miniatura que alterna suavemente entre 2 fotos (portada y destacada), tipo carrusel.
+function MiniaturaCarrusel({ fotoA, fotoB, nombre }) {
+  const [mostrarA, setMostrarA] = useState(true);
+
+  useEffect(() => {
+    if (!fotoA || !fotoB) return;
+    const intervalo = setInterval(() => setMostrarA((v) => !v), 2500);
+    return () => clearInterval(intervalo);
+  }, [fotoA, fotoB]);
+
+  if (!fotoA && !fotoB) {
+    return <div className="w-14 h-14 rounded-md bg-[#0C121C] flex items-center justify-center shrink-0"><ImageIcon size={18} className="text-[#8A93A3]" /></div>;
+  }
+
+  return (
+    <div className="w-14 h-14 rounded-md bg-[#0C121C] relative overflow-hidden shrink-0">
+      {fotoA && <img src={fotoA} alt={nombre} className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700" style={{ opacity: mostrarA || !fotoB ? 1 : 0 }} />}
+      {fotoB && <img src={fotoB} alt={nombre} className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700" style={{ opacity: !mostrarA ? 1 : 0 }} />}
+    </div>
+  );
+}
+
 function ModalProyectoVenta({ proyecto, onCancelar, onGuardado }) {
   const [nombre, setNombre] = useState(proyecto?.nombre || "");
   const [ubicacion, setUbicacion] = useState(proyecto?.ubicacion || "");
   const [descripcion, setDescripcion] = useState(proyecto?.descripcion || "");
   const [fotoPortada, setFotoPortada] = useState(proyecto?.foto_portada || "");
-  const [subiendo, setSubiendo] = useState(false);
+  const [fotoDestacada, setFotoDestacada] = useState(proyecto?.foto_destacada || "");
+  const [subiendo, setSubiendo] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
-  const subirPortada = async (file) => {
-    setSubiendo(true);
+  const subirImagen = async (file, cual) => {
+    setSubiendo(cual);
     setError("");
     try {
       const url = await subirFotoVenta(file, "proyectos");
-      setFotoPortada(url);
+      if (cual === "portada") setFotoPortada(url); else setFotoDestacada(url);
     } catch (e) { setError(e.message); }
-    setSubiendo(false);
+    setSubiendo("");
   };
 
   const guardar = async () => {
     setGuardando(true);
     setError("");
-    const datos = { nombre, ubicacion, descripcion, foto_portada: fotoPortada || null };
+    const datos = { nombre, ubicacion, descripcion, foto_portada: fotoPortada || null, foto_destacada: fotoDestacada || null };
     const { error } = proyecto
       ? await supabase.from("proyectos_venta").update(datos).eq("id", proyecto.id)
       : await supabase.from("proyectos_venta").insert(datos);
@@ -1582,8 +1605,14 @@ function ModalProyectoVenta({ proyecto, onCancelar, onGuardado }) {
         <div>
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto de portada</span>
           {fotoPortada && <img src={fotoPortada} className="w-full h-32 object-cover rounded-md mb-2" />}
-          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirPortada(e.target.files[0])} className="text-xs" />
-          {subiendo && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
+          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirImagen(e.target.files[0], "portada")} className="text-xs" />
+          {subiendo === "portada" && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
+        </div>
+        <div>
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto destacada (opcional — alterna con la portada en la tarjeta)</span>
+          {fotoDestacada && <img src={fotoDestacada} className="w-full h-32 object-cover rounded-md mb-2" />}
+          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirImagen(e.target.files[0], "destacada")} className="text-xs" />
+          {subiendo === "destacada" && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
         </div>
         {error && <div className="text-xs text-red-400">{error}</div>}
         <div className="flex gap-2 pt-2">

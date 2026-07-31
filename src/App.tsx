@@ -1877,20 +1877,35 @@ function PantallaAsesoresVenta({ onVolver }) {
   };
   useEffect(() => { cargar(); }, []);
 
+  const mover = async (idx, direccion) => {
+    const otroIdx = idx + direccion;
+    if (otroIdx < 0 || otroIdx >= asesores.length) return;
+    const a = asesores[idx];
+    const b = asesores[otroIdx];
+    await supabase.from("asesores").update({ orden: b.orden }).eq("id", a.id);
+    await supabase.from("asesores").update({ orden: a.orden }).eq("id", b.id);
+    cargar();
+  };
+
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-5">
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Asesores</h1>
       </div>
+      <p className="text-xs text-[#8A93A3] mb-4">Este es el orden en que van a aparecer en el sitio. Usa las flechas para acomodarlos.</p>
       <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium mb-5"><Plus size={16} /> Nuevo asesor</button>
 
       {cargando ? (
         <div className="text-sm text-[#8A93A3]">Cargando...</div>
       ) : (
         <div className="space-y-2">
-          {asesores.map((a) => (
+          {asesores.map((a, idx) => (
             <div key={a.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3">
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => mover(idx, -1)} disabled={idx === 0} className="text-[#8A93A3] disabled:opacity-20 hover:text-[#EDE7D9]"><ChevronUp size={16} /></button>
+                <button onClick={() => mover(idx, 1)} disabled={idx === asesores.length - 1} className="text-[#8A93A3] disabled:opacity-20 hover:text-[#EDE7D9]"><ChevronDown size={16} /></button>
+              </div>
               {a.foto_url ? <img src={a.foto_url} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-[#0C121C]" />}
               <div className="flex-1">
                 <div className="text-sm font-medium">{a.nombre}</div>
@@ -1905,6 +1920,7 @@ function PantallaAsesoresVenta({ onVolver }) {
       {(creando || editando) && (
         <ModalAsesor
           asesor={editando}
+          siguienteOrden={asesores.length}
           onCancelar={() => { setCreando(false); setEditando(null); }}
           onGuardado={() => { setCreando(false); setEditando(null); cargar(); }}
         />
@@ -1913,12 +1929,12 @@ function PantallaAsesoresVenta({ onVolver }) {
   );
 }
 
-function ModalAsesor({ asesor, onCancelar, onGuardado }) {
+function ModalAsesor({ asesor, siguienteOrden, onCancelar, onGuardado }) {
   const [nombre, setNombre] = useState(asesor?.nombre || "");
   const [whatsapp, setWhatsapp] = useState(asesor?.whatsapp || "502");
   const [fotoUrl, setFotoUrl] = useState(asesor?.foto_url || "");
   const [activo, setActivo] = useState(asesor?.activo ?? true);
-  const [orden, setOrden] = useState(asesor?.orden ?? 0);
+  const [orden, setOrden] = useState(asesor?.orden ?? siguienteOrden ?? 0);
   const [subiendo, setSubiendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");

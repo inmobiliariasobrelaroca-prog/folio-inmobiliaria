@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import logoEmblema from "./assets/emblema_sr.png";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
@@ -719,9 +720,9 @@ function Login({ onIngreso }) {
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-md bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-xl mx-auto mb-3">F</div>
-          <div className="font-serif text-2xl">Folio</div>
-          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Control de financiamiento</div>
+          <img src={logoEmblema} alt="Sobre la Roca" className="w-20 h-20 object-contain mx-auto mb-3" />
+          <div className="font-serif text-2xl">Sobre la Roca</div>
+          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Control Financiero</div>
         </div>
 
         <div className="flex rounded-full bg-[#1A2333] p-1 text-xs mb-4">
@@ -1091,10 +1092,10 @@ function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo }) {
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-sm bg-[#C9A227] flex items-center justify-center text-[#101826] font-serif font-bold text-sm">F</div>
+          <img src={logoEmblema} alt="Sobre la Roca" className="w-9 h-9 object-contain" />
           <div>
-            <div className="font-serif text-lg leading-tight tracking-tight">Folio</div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">Control de financiamiento</div>
+            <div className="font-serif text-lg leading-tight tracking-tight">Sobre la Roca</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">Control Financiero</div>
           </div>
         </div>
         <div className="flex items-center gap-2">

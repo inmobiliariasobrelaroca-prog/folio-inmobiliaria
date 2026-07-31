@@ -4,7 +4,7 @@ import logoEmblema from "./assets/emblema_sr.png";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -686,6 +686,61 @@ function datosIniciales() {
 
 // ---------- Login ----------
 
+// ---------- Cambio de contraseña obligatorio (primera vez que un cliente entra) ----------
+
+function CambiarPasswordInicial({ cerrarSesion, onListo }) {
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (password.length < 6) return setError("Usa al menos 6 caracteres.");
+    if (password !== password2) return setError("Las contraseñas no coinciden.");
+    setGuardando(true);
+    const { error: errAuth } = await supabase.auth.updateUser({ password });
+    if (errAuth) {
+      setGuardando(false);
+      setError("No se pudo actualizar: " + errAuth.message);
+      return;
+    }
+    const { error: errRpc } = await supabase.rpc("marcar_password_cambiada");
+    setGuardando(false);
+    if (errRpc) { setError("Se cambió la contraseña, pero hubo un problema al confirmarlo. Intenta entrar de nuevo."); return; }
+    onListo();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
+      <form onSubmit={guardar} className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <Lock size={28} className="text-[#C9A227] mx-auto mb-3" />
+          <div className="font-serif text-2xl">Crea tu contraseña</div>
+          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Es tu primera vez aquí</div>
+        </div>
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
+          <p className="text-xs text-[#8A93A3]">Por seguridad, antes de continuar crea tu propia contraseña (distinta al código que te dieron). La vas a usar junto con tu código para entrar la próxima vez.</p>
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Nueva contraseña</span>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Confírmala</span>
+            <input type="password" required value={password2} onChange={(e) => setPassword2(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+          </label>
+          {error && <div className="text-xs text-red-400">{error}</div>}
+          <button type="submit" disabled={guardando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+            {guardando ? "Guardando..." : "Guardar y continuar"}
+          </button>
+        </div>
+        <button type="button" onClick={cerrarSesion} className="text-xs text-[#8A93A3] underline mt-4 block mx-auto">Cerrar sesión</button>
+      </form>
+    </div>
+  );
+}
+
 function Login({ onIngreso }) {
   const [modo, setModo] = useState("cliente"); // 'cliente' | 'staff'
   const [email, setEmail] = useState("");
@@ -786,9 +841,9 @@ export default function App() {
         setPerfil({ tipo: "staff", usuario });
         return;
       }
-      const { data: propiedad } = await supabase.from("propiedades").select("id").eq("cliente_user_id", uid).maybeSingle();
+      const { data: propiedad } = await supabase.from("propiedades").select("id, cliente_password_cambiada").eq("cliente_user_id", uid).maybeSingle();
       if (propiedad) {
-        setPerfil({ tipo: "cliente", propiedadId: propiedad.id });
+        setPerfil({ tipo: "cliente", propiedadId: propiedad.id, debeCambiarPassword: !propiedad.cliente_password_cambiada });
         return;
       }
       setPerfil({ tipo: "sin_acceso" });
@@ -812,6 +867,15 @@ export default function App() {
     );
   }
 
+  if (perfil.tipo === "cliente" && perfil.debeCambiarPassword) {
+    return (
+      <CambiarPasswordInicial
+        cerrarSesion={cerrarSesion}
+        onListo={() => setPerfil({ ...perfil, debeCambiarPassword: false })}
+      />
+    );
+  }
+
   return <AppInterno perfil={perfil} cerrarSesion={cerrarSesion} />;
 }
 
@@ -826,6 +890,8 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
   const [pantalla, setPantalla] = useState("proyectos");
+  const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
+  const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [imprimir, setImprimir] = useState(null);
   const hoy = new Date().toISOString().slice(0, 10);
 
@@ -1028,10 +1094,39 @@ function AppInterno({ perfil, cerrarSesion }) {
           esAdmin={esAdmin}
           puedeVerEquipo={esAdmin || puede("crear_usuarios")}
           onEquipo={() => setPantalla("equipo")}
+          puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
+          onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
         />
 
         {modo === "inmobiliaria" && pantalla === "equipo" && (
           <PantallaEquipo onVolver={() => setPantalla("proyectos")} esAdmin={esAdmin} />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "catalogoVentas" && (
+          <PantallaCatalogoVentas
+            onVolver={() => setPantalla("proyectos")}
+            onAbrirProyecto={(id) => { setCatalogoProyectoSel(id); setPantalla("catalogoPropiedades"); }}
+            onAsesores={() => setPantalla("catalogoAsesores")}
+          />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "catalogoPropiedades" && catalogoProyectoSel && (
+          <PantallaPropiedadesVenta
+            proyectoId={catalogoProyectoSel}
+            onVolver={() => setPantalla("catalogoVentas")}
+            onAbrirPropiedad={(id) => { setCatalogoPropiedadSel(id); setPantalla("catalogoDetallePropiedad"); }}
+          />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "catalogoDetallePropiedad" && catalogoPropiedadSel && (
+          <PantallaDetallePropiedadVenta
+            propiedadId={catalogoPropiedadSel}
+            onVolver={() => setPantalla("catalogoPropiedades")}
+          />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "catalogoAsesores" && (
+          <PantallaAsesoresVenta onVolver={() => setPantalla("catalogoVentas")} />
         )}
 
         {modo === "inmobiliaria" && pantalla === "proyectos" && (
@@ -1087,7 +1182,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo }) {
+function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -1110,6 +1205,11 @@ function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo }) {
               <Users size={16} />
             </button>
           )}
+          {puedeVerCatalogo && modo === "inmobiliaria" && (
+            <button onClick={onCatalogo} title="Catálogo de ventas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Globe size={16} />
+            </button>
+          )}
           <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
             <LogOut size={16} />
           </button>
@@ -1130,6 +1230,7 @@ const PERMISOS_DISPONIBLES = [
   ["subir_documentos", "Subir documentos del contrato"],
   ["ver_reportes", "Ver reportes e historial de moras"],
   ["crear_usuarios", "Crear otros usuarios"],
+  ["gestionar_catalogo_ventas", "Administrar catálogo de ventas (sitio web)"],
 ];
 
 function PantallaEquipo({ onVolver, esAdmin }) {
@@ -1368,6 +1469,496 @@ function calcularComparativaAbono(prop) {
     cuotasTotalesOriginal: original.length,
     cuotasTotalesActual: prop.tabla.length,
   };
+}
+
+// ---------- Catálogo de ventas (sitio web público): proyectos, propiedades, fotos, asesores ----------
+
+async function subirFotoVenta(file, carpeta) {
+  const path = `${carpeta}/${crypto.randomUUID()}-${file.name}`;
+  const { error } = await supabase.storage.from("fotos-ventas").upload(path, file);
+  if (error) throw error;
+  const { data } = supabase.storage.from("fotos-ventas").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+const ESTADOS_VENTA = [
+  ["disponible", "Disponible"],
+  ["reservada", "Reservada"],
+  ["vendida", "Vendida"],
+  ["en_construccion", "En construcción"],
+];
+
+function PantallaCatalogoVentas({ onVolver, onAbrirProyecto, onAsesores }) {
+  const [proyectos, setProyectos] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [creando, setCreando] = useState(false);
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data } = await supabase.from("proyectos_venta").select("*, propiedades_venta(id)").order("orden");
+    setProyectos(data || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, []);
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Catálogo de ventas</h1>
+      </div>
+      <p className="text-xs text-[#8A93A3] mb-5">Esto alimenta directo el sitio público de ventas. Los cambios que hagas aquí aparecen ahí automáticamente.</p>
+
+      <div className="flex gap-2 mb-5">
+        <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium"><Plus size={16} /> Nuevo proyecto</button>
+        <button onClick={onAsesores} className="flex items-center gap-1.5 bg-[#2A3547] px-3.5 py-2 rounded-md text-sm"><Users size={16} /> Asesores</button>
+      </div>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : proyectos.length === 0 ? (
+        <div className="text-center text-[#8A93A3] mt-16 text-sm">Aún no hay proyectos en el catálogo.</div>
+      ) : (
+        <div className="space-y-2">
+          {proyectos.map((p) => (
+            <button key={p.id} onClick={() => onAbrirProyecto(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3 hover:border-[#C9A227]/50">
+              {p.foto_portada ? <img src={p.foto_portada} className="w-14 h-14 rounded-md object-cover bg-[#0C121C]" /> : <div className="w-14 h-14 rounded-md bg-[#0C121C] flex items-center justify-center"><ImageIcon size={18} className="text-[#8A93A3]" /></div>}
+              <div className="flex-1">
+                <div className="text-sm font-medium">{p.nombre}</div>
+                <div className="text-xs text-[#8A93A3]">{p.ubicacion}</div>
+              </div>
+              <div className="text-xs text-[#8A93A3]">{(p.propiedades_venta || []).length} propiedades</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {creando && <ModalProyectoVenta onCancelar={() => setCreando(false)} onGuardado={() => { setCreando(false); cargar(); }} />}
+    </div>
+  );
+}
+
+function ModalProyectoVenta({ proyecto, onCancelar, onGuardado }) {
+  const [nombre, setNombre] = useState(proyecto?.nombre || "");
+  const [ubicacion, setUbicacion] = useState(proyecto?.ubicacion || "");
+  const [descripcion, setDescripcion] = useState(proyecto?.descripcion || "");
+  const [fotoPortada, setFotoPortada] = useState(proyecto?.foto_portada || "");
+  const [subiendo, setSubiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const subirPortada = async (file) => {
+    setSubiendo(true);
+    setError("");
+    try {
+      const url = await subirFotoVenta(file, "proyectos");
+      setFotoPortada(url);
+    } catch (e) { setError(e.message); }
+    setSubiendo(false);
+  };
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError("");
+    const datos = { nombre, ubicacion, descripcion, foto_portada: fotoPortada || null };
+    const { error } = proyecto
+      ? await supabase.from("proyectos_venta").update(datos).eq("id", proyecto.id)
+      : await supabase.from("proyectos_venta").insert(datos);
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+    onGuardado();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
+        <div className="font-serif text-lg">{proyecto ? "Editar proyecto" : "Nuevo proyecto"}</div>
+        <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="Ubicación" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Descripción</span>
+          <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm min-h-[70px]" />
+        </label>
+        <div>
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto de portada</span>
+          {fotoPortada && <img src={fotoPortada} className="w-full h-32 object-cover rounded-md mb-2" />}
+          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirPortada(e.target.files[0])} className="text-xs" />
+          {subiendo && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
+        </div>
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        <div className="flex gap-2 pt-2">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={guardar} disabled={guardando || !nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">{guardando ? "Guardando..." : "Guardar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PantallaPropiedadesVenta({ proyectoId, onVolver, onAbrirPropiedad }) {
+  const [proyecto, setProyecto] = useState(null);
+  const [propiedades, setPropiedades] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [editandoProyecto, setEditandoProyecto] = useState(false);
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data: p } = await supabase.from("proyectos_venta").select("*").eq("id", proyectoId).maybeSingle();
+    const { data: props } = await supabase
+      .from("propiedades_venta")
+      .select("*, fotos_propiedad_venta(archivo_url, orden)")
+      .eq("proyecto_venta_id", proyectoId)
+      .order("orden");
+    setProyecto(p);
+    setPropiedades(props || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, [proyectoId]);
+
+  const crearPropiedad = async () => {
+    const { data, error } = await supabase
+      .from("propiedades_venta")
+      .insert({ proyecto_venta_id: proyectoId, nombre: "Nueva propiedad" })
+      .select()
+      .single();
+    if (error) { alert("No se pudo crear: " + error.message); return; }
+    onAbrirPropiedad(data.id);
+  };
+
+  if (cargando) return <div className="max-w-3xl mx-auto p-5 text-sm text-[#8A93A3]">Cargando...</div>;
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-1">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">Catálogo de ventas</div>
+      </div>
+      <div className="flex items-center justify-between mb-5 pl-7 gap-3 flex-wrap">
+        <div>
+          <h1 className="font-serif text-2xl">{proyecto?.nombre}</h1>
+          <div className="text-xs text-[#8A93A3]">{proyecto?.ubicacion}</div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setEditandoProyecto(true)} className="text-xs bg-[#2A3547] px-3 py-2 rounded-md flex items-center gap-1"><Pencil size={13} /> Editar proyecto</button>
+          <button onClick={crearPropiedad} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium"><Plus size={16} /> Nueva propiedad</button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {propiedades.length === 0 && <div className="text-sm text-[#8A93A3]">Sin propiedades todavía.</div>}
+        {propiedades.map((p) => {
+          const fotos = (p.fotos_propiedad_venta || []).sort((a, b) => a.orden - b.orden);
+          return (
+            <button key={p.id} onClick={() => onAbrirPropiedad(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3 hover:border-[#C9A227]/50">
+              {fotos[0] ? <img src={fotos[0].archivo_url} className="w-14 h-14 rounded-md object-cover bg-[#0C121C]" /> : <div className="w-14 h-14 rounded-md bg-[#0C121C] flex items-center justify-center"><ImageIcon size={18} className="text-[#8A93A3]" /></div>}
+              <div className="flex-1">
+                <div className="text-sm font-medium">{p.nombre}</div>
+                <div className="text-xs text-[#8A93A3]">{p.habitaciones || "–"} hab · {p.banos || "–"} baños · {fotos.length} foto{fotos.length !== 1 ? "s" : ""}</div>
+              </div>
+              <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase">{(ESTADOS_VENTA.find(([v]) => v === p.estado) || [, p.estado])[1]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {editandoProyecto && <ModalProyectoVenta proyecto={proyecto} onCancelar={() => setEditandoProyecto(false)} onGuardado={() => { setEditandoProyecto(false); cargar(); }} />}
+    </div>
+  );
+}
+
+function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
+  const [p, setP] = useState(null);
+  const [fotos, setFotos] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState("");
+  const [nuevaCaract, setNuevaCaract] = useState("");
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data: prop } = await supabase.from("propiedades_venta").select("*").eq("id", propiedadId).maybeSingle();
+    const { data: fs } = await supabase.from("fotos_propiedad_venta").select("*").eq("propiedad_venta_id", propiedadId).order("orden");
+    setP(prop);
+    setFotos(fs || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, [propiedadId]);
+
+  const set = (campo) => (valor) => setP({ ...p, [campo]: valor });
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError("");
+    const datos = {
+      nombre: p.nombre,
+      descripcion: p.descripcion,
+      caracteristicas: p.caracteristicas || [],
+      habitaciones: p.habitaciones === "" || p.habitaciones == null ? null : Number(p.habitaciones),
+      banos: p.banos === "" || p.banos == null ? null : Number(p.banos),
+      niveles: p.niveles === "" || p.niveles == null ? null : Number(p.niveles),
+      parqueos: p.parqueos === "" || p.parqueos == null ? null : Number(p.parqueos),
+      estado: p.estado,
+      financiamiento_propio: !!p.financiamiento_propio,
+      financiamiento_enganche_desde: p.financiamiento_propio ? Number(p.financiamiento_enganche_desde) || null : null,
+      financiamiento_plazo_max_anios: p.financiamiento_propio ? Number(p.financiamiento_plazo_max_anios) || null : null,
+      google_maps_url: p.google_maps_url || null,
+      google_maps_lat: p.google_maps_lat === "" || p.google_maps_lat == null ? null : Number(p.google_maps_lat),
+      google_maps_lng: p.google_maps_lng === "" || p.google_maps_lng == null ? null : Number(p.google_maps_lng),
+    };
+    const { error } = await supabase.from("propiedades_venta").update(datos).eq("id", propiedadId);
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+  };
+
+  const agregarCaract = () => {
+    if (!nuevaCaract.trim()) return;
+    setP({ ...p, caracteristicas: [...(p.caracteristicas || []), nuevaCaract.trim()] });
+    setNuevaCaract("");
+  };
+  const quitarCaract = (i) => setP({ ...p, caracteristicas: (p.caracteristicas || []).filter((_, idx) => idx !== i) });
+
+  const subirFotos = async (files) => {
+    setSubiendo(true);
+    setError("");
+    try {
+      let siguienteOrden = fotos.length > 0 ? Math.max(...fotos.map((f) => f.orden)) + 1 : 1;
+      for (const file of Array.from(files)) {
+        const url = await subirFotoVenta(file, `propiedades/${propiedadId}`);
+        const { data, error } = await supabase.from("fotos_propiedad_venta").insert({ propiedad_venta_id: propiedadId, archivo_url: url, orden: siguienteOrden }).select().single();
+        if (error) throw error;
+        setFotos((prev) => [...prev, data]);
+        siguienteOrden++;
+      }
+    } catch (e) { setError(e.message); }
+    setSubiendo(false);
+  };
+
+  const eliminarFoto = async (fotoId) => {
+    await supabase.from("fotos_propiedad_venta").delete().eq("id", fotoId);
+    setFotos((prev) => prev.filter((f) => f.id !== fotoId));
+  };
+
+  const marcarPortada = async (foto) => {
+    const ordenMinimo = Math.min(...fotos.map((f) => f.orden));
+    const otraConEseOrden = fotos.find((f) => f.orden === ordenMinimo && f.id !== foto.id);
+    await supabase.from("fotos_propiedad_venta").update({ orden: ordenMinimo }).eq("id", foto.id);
+    if (otraConEseOrden) await supabase.from("fotos_propiedad_venta").update({ orden: foto.orden }).eq("id", otraConEseOrden.id);
+    cargar();
+  };
+
+  const eliminarPropiedad = async () => {
+    if (!confirm("¿Eliminar esta propiedad y todas sus fotos? No se puede deshacer.")) return;
+    await supabase.from("propiedades_venta").delete().eq("id", propiedadId);
+    onVolver();
+  };
+
+  if (cargando || !p) return <div className="max-w-3xl mx-auto p-5 text-sm text-[#8A93A3]">Cargando...</div>;
+
+  const fotosOrdenadas = [...fotos].sort((a, b) => a.orden - b.orden);
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">{p.nombre || "Propiedad"}</h1>
+      </div>
+
+      <div className="space-y-4">
+        <Campo label="Nombre" value={p.nombre || ""} onChange={(e) => set("nombre")(e.target.value)} />
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Descripción</span>
+          <textarea value={p.descripcion || ""} onChange={(e) => set("descripcion")(e.target.value)} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm min-h-[90px]" />
+        </label>
+
+        <div className="grid grid-cols-4 gap-2">
+          <Campo label="Habitaciones" type="number" min="0" value={p.habitaciones ?? ""} onChange={(e) => set("habitaciones")(e.target.value)} />
+          <Campo label="Baños" type="number" min="0" value={p.banos ?? ""} onChange={(e) => set("banos")(e.target.value)} />
+          <Campo label="Niveles" type="number" min="0" value={p.niveles ?? ""} onChange={(e) => set("niveles")(e.target.value)} />
+          <Campo label="Parqueos" type="number" min="0" value={p.parqueos ?? ""} onChange={(e) => set("parqueos")(e.target.value)} />
+        </div>
+
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Estado</span>
+          <select value={p.estado || "disponible"} onChange={(e) => set("estado")(e.target.value)} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm">
+            {ESTADOS_VENTA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2">Características</span>
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {(p.caracteristicas || []).map((c, i) => (
+              <span key={i} className="text-xs bg-[#0C121C] border border-[#2A3547] rounded-full px-2.5 py-1 flex items-center gap-1.5">
+                {c} <button onClick={() => quitarCaract(i)} className="text-red-400">×</button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={nuevaCaract} onChange={(e) => setNuevaCaract(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarCaract(); } }} placeholder="Ej. Parqueo para 2 vehículos" className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm" />
+            <button onClick={agregarCaract} className="text-xs bg-[#2A3547] px-3 rounded-md">Agregar</button>
+          </div>
+        </div>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Financiamiento propio disponible</span>
+            <input type="checkbox" checked={!!p.financiamiento_propio} onChange={(e) => set("financiamiento_propio")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
+          </label>
+          {p.financiamiento_propio && (
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <Campo label="Enganche desde (Q)" type="number" min="0" value={p.financiamiento_enganche_desde ?? ""} onChange={(e) => set("financiamiento_enganche_desde")(e.target.value)} />
+              <Campo label="Plazo máx. (años)" type="number" min="0" value={p.financiamiento_plazo_max_anios ?? ""} onChange={(e) => set("financiamiento_plazo_max_anios")(e.target.value)} />
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2.5">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block">Ubicación</span>
+          <Campo label="Enlace de Google Maps" value={p.google_maps_url || ""} onChange={(e) => set("google_maps_url")(e.target.value)} />
+          <div className="grid grid-cols-2 gap-2">
+            <Campo label="Latitud" value={p.google_maps_lat ?? ""} onChange={(e) => set("google_maps_lat")(e.target.value)} />
+            <Campo label="Longitud" value={p.google_maps_lng ?? ""} onChange={(e) => set("google_maps_lng")(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Fotos</span>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {fotosOrdenadas.map((f, i) => (
+              <div key={f.id} className="relative group">
+                <img src={f.archivo_url} className="w-full h-24 object-cover rounded-md" />
+                {i === 0 && <span className="absolute top-1 left-1 bg-[#C9A227] text-[#101826] text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Star size={9} fill="currentColor" /> Portada</span>}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                  {i !== 0 && <button onClick={() => marcarPortada(f)} title="Marcar como portada" className="bg-[#161F2E] p-1.5 rounded-md"><Star size={13} /></button>}
+                  <button onClick={() => eliminarFoto(f.id)} title="Eliminar" className="bg-red-900 p-1.5 rounded-md"><Trash2 size={13} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <label className="flex flex-col items-center justify-center gap-1.5 border border-dashed border-[#2A3547] rounded-lg py-6 cursor-pointer hover:border-[#C9A227]/50">
+            <ImageIcon size={18} className="text-[#8A93A3]" />
+            <span className="text-xs text-[#8A93A3]">{subiendo ? "Subiendo..." : "Subir fotos (puedes elegir varias)"}</span>
+            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files.length && subirFotos(e.target.files)} />
+          </label>
+        </div>
+
+        {error && <div className="text-xs text-red-400">{error}</div>}
+
+        <div className="flex gap-2">
+          <button onClick={guardar} disabled={guardando} className="flex-1 bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md text-sm">{guardando ? "Guardando..." : "Guardar cambios"}</button>
+          <button onClick={eliminarPropiedad} className="text-xs bg-red-900 hover:bg-red-800 px-4 rounded-md">Eliminar propiedad</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PantallaAsesoresVenta({ onVolver }) {
+  const [asesores, setAsesores] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [creando, setCreando] = useState(false);
+  const [editando, setEditando] = useState(null);
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data } = await supabase.from("asesores").select("*").order("orden");
+    setAsesores(data || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, []);
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Asesores</h1>
+      </div>
+      <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium mb-5"><Plus size={16} /> Nuevo asesor</button>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : (
+        <div className="space-y-2">
+          {asesores.map((a) => (
+            <div key={a.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3">
+              {a.foto_url ? <img src={a.foto_url} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-[#0C121C]" />}
+              <div className="flex-1">
+                <div className="text-sm font-medium">{a.nombre}</div>
+                <div className="text-xs text-[#8A93A3]">{a.whatsapp}{!a.activo ? " · inactivo" : ""}</div>
+              </div>
+              <button onClick={() => setEditando(a)} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1"><Pencil size={12} /> Editar</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(creando || editando) && (
+        <ModalAsesor
+          asesor={editando}
+          onCancelar={() => { setCreando(false); setEditando(null); }}
+          onGuardado={() => { setCreando(false); setEditando(null); cargar(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalAsesor({ asesor, onCancelar, onGuardado }) {
+  const [nombre, setNombre] = useState(asesor?.nombre || "");
+  const [whatsapp, setWhatsapp] = useState(asesor?.whatsapp || "502");
+  const [fotoUrl, setFotoUrl] = useState(asesor?.foto_url || "");
+  const [activo, setActivo] = useState(asesor?.activo ?? true);
+  const [subiendo, setSubiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const subirFoto = async (file) => {
+    setSubiendo(true);
+    setError("");
+    try {
+      const url = await subirFotoVenta(file, "asesores");
+      setFotoUrl(url);
+    } catch (e) { setError(e.message); }
+    setSubiendo(false);
+  };
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError("");
+    const datos = { nombre, whatsapp: whatsapp.replace(/[^0-9]/g, ""), foto_url: fotoUrl || null, activo };
+    const { error } = asesor
+      ? await supabase.from("asesores").update(datos).eq("id", asesor.id)
+      : await supabase.from("asesores").insert(datos);
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+    onGuardado();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+        <div className="font-serif text-lg">{asesor ? "Editar asesor" : "Nuevo asesor"}</div>
+        <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="WhatsApp (con 502 al inicio)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+        <div>
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Foto</span>
+          {fotoUrl && <img src={fotoUrl} className="w-20 h-20 rounded-full object-cover mb-2" />}
+          <input type="file" accept="image/*" onChange={(e) => e.target.files[0] && subirFoto(e.target.files[0])} className="text-xs" />
+          {subiendo && <div className="text-xs text-[#8A93A3] mt-1">Subiendo...</div>}
+        </div>
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Activo (visible en el sitio)</span>
+          <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
+        </label>
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={guardar} disabled={guardando || !nombre || !whatsapp} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">{guardando ? "Guardando..." : "Guardar"}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function resumenProp(prop, hoy) {

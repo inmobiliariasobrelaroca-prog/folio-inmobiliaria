@@ -1747,6 +1747,12 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
     cargar();
   };
 
+  const marcarDestacada = async (foto) => {
+    const { error } = await supabase.from("propiedades_venta").update({ foto_secundaria: foto.archivo_url }).eq("id", propiedadId);
+    if (error) { setError(error.message); return; }
+    setP({ ...p, foto_secundaria: foto.archivo_url });
+  };
+
   const eliminarPropiedad = async () => {
     if (!confirm("¿Eliminar esta propiedad y todas sus fotos? No se puede deshacer.")) return;
     await supabase.from("propiedades_venta").delete().eq("id", propiedadId);
@@ -1824,13 +1830,16 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
 
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Fotos</span>
+          <p className="text-[11px] text-[#6b7280] mb-2.5">La portada (⭐) es la primera que se ve. La destacada (🖼) es la que acompaña la descripción en la página de detalle.</p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {fotosOrdenadas.map((f, i) => (
               <div key={f.id} className="relative group">
                 <img src={f.archivo_url} className="w-full h-24 object-cover rounded-md" />
                 {i === 0 && <span className="absolute top-1 left-1 bg-[#C9A227] text-[#101826] text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Star size={9} fill="currentColor" /> Portada</span>}
+                {p.foto_secundaria === f.archivo_url && <span className="absolute top-1 right-1 bg-emerald-700 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><ImageIcon size={9} /> Destacada</span>}
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
                   {i !== 0 && <button onClick={() => marcarPortada(f)} title="Marcar como portada" className="bg-[#161F2E] p-1.5 rounded-md"><Star size={13} /></button>}
+                  {p.foto_secundaria !== f.archivo_url && <button onClick={() => marcarDestacada(f)} title="Marcar como destacada" className="bg-[#161F2E] p-1.5 rounded-md"><ImageIcon size={13} /></button>}
                   <button onClick={() => eliminarFoto(f.id)} title="Eliminar" className="bg-red-900 p-1.5 rounded-md"><Trash2 size={13} /></button>
                 </div>
               </div>

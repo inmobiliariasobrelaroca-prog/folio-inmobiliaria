@@ -912,6 +912,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Si dejaste esta pestaña abierta (cambiaste a otra app o pestaña) por más de 2 minutos
+    // y regresas, recargamos solo para traer los datos más recientes — así nunca te quedas
+    // viendo información vieja de una sesión que llevaba rato abierta.
+    let ocultaDesde = null;
+    const alCambiarVisibilidad = () => {
+      if (document.visibilityState === "hidden") {
+        ocultaDesde = Date.now();
+      } else if (document.visibilityState === "visible" && ocultaDesde) {
+        const minutosOculta = (Date.now() - ocultaDesde) / 60000;
+        if (minutosOculta >= 2) window.location.reload();
+        ocultaDesde = null;
+      }
+    };
+    document.addEventListener("visibilitychange", alCambiarVisibilidad);
+    return () => document.removeEventListener("visibilitychange", alCambiarVisibilidad);
+  }, []);
+
+  useEffect(() => {
     if (!sesion) { setPerfil(null); return; }
     (async () => {
       const uid = sesion.user.id;

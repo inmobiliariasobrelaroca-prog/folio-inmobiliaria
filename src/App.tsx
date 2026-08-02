@@ -331,9 +331,9 @@ function nuevaNotificacion(para, mensaje) {
 
 const SUPABASE_URL_FUNCIONES = import.meta.env.VITE_SUPABASE_URL || "https://knquysqjhprnyztkgmwb.supabase.co";
 
-async function llamarGestionUsuarios(body) {
+async function llamarFuncionSesion(nombreFuncion, body) {
   const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(`${SUPABASE_URL_FUNCIONES}/functions/v1/gestionar-usuarios`, {
+  const res = await fetch(`${SUPABASE_URL_FUNCIONES}/functions/v1/${nombreFuncion}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -344,6 +344,10 @@ async function llamarGestionUsuarios(body) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || "Error en el servidor");
   return json;
+}
+
+async function llamarGestionUsuarios(body) {
+  return llamarFuncionSesion("gestionar-usuarios", body);
 }
 
 function generarCodigoNumerico() {
@@ -758,27 +762,25 @@ function SelectorPropiedadCliente({ propiedadIds, cerrarSesion, onElegir }) {
 }
 
 function CambiarPasswordInicial({ cerrarSesion, onListo }) {
-  const [password, setPassword] = useState("");
-  const [password2, setPassword2] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [codigo2, setCodigo2] = useState("");
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   const guardar = async (e) => {
     e.preventDefault();
     setError("");
-    if (password.length < 6) return setError("Usa al menos 6 caracteres.");
-    if (password !== password2) return setError("Las contraseñas no coinciden.");
+    if (!/^[0-9]{4,10}$/.test(codigo)) return setError("Usa solo números, entre 4 y 10 dígitos.");
+    if (codigo !== codigo2) return setError("Los códigos no coinciden.");
     setGuardando(true);
-    const { error: errAuth } = await supabase.auth.updateUser({ password });
-    if (errAuth) {
+    try {
+      await llamarFuncionSesion("cliente-cambiar-codigo", { nuevoCodigo: codigo });
+      onListo();
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setGuardando(false);
-      setError("No se pudo actualizar: " + errAuth.message);
-      return;
     }
-    const { error: errRpc } = await supabase.rpc("marcar_password_cambiada");
-    setGuardando(false);
-    if (errRpc) { setError("Se cambió la contraseña, pero hubo un problema al confirmarlo. Intenta entrar de nuevo."); return; }
-    onListo();
   };
 
   return (
@@ -786,18 +788,18 @@ function CambiarPasswordInicial({ cerrarSesion, onListo }) {
       <form onSubmit={guardar} className="w-full max-w-sm">
         <div className="text-center mb-6">
           <Lock size={28} className="text-[#C9A227] mx-auto mb-3" />
-          <div className="font-serif text-2xl">Crea tu contraseña</div>
+          <div className="font-serif text-2xl">Elige tu código</div>
           <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Es tu primera vez aquí</div>
         </div>
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
-          <p className="text-xs text-[#8A93A3]">Por seguridad, antes de continuar crea tu propia contraseña (distinta al código que te dieron). La vas a usar junto con tu código para entrar la próxima vez.</p>
+          <p className="text-xs text-[#8A93A3]">Por seguridad, elige tu propio código numérico (distinto al que te dieron). Va a ser solo tuyo — ni la inmobiliaria lo va a saber. Úsalo la próxima vez para entrar, en el mismo campo de siempre.</p>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Nueva contraseña</span>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu nuevo código (solo números)</span>
+            <input type="text" inputMode="numeric" required value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Confírmala</span>
-            <input type="password" required value={password2} onChange={(e) => setPassword2(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Confírmalo</span>
+            <input type="text" inputMode="numeric" required value={codigo2} onChange={(e) => setCodigo2(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
           </label>
           {error && <div className="text-xs text-red-400">{error}</div>}
           <button type="submit" disabled={guardando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">

@@ -2147,7 +2147,9 @@ function resumenProp(prop, hoy) {
   const moraCredito = filas.reduce((s, f) => s + calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria), 0);
   const moraLuz = prop.aplicaLuz ? filas.reduce((s, f) => s + calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz), 0) : 0;
   const moraTotal = moraCredito + moraLuz;
-  const luzPendiente = prop.aplicaLuz ? filas.reduce((s, f) => s + (f.luzPagado ? 0 : (prop.montoLuzMensual || 0)), 0) : 0;
+  const luzPendiente = prop.aplicaLuz
+    ? filas.reduce((s, f) => s + (!f.luzPagado && daysBetween(hoy, f.fecha) >= 0 ? (prop.montoLuzMensual || 0) : 0), 0)
+    : 0;
   const proximaCuota = filas.find((f) => f.estado !== "pagado");
   const pendienteActual = proximaCuota ? calcularEstadoPago(proximaCuota, hoy, prop) : null;
   return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual };

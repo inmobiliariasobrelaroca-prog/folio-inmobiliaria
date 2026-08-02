@@ -4,7 +4,7 @@ import logoEmblema from "./assets/emblema_sr.png";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -1138,7 +1138,12 @@ function AppInterno({ perfil, cerrarSesion }) {
           onEquipo={() => setPantalla("equipo")}
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
+          onClientes={() => setPantalla("clientes")}
         />
+
+        {modo === "inmobiliaria" && pantalla === "clientes" && (
+          <PantallaClientes onVolver={() => setPantalla("proyectos")} />
+        )}
 
         {modo === "inmobiliaria" && pantalla === "equipo" && (
           <PantallaEquipo onVolver={() => setPantalla("proyectos")} esAdmin={esAdmin} />
@@ -1229,7 +1234,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo }) {
+function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -1255,6 +1260,11 @@ function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVe
           {puedeVerCatalogo && modo === "inmobiliaria" && (
             <button onClick={onCatalogo} title="Catálogo de ventas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Globe size={16} />
+            </button>
+          )}
+          {modo === "inmobiliaria" && (
+            <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Contact size={16} />
             </button>
           )}
           <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
@@ -2067,6 +2077,125 @@ function PantallaActividadVenta({ onVolver }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Clientes: directorio general, asignable a propiedades (titular + codueños) ----------
+
+function PantallaClientes({ onVolver }) {
+  const [clientes, setClientes] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [creando, setCreando] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data } = await supabase
+      .from("clientes")
+      .select("*, propiedades_clientes(id, es_titular, propiedades(id, folio, direccion))")
+      .order("nombre");
+    setClientes(data || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const filtrados = clientes.filter((c) =>
+    c.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+    (c.telefono_1 || "").includes(busqueda) ||
+    (c.telefono_2 || "").includes(busqueda)
+  );
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Clientes</h1>
+      </div>
+
+      <div className="flex gap-2 mb-5">
+        <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por nombre o teléfono..." className="flex-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+        <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium shrink-0"><Plus size={16} /> Nuevo</button>
+      </div>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : filtrados.length === 0 ? (
+        <div className="text-center text-[#8A93A3] mt-16 text-sm">Sin clientes todavía.</div>
+      ) : (
+        <div className="space-y-2">
+          {filtrados.map((c) => {
+            const props = c.propiedades_clientes || [];
+            return (
+              <div key={c.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{c.nombre}</div>
+                    <div className="text-xs text-[#8A93A3]">{[c.telefono_1, c.telefono_2].filter(Boolean).join(" · ") || "Sin teléfono"}</div>
+                  </div>
+                  <button onClick={() => setEditando(c)} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1 shrink-0"><Pencil size={12} /> Editar</button>
+                </div>
+                {props.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-[#2A3547] flex flex-wrap gap-1.5">
+                    {props.map((pc) => (
+                      <span key={pc.id} className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3]">
+                        {pc.es_titular ? "★ " : ""}{pc.propiedades?.folio || pc.propiedades?.direccion || "Propiedad"}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {(creando || editando) && (
+        <ModalCliente
+          cliente={editando}
+          onCancelar={() => { setCreando(false); setEditando(null); }}
+          onGuardado={() => { setCreando(false); setEditando(null); cargar(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalCliente({ cliente, onCancelar, onGuardado }) {
+  const [nombre, setNombre] = useState(cliente?.nombre || "");
+  const [telefono1, setTelefono1] = useState(cliente?.telefono_1 || "");
+  const [telefono2, setTelefono2] = useState(cliente?.telefono_2 || "");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError("");
+    const datos = { nombre, telefono_1: telefono1 || null, telefono_2: telefono2 || null };
+    const { error } = cliente
+      ? await supabase.from("clientes").update(datos).eq("id", cliente.id)
+      : await supabase.from("clientes").insert(datos);
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+    onGuardado();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+        <div className="font-serif text-lg">{cliente ? "Editar cliente" : "Nuevo cliente"}</div>
+        <Campo label="Nombre completo" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="Teléfono 1" value={telefono1} onChange={(e) => setTelefono1(e.target.value)} />
+        <Campo label="Teléfono 2 (opcional)" value={telefono2} onChange={(e) => setTelefono2(e.target.value)} />
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={guardar} disabled={guardando || !nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3053,6 +3182,8 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
         </button>
       </div>
 
+      <PanelClientesPropiedad propiedadId={prop.id} />
+
       <div className="grid grid-cols-3 gap-3 mb-2">
         <Stat label="Saldo" value={fmt(saldoActual)} />
         <Stat label="Mora a pagar" value={fmt(moraTotal)} warn={moraTotal > 0} />
@@ -3357,6 +3488,138 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
           <button onClick={() => onGuardar({ folio, direccion, cliente, telefono })} disabled={!direccion || !cliente} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">Guardar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Panel para asignar el titular y los codueños de una propiedad, desde el directorio de clientes.
+function PanelClientesPropiedad({ propiedadId }) {
+  const [asignados, setAsignados] = useState([]);
+  const [todosClientes, setTodosClientes] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [agregando, setAgregando] = useState(false);
+  const [creandoNuevo, setCreandoNuevo] = useState(false);
+  const [clienteSel, setClienteSel] = useState("");
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data: pc } = await supabase
+      .from("propiedades_clientes")
+      .select("id, es_titular, clientes(id, nombre, telefono_1, telefono_2)")
+      .eq("propiedad_id", propiedadId)
+      .order("es_titular", { ascending: false });
+    const { data: todos } = await supabase.from("clientes").select("id, nombre").order("nombre");
+    setAsignados(pc || []);
+    setTodosClientes(todos || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, [propiedadId]);
+
+  const asignar = async (clienteId) => {
+    if (!clienteId) return;
+    const yaHayTitular = asignados.some((a) => a.es_titular);
+    await supabase.from("propiedades_clientes").insert({ propiedad_id: propiedadId, cliente_id: clienteId, es_titular: !yaHayTitular });
+    setAgregando(false);
+    setClienteSel("");
+    cargar();
+  };
+
+  const quitar = async (id) => {
+    await supabase.from("propiedades_clientes").delete().eq("id", id);
+    cargar();
+  };
+
+  const marcarTitular = async (id) => {
+    await supabase.from("propiedades_clientes").update({ es_titular: false }).eq("propiedad_id", propiedadId);
+    await supabase.from("propiedades_clientes").update({ es_titular: true }).eq("id", id);
+    cargar();
+  };
+
+  const idsYaAsignados = new Set(asignados.map((a) => a.clientes?.id));
+  const disponibles = todosClientes.filter((c) => !idsYaAsignados.has(c.id));
+
+  return (
+    <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] flex items-center gap-1.5"><Contact size={13} /> Titular y codueños</div>
+        <button onClick={() => setAgregando(true)} className="text-[11px] text-[#C9A227] underline">+ Agregar</button>
+      </div>
+
+      {cargando ? (
+        <div className="text-xs text-[#8A93A3]">Cargando...</div>
+      ) : asignados.length === 0 ? (
+        <div className="text-xs text-[#8A93A3]">Sin clientes asignados todavía.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {asignados.map((a) => (
+            <div key={a.id} className="flex items-center justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5">
+              <div>
+                <span className="font-medium">{a.es_titular && <Star size={10} className="inline mr-1 -mt-0.5" fill="currentColor" />}{a.clientes?.nombre}</span>
+                <span className="text-[#8A93A3]"> {[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ") && `· ${[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ")}`}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {!a.es_titular && <button onClick={() => marcarTitular(a.id)} className="text-[#8A93A3] hover:text-[#C9A227]" title="Marcar como titular">Titular</button>}
+                <button onClick={() => quitar(a.id)} className="text-red-400" title="Quitar">×</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {agregando && (
+        <div className="mt-2.5 pt-2.5 border-t border-[#2A3547]">
+          {!creandoNuevo ? (
+            <div className="flex gap-2">
+              <select value={clienteSel} onChange={(e) => setClienteSel(e.target.value)} className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs">
+                <option value="">Elegir cliente existente...</option>
+                {disponibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+              <button onClick={() => asignar(clienteSel)} disabled={!clienteSel} className="text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-3 rounded-md">Agregar</button>
+            </div>
+          ) : (
+            <ModalClienteInline
+              onCancelar={() => setCreandoNuevo(false)}
+              onCreado={(id) => { setCreandoNuevo(false); asignar(id); }}
+            />
+          )}
+          <div className="flex justify-between mt-2">
+            <button onClick={() => setCreandoNuevo((v) => !v)} className="text-[11px] text-[#8A93A3] underline">{creandoNuevo ? "Elegir uno existente" : "O crear cliente nuevo"}</button>
+            <button onClick={() => { setAgregando(false); setCreandoNuevo(false); }} className="text-[11px] text-[#8A93A3]">Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Formulario compacto para crear un cliente nuevo sin salir del panel de la propiedad.
+function ModalClienteInline({ onCancelar, onCreado }) {
+  const [nombre, setNombre] = useState("");
+  const [telefono1, setTelefono1] = useState("");
+  const [telefono2, setTelefono2] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const crear = async () => {
+    setGuardando(true);
+    setError("");
+    const { data, error } = await supabase.from("clientes").insert({ nombre, telefono_1: telefono1 || null, telefono_2: telefono2 || null }).select().single();
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+    onCreado(data.id);
+  };
+
+  return (
+    <div className="space-y-2">
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre completo" className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      <div className="grid grid-cols-2 gap-2">
+        <input value={telefono1} onChange={(e) => setTelefono1(e.target.value)} placeholder="Teléfono 1" className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+        <input value={telefono2} onChange={(e) => setTelefono2(e.target.value)} placeholder="Teléfono 2 (opcional)" className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      </div>
+      {error && <div className="text-[11px] text-red-400">{error}</div>}
+      <button onClick={crear} disabled={guardando || !nombre} className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md">
+        {guardando ? "Creando..." : "Crear y asignar"}
+      </button>
     </div>
   );
 }

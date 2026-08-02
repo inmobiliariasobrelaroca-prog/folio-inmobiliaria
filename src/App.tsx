@@ -2620,6 +2620,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
+  const [subiendoReciboIdx, setSubiendoReciboIdx] = useState(null);
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
   const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
   const [condForm, setCondForm] = useState(null);
@@ -2722,6 +2723,51 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
       p.notificaciones.unshift(nuevaNotificacion("cliente", `Tu comprobante de la cuota #${fila.numero} fue rechazado. Por favor sube uno nuevo o contáctanos.`));
       return p;
     });
+  };
+
+  // Adjuntar el recibo/foto de un pago que ya se marcó como pagado (por ejemplo, historial
+  // que se registró directo sin pasar por el flujo normal del cliente).
+  const subirReciboHistorico = async (idx, file) => {
+    const fila = prop.tabla[idx];
+    if (!fila.id) { alert("Esta cuota todavía no tiene un identificador guardado; refresca la página e intenta de nuevo."); return; }
+    setSubiendoReciboIdx(idx);
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const path = `${prop.id}/${fila.id}-${Date.now()}.${ext}`;
+      const { error: errUpload } = await supabase.storage.from("comprobantes").upload(path, file, { upsert: true });
+      if (errUpload) throw errUpload;
+
+      const montoPago = fila.montoPagadoAcumulado || fila.pago;
+      const { error: errInsert } = await supabase.from("comprobantes").insert({
+        cuota_id: fila.id,
+        imagen_url: path,
+        monto_depositado: montoPago,
+        mora_al_subir: 0,
+        monto_requerido: montoPago,
+        excedente: 0,
+        faltante: 0,
+        resultado: "completo",
+        estado: "aprobado",
+      });
+      if (errInsert) throw errInsert;
+
+      const base64 = await fileToBase64(file);
+      actualizar((p) => {
+        const f = p.tabla[idx];
+        f.comprobante = {
+          imagen: base64,
+          fecha: new Date().toISOString(),
+          estado: "aprobado",
+          montoDepositado: montoPago,
+          resultado: "completo",
+        };
+        return p;
+      });
+    } catch (e) {
+      alert("No se pudo subir el recibo: " + e.message);
+    } finally {
+      setSubiendoReciboIdx(null);
+    }
   };
 
   const aplicarAbono = () => {
@@ -2968,6 +3014,25 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
             <button disabled title="Se activará cuando la app esté en la nube" className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-[#6b7280] border border-dashed border-[#2A3547] rounded-md py-1.5 cursor-not-allowed">
               <Sparkles size={12} /> Leer comprobante con IA (próximamente)
             </button>
+          </div>
+        )}
+
+        {est === "pagado" && f.comprobante && (
+          <div className="mt-3 pt-3 border-t border-[#2A3547] flex items-center gap-3">
+            <button onClick={() => setImagenAmpliada(f.comprobante.imagen)} className="shrink-0">
+              <img src={f.comprobante.imagen} alt="Recibo" className="w-14 h-14 object-cover rounded-md border border-[#2A3547]" />
+            </button>
+            <div className="text-[11px] text-emerald-400">Recibo adjunto</div>
+          </div>
+        )}
+
+        {est === "pagado" && !f.comprobante && puede("aprobar_rechazar_pagos") && (
+          <div className="mt-3 pt-3 border-t border-[#2A3547]">
+            <label className="flex items-center justify-center gap-1.5 text-[11px] text-[#8A93A3] border border-dashed border-[#2A3547] rounded-md py-2 cursor-pointer hover:border-[#C9A227]/50">
+              <Upload size={12} />
+              {subiendoReciboIdx === idx ? "Subiendo..." : "Adjuntar recibo de este pago"}
+              <input type="file" accept="image/*" className="hidden" disabled={subiendoReciboIdx === idx} onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0])} />
+            </label>
           </div>
         )}
       </div>

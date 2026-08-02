@@ -718,6 +718,45 @@ function datosIniciales() {
 
 // ---------- Cambio de contraseña obligatorio (primera vez que un cliente entra) ----------
 
+// ---------- Selector de propiedad (cuando un cliente participa en más de una) ----------
+
+function SelectorPropiedadCliente({ propiedadIds, cerrarSesion, onElegir }) {
+  const [props, setProps] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("propiedades").select("id, folio, direccion").in("id", propiedadIds);
+      setProps(data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="font-serif text-2xl">¿Cuál propiedad?</div>
+          <div className="text-[11px] uppercase tracking-widest text-[#8A93A3] mt-1">Participas en más de una</div>
+        </div>
+        {cargando ? (
+          <div className="text-sm text-[#8A93A3] text-center">Cargando...</div>
+        ) : (
+          <div className="space-y-2">
+            {props.map((p) => (
+              <button key={p.id} onClick={() => onElegir(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50">
+                <div className="text-sm font-medium">{p.direccion}</div>
+                {p.folio && <div className="text-xs text-[#8A93A3] mt-0.5">{p.folio}</div>}
+              </button>
+            ))}
+          </div>
+        )}
+        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] underline mt-5 block mx-auto">Cerrar sesión</button>
+      </div>
+    </div>
+  );
+}
+
 function CambiarPasswordInicial({ cerrarSesion, onListo }) {
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -881,9 +920,20 @@ export default function App() {
         setPerfil({ tipo: "staff", usuario });
         return;
       }
-      const { data: propiedad } = await supabase.from("propiedades").select("id, cliente_password_cambiada").eq("cliente_user_id", uid).maybeSingle();
-      if (propiedad) {
-        setPerfil({ tipo: "cliente", propiedadId: propiedad.id, debeCambiarPassword: !propiedad.cliente_password_cambiada });
+      const { data: cliente } = await supabase
+        .from("clientes")
+        .select("id, cliente_password_cambiada, propiedades_clientes(propiedad_id)")
+        .eq("cliente_user_id", uid)
+        .maybeSingle();
+      if (cliente) {
+        const propiedadIds = (cliente.propiedades_clientes || []).map((pc) => pc.propiedad_id);
+        setPerfil({
+          tipo: "cliente",
+          clienteId: cliente.id,
+          propiedadIds,
+          propiedadId: propiedadIds.length === 1 ? propiedadIds[0] : null,
+          debeCambiarPassword: !cliente.cliente_password_cambiada,
+        });
         return;
       }
       setPerfil({ tipo: "sin_acceso" });
@@ -913,6 +963,26 @@ export default function App() {
       <CambiarPasswordInicial
         cerrarSesion={cerrarSesion}
         onListo={() => setPerfil({ ...perfil, debeCambiarPassword: false })}
+      />
+    );
+  }
+
+  if (perfil.tipo === "cliente" && perfil.propiedadIds.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex flex-col items-center justify-center gap-3 p-5 text-center">
+        <div className="text-sm">Tu cuenta ya tiene acceso, pero todavía no está ligada a ninguna propiedad.</div>
+        <div className="text-xs text-[#8A93A3]">Pide al administrador que te asigne una.</div>
+        <button onClick={cerrarSesion} className="text-xs bg-[#2A3547] px-3 py-2 rounded-md mt-2">Cerrar sesión</button>
+      </div>
+    );
+  }
+
+  if (perfil.tipo === "cliente" && !perfil.propiedadId) {
+    return (
+      <SelectorPropiedadCliente
+        propiedadIds={perfil.propiedadIds}
+        cerrarSesion={cerrarSesion}
+        onElegir={(id) => setPerfil({ ...perfil, propiedadId: id })}
       />
     );
   }
@@ -3500,12 +3570,15 @@ function PanelClientesPropiedad({ propiedadId }) {
   const [agregando, setAgregando] = useState(false);
   const [creandoNuevo, setCreandoNuevo] = useState(false);
   const [clienteSel, setClienteSel] = useState("");
+  const [generandoPara, setGenerandoPara] = useState(null);
+  const [codigoGenerado, setCodigoGenerado] = useState({});
+  const [errorCodigo, setErrorCodigo] = useState("");
 
   const cargar = async () => {
     setCargando(true);
     const { data: pc } = await supabase
       .from("propiedades_clientes")
-      .select("id, es_titular, clientes(id, nombre, telefono_1, telefono_2)")
+      .select("id, es_titular, clientes(id, nombre, telefono_1, telefono_2, cliente_user_id)")
       .eq("propiedad_id", propiedadId)
       .order("es_titular", { ascending: false });
     const { data: todos } = await supabase.from("clientes").select("id, nombre").order("nombre");
@@ -3535,6 +3608,25 @@ function PanelClientesPropiedad({ propiedadId }) {
     cargar();
   };
 
+  const generarCodigo = async (clienteRow) => {
+    setGenerandoPara(clienteRow.id);
+    setErrorCodigo("");
+    const codigo = generarCodigoNumerico();
+    try {
+      if (clienteRow.cliente_user_id) {
+        await llamarGestionUsuarios({ accion: "regenerar_codigo_cliente", codigo, cliente_user_id: clienteRow.cliente_user_id });
+      } else {
+        await llamarGestionUsuarios({ accion: "crear_cliente", codigo, cliente_id: clienteRow.id });
+      }
+      setCodigoGenerado((prev) => ({ ...prev, [clienteRow.id]: codigo }));
+      cargar();
+    } catch (e) {
+      setErrorCodigo(e.message);
+    } finally {
+      setGenerandoPara(null);
+    }
+  };
+
   const idsYaAsignados = new Set(asignados.map((a) => a.clientes?.id));
   const disponibles = todosClientes.filter((c) => !idsYaAsignados.has(c.id));
 
@@ -3552,17 +3644,32 @@ function PanelClientesPropiedad({ propiedadId }) {
       ) : (
         <div className="space-y-1.5">
           {asignados.map((a) => (
-            <div key={a.id} className="flex items-center justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5">
-              <div>
-                <span className="font-medium">{a.es_titular && <Star size={10} className="inline mr-1 -mt-0.5" fill="currentColor" />}{a.clientes?.nombre}</span>
-                <span className="text-[#8A93A3]"> {[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ") && `· ${[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ")}`}</span>
+            <div key={a.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-medium">{a.es_titular && <Star size={10} className="inline mr-1 -mt-0.5" fill="currentColor" />}{a.clientes?.nombre}</span>
+                  <span className="text-[#8A93A3]"> {[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ") && `· ${[a.clientes?.telefono_1, a.clientes?.telefono_2].filter(Boolean).join(" · ")}`}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!a.es_titular && <button onClick={() => marcarTitular(a.id)} className="text-[#8A93A3] hover:text-[#C9A227]" title="Marcar como titular">Titular</button>}
+                  <button onClick={() => quitar(a.id)} className="text-red-400" title="Quitar">×</button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {!a.es_titular && <button onClick={() => marcarTitular(a.id)} className="text-[#8A93A3] hover:text-[#C9A227]" title="Marcar como titular">Titular</button>}
-                <button onClick={() => quitar(a.id)} className="text-red-400" title="Quitar">×</button>
+              <div className="mt-1.5 pt-1.5 border-t border-[#2A3547] flex items-center justify-between">
+                <span className="text-[10px] text-[#8A93A3]">{a.clientes?.cliente_user_id ? "Ya tiene acceso al portal" : "Sin acceso al portal todavía"}</span>
+                <button onClick={() => generarCodigo(a.clientes)} disabled={generandoPara === a.clientes?.id} className="text-[10px] bg-[#2A3547] hover:bg-[#3a4864] px-2 py-1 rounded-md disabled:opacity-40">
+                  {generandoPara === a.clientes?.id ? "Generando..." : a.clientes?.cliente_user_id ? "Regenerar código" : "Generar código"}
+                </button>
               </div>
+              {codigoGenerado[a.clientes?.id] && (
+                <div className="mt-1.5 bg-[#101826] border border-[#C9A227]/40 rounded-md px-2.5 py-1.5 text-center">
+                  <div className="font-mono text-lg tracking-widest text-[#C9A227]">{codigoGenerado[a.clientes.id]}</div>
+                  <div className="text-[10px] text-[#8A93A3]">Compárteselo a {a.clientes.nombre}</div>
+                </div>
+              )}
             </div>
           ))}
+          {errorCodigo && <div className="text-[11px] text-red-400">{errorCodigo}</div>}
         </div>
       )}
 

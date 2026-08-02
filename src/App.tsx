@@ -53,18 +53,20 @@ function mesesRestantes(principal, tasaAnual, pago) {
   return Math.max(1, Math.ceil(n));
 }
 
-function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio }) {
+function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, sistemaAmortizacion }) {
   const principal = Math.max(0, precio - enganche);
   const meses = Math.round(plazoAnios * 12);
   const i = tasaAnual / 100 / 12;
-  const pago = pagoMensual(principal, tasaAnual, meses);
+  const esSaldos = sistemaAmortizacion === "saldos";
+  const capitalFijo = esSaldos ? principal / meses : 0;
+  const pagoNivelado = esSaldos ? 0 : pagoMensual(principal, tasaAnual, meses);
   let saldo = principal;
   const filas = [];
   for (let n = 1; n <= meses; n++) {
     const interes = saldo * i;
-    let capital = pago - interes;
+    let capital = esSaldos ? capitalFijo : pagoNivelado - interes;
     if (n === meses || capital > saldo) capital = saldo;
-    const pagoReal = n === meses ? capital + interes : pago;
+    const pagoReal = esSaldos ? capital + interes : (n === meses ? capital + interes : pagoNivelado);
     const saldoFinal = Math.max(0, saldo - capital);
     filas.push({
       numero: n,
@@ -144,9 +146,11 @@ function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
   return { restante, idxDetenido: idx };
 }
 
-function recalcularConAbono(tabla, indexDesde, montoAbono, tasaAnual) {
+// modo: 'reducir_plazo' (misma cuota/capital fijo de antes, menos meses) o
+//       'reducir_cuota' (mismos meses restantes que antes, cuota/capital fijo más bajo)
+function recalcularConAbono(tabla, indexDesde, montoAbono, prop, modo = "reducir_plazo") {
   const fila = tabla[indexDesde];
-  const pagoFijo = tabla.find((f) => f.estado !== "pagado")?.pago || fila.pago;
+  const esSaldos = prop.sistemaAmortizacion === "saldos";
   const nuevoPrincipal = Math.max(0, fila.saldoFinal - montoAbono);
   fila.abono = montoAbono;
   fila.saldoFinal = nuevoPrincipal;
@@ -154,39 +158,62 @@ function recalcularConAbono(tabla, indexDesde, montoAbono, tasaAnual) {
   const historico = tabla.slice(0, indexDesde + 1);
   if (nuevoPrincipal <= 0.5) return historico;
 
+  const tasaAnual = prop.tasaAnual;
   const i = tasaAnual / 100 / 12;
-  const nMeses = mesesRestantes(nuevoPrincipal, tasaAnual, pagoFijo);
+  const mesesRestantesActuales = tabla.length - (indexDesde + 1);
+
   let saldo = nuevoPrincipal;
   const nuevas = [];
-  for (let k = 1; k <= nMeses; k++) {
-    const interes = saldo * i;
-    let capital = pagoFijo - interes;
-    if (k === nMeses || capital > saldo) capital = saldo;
-    const pagoReal = k === nMeses ? capital + interes : pagoFijo;
-    const saldoFinal = Math.max(0, saldo - capital);
-    nuevas.push({
-      numero: indexDesde + 1 + k,
-      fecha: addMonths(fila.fecha, k),
-      saldoInicial: saldo,
-      pago: pagoReal,
-      interes,
-      capital,
-      saldoFinal,
-      estado: "pendiente",
-      fechaPago: null,
-      moraAplicada: 0,
-      abono: 0,
-      montoPagadoAcumulado: 0,
-      moraPagada: 0,
-      moraCondonada: 0,
-      moraGeneradaFinal: null,
-      comprobante: null,
-      ultimoRechazo: null,
-      luzPagado: false,
-      luzFechaPago: null,
-      luzMoraPagada: 0,
-    });
-    saldo = saldoFinal;
+
+  if (esSaldos) {
+    const capitalFijoAnterior = tabla.find((f) => f.estado !== "pagado")?.capital || fila.capital;
+    let capitalFijo, nMeses;
+    if (modo === "reducir_cuota") {
+      nMeses = Math.max(1, mesesRestantesActuales);
+      capitalFijo = nuevoPrincipal / nMeses;
+    } else {
+      capitalFijo = capitalFijoAnterior;
+      nMeses = Math.max(1, Math.ceil(nuevoPrincipal / capitalFijo));
+    }
+    for (let k = 1; k <= nMeses; k++) {
+      const interes = saldo * i;
+      let capital = k === nMeses ? saldo : capitalFijo;
+      const saldoFinal = Math.max(0, saldo - capital);
+      const pagoReal = capital + interes;
+      nuevas.push({
+        numero: indexDesde + 1 + k, fecha: addMonths(fila.fecha, k),
+        saldoInicial: saldo, pago: pagoReal, interes, capital, saldoFinal,
+        estado: "pendiente", fechaPago: null, moraAplicada: 0, abono: 0,
+        montoPagadoAcumulado: 0, moraPagada: 0, moraCondonada: 0, moraGeneradaFinal: null,
+        comprobante: null, ultimoRechazo: null, luzPagado: false, luzFechaPago: null, luzMoraPagada: 0,
+      });
+      saldo = saldoFinal;
+    }
+  } else {
+    const pagoAnterior = tabla.find((f) => f.estado !== "pagado")?.pago || fila.pago;
+    let pagoFijo, nMeses;
+    if (modo === "reducir_cuota") {
+      nMeses = Math.max(1, mesesRestantesActuales);
+      pagoFijo = pagoMensual(nuevoPrincipal, tasaAnual, nMeses);
+    } else {
+      pagoFijo = pagoAnterior;
+      nMeses = mesesRestantes(nuevoPrincipal, tasaAnual, pagoFijo);
+    }
+    for (let k = 1; k <= nMeses; k++) {
+      const interes = saldo * i;
+      let capital = pagoFijo - interes;
+      if (k === nMeses || capital > saldo) capital = saldo;
+      const pagoReal = k === nMeses ? capital + interes : pagoFijo;
+      const saldoFinal = Math.max(0, saldo - capital);
+      nuevas.push({
+        numero: indexDesde + 1 + k, fecha: addMonths(fila.fecha, k),
+        saldoInicial: saldo, pago: pagoReal, interes, capital, saldoFinal,
+        estado: "pendiente", fechaPago: null, moraAplicada: 0, abono: 0,
+        montoPagadoAcumulado: 0, moraPagada: 0, moraCondonada: 0, moraGeneradaFinal: null,
+        comprobante: null, ultimoRechazo: null, luzPagado: false, luzFechaPago: null, luzMoraPagada: 0,
+      });
+      saldo = saldoFinal;
+    }
   }
   return [...historico, ...nuevas];
 }
@@ -333,7 +360,8 @@ function VistaImprimible({ prop, proyecto, hoy }) {
     ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
     ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
-    ["Mensualidad", fmt(prop.tabla[0]?.pago ?? 0)],
+    ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
+    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)],
     ["Saldo actual", fmt(saldoActual)],
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
@@ -431,6 +459,7 @@ function propiedadDesdeFila(row) {
     moraDiariaLuz: Number(row.mora_diaria_luz),
     aplicaLuz: !!row.aplica_luz,
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
+    sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     saldoAFavor: Number(row.saldo_a_favor || 0),
     clienteUserId: row.cliente_user_id,
   };
@@ -454,6 +483,7 @@ function propiedadHaciaFila(p) {
     mora_diaria_luz: p.moraDiariaLuz,
     aplica_luz: !!p.aplicaLuz,
     monto_luz_mensual: p.montoLuzMensual || 0,
+    sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     saldo_a_favor: p.saldoAFavor,
   };
 }
@@ -1073,6 +1103,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       mora_diaria_luz: datos.moraDiariaLuz,
       aplica_luz: !!datos.aplicaLuz,
       monto_luz_mensual: datos.montoLuzMensual || 0,
+      sistema_amortizacion: datos.sistemaAmortizacion || "nivelada",
       saldo_a_favor: 0,
     };
     const { data, error } = await supabase.from("propiedades").insert(fila).select().single();
@@ -2276,6 +2307,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     precio: "", enganche: "", tasaAnual: "", plazoAnios: "",
     diasGracia: 3, moraDiaria: 100, diasGraciaLuz: 3, moraDiariaLuz: 20,
     aplicaLuz: false, montoLuzMensual: "",
+    sistemaAmortizacion: "nivelada",
     fechaInicio: new Date().toISOString().slice(0, 10),
   });
 
@@ -2284,7 +2316,12 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
   const tasaNum = Number(f.tasaAnual) || 0;
   const plazoNum = Number(f.plazoAnios) || 0;
   const principal = Math.max(0, precioNum - engancheNum);
-  const mensualidad = plazoNum > 0 ? pagoMensual(principal, tasaNum, Math.round(plazoNum * 12)) : 0;
+  const mesesNum = Math.round(plazoNum * 12);
+  const esSaldos = f.sistemaAmortizacion === "saldos";
+  const iMensual = tasaNum / 100 / 12;
+  const capitalFijoPreview = mesesNum > 0 ? principal / mesesNum : 0;
+  const mensualidad = plazoNum > 0 ? (esSaldos ? capitalFijoPreview + principal * iMensual : pagoMensual(principal, tasaNum, mesesNum)) : 0;
+  const mensualidadFinal = esSaldos && mesesNum > 0 ? capitalFijoPreview + capitalFijoPreview * iMensual : 0; // aproximación referencial de la última cuota
   const datosCompletos = f.direccion && f.cliente && precioNum > 0 && tasaNum > 0 && plazoNum > 0;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
@@ -2354,11 +2391,29 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
           )}
         </div>
 
+        <div className="border-t border-[#2A3547] pt-4">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2">Sistema de amortización</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setF({ ...f, sistemaAmortizacion: "nivelada" })} className={`text-left p-3 rounded-md border text-xs ${f.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>
+              <div className="font-medium mb-0.5">Cuota nivelada</div>
+              <div className="text-[#8A93A3]">La mensualidad es siempre la misma.</div>
+            </button>
+            <button type="button" onClick={() => setF({ ...f, sistemaAmortizacion: "saldos" })} className={`text-left p-3 rounded-md border text-xs ${f.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>
+              <div className="font-medium mb-0.5">Sobre saldos</div>
+              <div className="text-[#8A93A3]">Capital fijo; la cuota empieza alta y baja cada mes.</div>
+            </button>
+          </div>
+        </div>
+
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 flex items-center gap-3">
           <Calculator size={18} className="text-[#C9A227]" />
           <div>
             <div className="text-xs text-[#8A93A3]">Monto a financiar: {plazoNum > 0 ? fmt(principal) : "—"}</div>
-            <div className="font-mono text-lg">{plazoNum > 0 ? fmt(mensualidad) : "—"} <span className="text-xs text-[#8A93A3]">/ mes</span></div>
+            {esSaldos ? (
+              <div className="font-mono text-lg">{plazoNum > 0 ? `${fmt(mensualidad)} → ${fmt(mensualidadFinal)}` : "—"} <span className="text-xs text-[#8A93A3]">primera → última cuota</span></div>
+            ) : (
+              <div className="font-mono text-lg">{plazoNum > 0 ? fmt(mensualidad) : "—"} <span className="text-xs text-[#8A93A3]">/ mes</span></div>
+            )}
           </div>
         </div>
 
@@ -2561,6 +2616,7 @@ function DetalleFila({ f, mora, prop, hoy }) {
 function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
+  const [abonoModo, setAbonoModo] = useState("reducir_plazo");
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
   const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
@@ -2635,7 +2691,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
       if (restante > 0.009) {
         // ya no quedan meses atrasados por cubrir: el sobrante sigue el destino que eligió el cliente
         if (c.destinoExcedente === "abono") {
-          p.tabla = recalcularConAbono(p.tabla, idxDetenido - 1, restante, p.tasaAnual);
+          p.tabla = recalcularConAbono(p.tabla, idxDetenido - 1, restante, p);
         } else {
           p.saldoAFavor = (p.saldoAFavor || 0) + restante;
         }
@@ -2672,7 +2728,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
     actualizar((p) => {
       const idx = p.tabla.findIndex((f) => f.estado !== "pagado");
       if (idx === -1) return p;
-      p.tabla = recalcularConAbono(p.tabla, idx, monto, p.tasaAnual);
+      p.tabla = recalcularConAbono(p.tabla, idx, monto, p, abonoModo);
       return p;
     });
     setAbonoMonto(0);
@@ -2788,6 +2844,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
         p.enganche = Number(condForm.enganche);
         p.tasaAnual = Number(condForm.tasaAnual);
         p.plazoAnios = Number(condForm.plazoAnios);
+        p.sistemaAmortizacion = condForm.sistemaAmortizacion || "nivelada";
         p.tabla = generarTabla(p);
       }
       return p;
@@ -2970,7 +3027,28 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
 
       {tab === "abono" && (
         <div>
-          <p className="text-sm text-[#8A93A3] mb-3">Registra un pago extra a capital. Se aplicará al saldo de la próxima cuota pendiente y la tabla se recalculará manteniendo la misma mensualidad, reduciendo el plazo restante.</p>
+          <p className="text-sm text-[#8A93A3] mb-3">Registra un pago extra a capital. Se aplicará al saldo de la próxima cuota pendiente.</p>
+
+          <div className="mb-3">
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">¿Qué quieres reducir?</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setAbonoModo("reducir_plazo")}
+                className={`text-left p-3 rounded-md border text-xs ${abonoModo === "reducir_plazo" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#161F2E]"}`}
+              >
+                <div className="font-medium mb-0.5">Reducir el plazo</div>
+                <div className="text-[#8A93A3]">{prop.sistemaAmortizacion === "saldos" ? "Mismo capital fijo mensual, menos meses restantes." : "Misma mensualidad, menos meses restantes."}</div>
+              </button>
+              <button
+                onClick={() => setAbonoModo("reducir_cuota")}
+                className={`text-left p-3 rounded-md border text-xs ${abonoModo === "reducir_cuota" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#161F2E]"}`}
+              >
+                <div className="font-medium mb-0.5">Reducir la cuota</div>
+                <div className="text-[#8A93A3]">Mismos meses restantes, pero paga menos {prop.sistemaAmortizacion === "saldos" ? "de capital" : ""} cada mes.</div>
+              </button>
+            </div>
+          </div>
+
           <div className="flex gap-2 items-end">
             <div className="flex-1">
               <CampoMoneda label="Monto del abono" value={abonoMonto} onChange={setAbonoMonto} />
@@ -3024,7 +3102,8 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
               <Fila2 label="Monto financiado" value={fmt(Math.max(0, prop.precio - prop.enganche))} />
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
-              <Fila2 label="Mensualidad" value={fmt(prop.tabla[0]?.pago ?? 0)} />
+              <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
+              <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
@@ -3065,6 +3144,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
                 <Fila2 label="Enganche" value={fmt(prop.enganche)} />
                 <Fila2 label="Tasa anual" value={`${fmtNum(prop.tasaAnual)}%`} />
                 <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años`} />
+                <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
                 <div className="border-t border-[#2A3547] my-1"></div>
                 <Fila2 label="Días de gracia (crédito)" value={`${prop.diasGracia} días`} />
                 <Fila2 label="Mora diaria (crédito)" value={fmt(prop.moraDiaria)} />
@@ -3096,6 +3176,13 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
                 <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
                 <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
                 <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
+              </div>
+              <div>
+                <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Sistema de amortización</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
+                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Campo label="Días de gracia (crédito)" type="number" min="0" step="1" value={condForm.diasGracia} onChange={(e) => setCondForm({ ...condForm, diasGracia: e.target.value.replace(/[^0-9]/g, "") })} />
@@ -3155,6 +3242,7 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
                 precio: prop.precio, enganche: prop.enganche, tasaAnual: prop.tasaAnual, plazoAnios: prop.plazoAnios,
                 diasGracia: prop.diasGracia, moraDiaria: prop.moraDiaria, diasGraciaLuz: prop.diasGraciaLuz, moraDiariaLuz: prop.moraDiariaLuz,
                 aplicaLuz: prop.aplicaLuz, montoLuzMensual: prop.montoLuzMensual,
+                sistemaAmortizacion: prop.sistemaAmortizacion || "nivelada",
               });
             } else {
               const idx = pidiendoPin;

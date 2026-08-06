@@ -1397,14 +1397,20 @@ function PantallaEquipo({ onVolver, esAdmin }) {
   const [tab, setTab] = useState("usuarios");
   const [roles, setRoles] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [proyectos, setProyectos] = useState([]);
+  const [propiedades, setPropiedades] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   const cargar = async () => {
     setCargando(true);
     const { data: rolesData } = await supabase.from("roles").select("*").order("created_at");
     const { data: usuariosData } = await supabase.from("usuarios").select("*, roles(*)").order("created_at");
+    const { data: proyectosData } = await supabase.from("proyectos").select("id, nombre").order("nombre");
+    const { data: propiedadesData } = await supabase.from("propiedades").select("id, folio, direccion, proyecto_id").order("folio");
     setRoles(rolesData || []);
     setUsuarios(usuariosData || []);
+    setProyectos(proyectosData || []);
+    setPropiedades(propiedadesData || []);
     setCargando(false);
   };
 
@@ -1429,7 +1435,7 @@ function PantallaEquipo({ onVolver, esAdmin }) {
       ) : tab === "usuarios" ? (
         <PestanaUsuarios usuarios={usuarios} roles={roles} onCreado={cargar} />
       ) : esAdmin ? (
-        <PestanaRoles roles={roles} onCreado={cargar} />
+        <PestanaRoles roles={roles} proyectos={proyectos} propiedades={propiedades} onCreado={cargar} />
       ) : (
         <div className="text-sm text-[#8A93A3]">Solo el Administrador puede ver y editar roles.</div>
       )}
@@ -1507,7 +1513,7 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
   );
 }
 
-function PestanaRoles({ roles, onCreado }) {
+function PestanaRoles({ roles, proyectos, propiedades, onCreado }) {
   const [creando, setCreando] = useState(false);
   return (
     <div>
@@ -1515,19 +1521,81 @@ function PestanaRoles({ roles, onCreado }) {
         <Plus size={16} /> Nuevo rol
       </button>
       <div className="space-y-3">
-        {roles.map((r) => <TarjetaRol key={r.id} rol={r} onActualizado={onCreado} />)}
+        {roles.map((r) => <TarjetaRol key={r.id} rol={r} proyectos={proyectos} propiedades={propiedades} onActualizado={onCreado} />)}
       </div>
-      {creando && <ModalNuevoRol onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
+      {creando && <ModalNuevoRol proyectos={proyectos} propiedades={propiedades} onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
     </div>
   );
 }
 
-function TarjetaRol({ rol, onActualizado }) {
+// Checklist de proyectos/propiedades para restringir el alcance de un rol. Marcar un proyecto
+// entero cubre automáticamente todas sus propiedades; también se pueden marcar propiedades
+// sueltas de proyectos que no están completos.
+function SelectorAlcance({ proyectos, propiedades, restringido, setRestringido, proyectosSel, setProyectosSel, propiedadesSel, setPropiedadesSel }) {
+  const toggleProyecto = (id) => {
+    setProyectosSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const toggleProp = (id) => {
+    setPropiedadesSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  return (
+    <div className="space-y-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+      <label className="flex items-center gap-2 text-xs cursor-pointer">
+        <input type="checkbox" checked={restringido} onChange={(e) => setRestringido(e.target.checked)} />
+        Restringir a proyectos/propiedades específicos (si no, ve todo)
+      </label>
+      {restringido && (
+        <div className="space-y-2 pt-1.5 border-t border-[#2A3547] max-h-56 overflow-y-auto">
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Proyectos completos</div>
+          {proyectos.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={proyectosSel.includes(p.id)} onChange={() => toggleProyecto(p.id)} />
+              {p.nombre}
+            </label>
+          ))}
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] pt-1.5 border-t border-[#2A3547]">Propiedades sueltas</div>
+          {propiedades.map((pr) => (
+            <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} disabled={proyectosSel.includes(pr.proyecto_id)} />
+              {pr.folio || pr.direccion}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TarjetaRol({ rol, proyectos, propiedades, onActualizado }) {
   const [editando, setEditando] = useState(false);
   const [permisos, setPermisos] = useState(rol.permisos || {});
+  const [restringido, setRestringido] = useState(!!rol.ambito_restringido);
+  const [proyectosSel, setProyectosSel] = useState([]);
+  const [propiedadesSel, setPropiedadesSel] = useState([]);
+  const [guardando, setGuardando] = useState(false);
+
+  const empezarEdicion = async () => {
+    const [{ data: rp }, { data: rpr }] = await Promise.all([
+      supabase.from("roles_proyectos").select("proyecto_id").eq("rol_id", rol.id),
+      supabase.from("roles_propiedades").select("propiedad_id").eq("rol_id", rol.id),
+    ]);
+    setProyectosSel((rp || []).map((r) => r.proyecto_id));
+    setPropiedadesSel((rpr || []).map((r) => r.propiedad_id));
+    setPermisos(rol.permisos || {});
+    setRestringido(!!rol.ambito_restringido);
+    setEditando(true);
+  };
 
   const guardar = async () => {
-    await supabase.from("roles").update({ permisos }).eq("id", rol.id);
+    setGuardando(true);
+    await supabase.from("roles").update({ permisos, ambito_restringido: restringido }).eq("id", rol.id);
+    await supabase.from("roles_proyectos").delete().eq("rol_id", rol.id);
+    await supabase.from("roles_propiedades").delete().eq("rol_id", rol.id);
+    if (restringido) {
+      if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: rol.id, proyecto_id })));
+      if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: rol.id, propiedad_id })));
+    }
+    setGuardando(false);
     setEditando(false);
     onActualizado();
   };
@@ -1548,8 +1616,11 @@ function TarjetaRol({ rol, onActualizado }) {
     <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="font-serif">{rol.nombre}</div>
-        {!editando && <button onClick={() => setEditando(true)} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1"><Pencil size={12} /> Editar</button>}
+        {!editando && <button onClick={empezarEdicion} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1"><Pencil size={12} /> Editar</button>}
       </div>
+      {!editando && rol.ambito_restringido && (
+        <div className="text-[11px] text-[#C9A227] mb-2">Alcance restringido a proyectos/propiedades específicos.</div>
+      )}
       <div className="space-y-1.5">
         {PERMISOS_DISPONIBLES.map(([key, label]) => (
           <label key={key} className="flex items-center gap-2 text-xs cursor-pointer">
@@ -1559,23 +1630,42 @@ function TarjetaRol({ rol, onActualizado }) {
         ))}
       </div>
       {editando && (
+        <div className="mt-3">
+          <SelectorAlcance
+            proyectos={proyectos} propiedades={propiedades}
+            restringido={restringido} setRestringido={setRestringido}
+            proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
+            propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
+          />
+        </div>
+      )}
+      {editando && (
         <div className="flex gap-2 mt-3">
-          <button onClick={() => { setPermisos(rol.permisos || {}); setEditando(false); }} className="flex-1 text-xs bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
-          <button onClick={guardar} className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-1.5 rounded-md">Guardar</button>
+          <button onClick={() => setEditando(false)} className="flex-1 text-xs bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md">
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function ModalNuevoRol({ onCancelar, onCreado }) {
+function ModalNuevoRol({ proyectos, propiedades, onCancelar, onCreado }) {
   const [nombre, setNombre] = useState("");
   const [permisos, setPermisos] = useState({});
+  const [restringido, setRestringido] = useState(false);
+  const [proyectosSel, setProyectosSel] = useState([]);
+  const [propiedadesSel, setPropiedadesSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
   const crear = async () => {
     setGuardando(true);
-    await supabase.from("roles").insert({ nombre, permisos, es_administrador: false });
+    const { data: nuevo, error } = await supabase.from("roles").insert({ nombre, permisos, es_administrador: false, ambito_restringido: restringido }).select().single();
+    if (!error && nuevo && restringido) {
+      if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: nuevo.id, proyecto_id })));
+      if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: nuevo.id, propiedad_id })));
+    }
     setGuardando(false);
     onCreado();
   };
@@ -1593,6 +1683,12 @@ function ModalNuevoRol({ onCancelar, onCreado }) {
             </label>
           ))}
         </div>
+        <SelectorAlcance
+          proyectos={proyectos} propiedades={propiedades}
+          restringido={restringido} setRestringido={setRestringido}
+          proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
+          propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
+        />
         <div className="flex gap-2">
           <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
           <button onClick={crear} disabled={guardando || !nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">

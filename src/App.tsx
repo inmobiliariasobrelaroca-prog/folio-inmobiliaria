@@ -398,6 +398,7 @@ function VistaImprimible({ prop, proyecto, hoy }) {
           <tr className="bg-[#101826] text-white">
             <th className="p-1 text-left">#</th>
             <th className="p-1 text-left">Fecha</th>
+            <th className="p-1 text-left">Fecha real de pago</th>
             <th className="p-1 text-right">Capital</th>
             <th className="p-1 text-right">Interés</th>
             <th className="p-1 text-right">Cuota</th>
@@ -417,6 +418,7 @@ function VistaImprimible({ prop, proyecto, hoy }) {
               <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
                 <td className="p-1">{f.numero}</td>
                 <td className="p-1">{fmtDate(f.fecha)}</td>
+                <td className="p-1">{f.fechaPagoReal ? fmtDate(f.fechaPagoReal) : "-"}</td>
                 <td className="p-1 text-right">{fmt(f.capital)}</td>
                 <td className="p-1 text-right">{fmt(f.interes)}</td>
                 <td className="p-1 text-right">{fmt(f.pago)}</td>
@@ -506,6 +508,7 @@ function cuotaHaciaFila(f, propiedadId) {
     saldo_final: f.saldoFinal,
     estado: f.estado,
     fecha_pago: f.fechaPago,
+    fecha_pago_real: f.fechaPagoReal || null,
     mora_pagada: f.moraPagada || 0,
     mora_condonada: f.moraCondonada || 0,
     mora_generada_final: f.moraGeneradaFinal,
@@ -530,6 +533,7 @@ function cuotaDesdeFila(row) {
     saldoFinal: Number(row.saldo_final),
     estado: row.estado,
     fechaPago: row.fecha_pago,
+    fechaPagoReal: row.fecha_pago_real,
     moraPagada: Number(row.mora_pagada || 0),
     moraCondonada: Number(row.mora_condonada || 0),
     moraGeneradaFinal: row.mora_generada_final != null ? Number(row.mora_generada_final) : null,
@@ -584,6 +588,7 @@ async function guardarComprobanteEnBD(cuotaId, path, datos) {
     faltante: datos.faltante,
     resultado: datos.resultado,
     destino_excedente: datos.destinoExcedente,
+    fecha_pago_real: datos.fechaPagoReal || null,
     estado: "revision",
   });
   if (error) console.error("Error guardando el registro del comprobante:", error);
@@ -1028,12 +1033,19 @@ function AppInterno({ perfil, cerrarSesion }) {
 
   useEffect(() => {
     if (!imprimir) return;
+    // El navegador usa document.title como nombre sugerido del PDF al imprimir/guardar,
+    // así que lo cambiamos al nombre del cliente en vez de dejar el genérico "Vite App".
+    const tituloOriginal = document.title;
+    const nombreCliente = (imprimir.prop?.cliente || "estado-de-cuenta").trim();
+    const fechaHoy = (imprimir.hoy || "").replaceAll("-", "");
+    document.title = `${nombreCliente} - Estado de cuenta ${fechaHoy}`;
     const t = setTimeout(() => window.print(), 80);
-    const onAfter = () => setImprimir(null);
+    const onAfter = () => { setImprimir(null); document.title = tituloOriginal; };
     window.addEventListener("afterprint", onAfter);
     return () => {
       clearTimeout(t);
       window.removeEventListener("afterprint", onAfter);
+      document.title = tituloOriginal;
     };
   }, [imprimir]);
 
@@ -1086,6 +1098,7 @@ function AppInterno({ perfil, cerrarSesion }) {
               faltante: Number(row.faltante || 0),
               resultado: row.resultado,
               destinoExcedente: row.destino_excedente,
+              fechaPagoReal: row.fecha_pago_real,
             };
           }
         }
@@ -1304,7 +1317,7 @@ function AppInterno({ perfil, cerrarSesion }) {
         )}
 
         {modo === "inmobiliaria" && pantalla === "detalle" && propSel && (
-          <DetallePropiedad prop={propSel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} />
+          <DetallePropiedad prop={propSel} proyecto={proySel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} onImprimir={(datos) => setImprimir(datos)} />
         )}
 
         {modo === "cliente" && (
@@ -2803,6 +2816,12 @@ function DetalleFila({ f, mora, prop, hoy }) {
         <div className="text-[#8A93A3]">Mora</div>
         <div className={`font-mono ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
       </div>
+      {f.fechaPagoReal && (
+        <div className="col-span-4 -mt-0.5">
+          <span className="text-[#8A93A3]">Fecha real de pago: </span>
+          <span className="font-mono text-[#EDE7D9]">{fmtDate(f.fechaPagoReal)}</span>
+        </div>
+      )}
       {prop?.aplicaLuz && (
         <div className="col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
           <span className="flex items-center gap-1.5 text-[#8A93A3]"><Zap size={12} className="text-[#C9A227]" /> Luz de este mes: <span className="font-mono text-[#EDE7D9]">{fmt(prop.montoLuzMensual)}</span></span>
@@ -2834,7 +2853,7 @@ function DetalleFila({ f, mora, prop, hoy }) {
 
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
-function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
+function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, onImprimir }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
@@ -2904,6 +2923,8 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
       if (!c) return p;
 
       const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado, hoy, p);
+
+      if (c.fechaPagoReal) fila.fechaPagoReal = c.fechaPagoReal;
 
       if (fila.estado !== "pagado" && fila.estado !== "parcial") {
         // la fila objetivo no cambió de estado dentro de la cascada (caso raro), la dejamos consistente
@@ -3170,6 +3191,9 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
               </button>
               <div className="flex-1">
                 <div className="text-[11px] text-[#8A93A3] mb-1">Comprobante subido {fmtDateTime(f.comprobante.fecha)}</div>
+                {f.comprobante.fechaPagoReal && (
+                  <div className="text-[11px] text-[#C9A227] mb-1">Fecha real de pago: {fmtDate(f.comprobante.fechaPagoReal)}</div>
+                )}
                 <div className="text-xs font-mono">Depositó {fmt(f.comprobante.montoDepositado)}</div>
                 {f.comprobante.resultado === "parcial" && (
                   <div className="text-[11px] text-blue-300">Pago parcial — faltarían {fmt(f.comprobante.faltante)}</div>
@@ -3274,6 +3298,9 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
           <h1 className="font-serif text-xl leading-tight">{prop.direccion}</h1>
           <div className="text-xs text-[#8A93A3] mt-0.5">{prop.cliente}{prop.telefono ? ` · ${prop.telefono}` : ""}</div>
         </div>
+        <button onClick={() => onImprimir({ prop, proyecto, hoy })} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5" title="Imprimir / generar PDF">
+          <Printer size={16} />
+        </button>
         <button onClick={() => setEditandoDatos(true)} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5" title="Editar datos generales">
           <Pencil size={16} />
         </button>
@@ -3799,6 +3826,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const [monto, setMonto] = useState(0);
   const [destino, setDestino] = useState(null);
   const [archivo, setArchivo] = useState(null);
+  const [fechaPagoReal, setFechaPagoReal] = useState(hoy);
 
   const montoNum = Number(monto) || 0;
   const { moraPendiente, luzPendiente, luzMoraPendiente, montoRequerido } = calcularEstadoPago(f, hoy, prop);
@@ -3806,7 +3834,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const excedente = montoNum > 0 ? Math.max(0, montoNum - montoRequerido) : 0;
   const faltante = montoNum > 0 ? Math.max(0, montoRequerido - montoNum) : 0;
   const necesitaDestino = excedente > 0.009 && aTiempo;
-  const puedeEnviar = montoNum > 0 && archivo && (!necesitaDestino || destino);
+  const puedeEnviar = montoNum > 0 && archivo && fechaPagoReal && (!necesitaDestino || destino);
 
   const enviar = () => {
     const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
@@ -3819,6 +3847,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       faltante,
       resultado,
       destinoExcedente: resultado === "excedente" ? (necesitaDestino ? destino : "creditoSiguiente") : null,
+      fechaPagoReal,
     });
   };
 
@@ -3835,6 +3864,10 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
           Ya tienes {fmt(moraPendiente)} de mora pendiente. De tu depósito, primero se cubrirá esa mora y el resto se aplicará a la cuota.
         </div>
       )}
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Qué día hiciste el depósito?</span>
+        <input type="date" value={fechaPagoReal} max={hoy} onChange={(e) => setFechaPagoReal(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+      </label>
       <CampoMoneda label="¿Cuánto depositaste?" value={monto} onChange={setMonto} />
 
       {montoNum > 0 && faltante > 0.009 && (
@@ -3926,6 +3959,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           faltante: datos.faltante,
           resultado: datos.resultado,
           destinoExcedente: datos.destinoExcedente,
+          fechaPagoReal: datos.fechaPagoReal,
         };
         fila.estado = "revision";
         p.notificaciones = p.notificaciones || [];

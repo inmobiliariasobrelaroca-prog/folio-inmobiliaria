@@ -3125,6 +3125,9 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
   const renderFila = (f, idx) => {
     const est = estadoReal(f, hoy, prop.diasGracia);
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
+    // No dejamos marcar una cuota como pagada si una cuota anterior todavía está en
+    // revisión (comprobante subido, sin aprobar/rechazar) — hay que resolver esa primero.
+    const cuotaAnteriorEnRevision = prop.tabla.some((f2, i2) => i2 < idx && estadoReal(f2, hoy, prop.diasGracia) === "revision");
     return (
       <div key={idx} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
         <div className="flex items-center justify-between">
@@ -3139,7 +3142,11 @@ function DetallePropiedad({ prop, hoy, onVolver, actualizar, puede }) {
               <button onClick={() => abrirCondonar(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Perdonar mora</button>
             )}
             {(est === "vencido" || est === "pendiente" || est === "gracia" || est === "parcial") && puede("aprobar_rechazar_pagos") && (
-              <button onClick={() => marcarPagado(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Marcar pagado</button>
+              cuotaAnteriorEnRevision ? (
+                <button disabled title="Hay una cuota anterior con comprobante en revisión — apruébala o recházala primero." className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md opacity-40 cursor-not-allowed">Marcar pagado</button>
+              ) : (
+                <button onClick={() => marcarPagado(idx)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">Marcar pagado</button>
+              )
             )}
           </div>
         </div>

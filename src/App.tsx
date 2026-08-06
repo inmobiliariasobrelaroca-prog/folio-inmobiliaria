@@ -109,15 +109,16 @@ function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, si
 // también, sigue aplicando ahí en cascada. Se detiene al quedarse sin dinero o al llegar a
 // una cuota que aún no vence (esa parte del sobrante ya no se aplica aquí — el llamador
 // decide qué hacer con ella).
-function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
+function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop, fechaReferencia) {
+  const fref = fechaReferencia || hoy; // fecha contra la que se calcula mora/estado (real del pago, si se corrigió)
   let restante = monto;
   let idx = idxInicial;
   while (restante > 0.009 && idx < tabla.length) {
     const fila = tabla[idx];
     if (fila.estado === "pagado") { idx++; continue; }
-    if (idx > idxInicial && daysBetween(hoy, fila.fecha) <= 0) break; // aún no vence, no seguir en cascada
+    if (idx > idxInicial && daysBetween(fref, fila.fecha) <= 0) break; // aún no vence, no seguir en cascada
 
-    const { moraPendiente, cuotaPendiente, luzPendiente, luzMoraPendiente } = calcularEstadoPago(fila, hoy, prop);
+    const { moraPendiente, cuotaPendiente, luzPendiente, luzMoraPendiente } = calcularEstadoPago(fila, fref, prop);
 
     const montoParaMora = Math.min(restante, moraPendiente);
     fila.moraPagada = (fila.moraPagada || 0) + montoParaMora;
@@ -134,17 +135,17 @@ function aplicarPagoCascada(tabla, idxInicial, monto, hoy, prop) {
 
       if (luzPendiente > 0 && restante >= luzPendiente - 0.009) {
         fila.luzPagado = true;
-        fila.luzFechaPago = hoy;
+        fila.luzFechaPago = fref;
         restante -= luzPendiente;
       }
     }
 
-    const estadoNuevo = calcularEstadoPago(fila, hoy, prop);
+    const estadoNuevo = calcularEstadoPago(fila, fref, prop);
     const todoResuelto = estadoNuevo.moraPendiente <= 0.009 && estadoNuevo.cuotaPendiente <= 0.009 && estadoNuevo.luzPendiente <= 0.009 && estadoNuevo.luzMoraPendiente <= 0.009;
     if (todoResuelto) {
-      fila.moraGeneradaFinal = calcularMoraGenerada(fila, hoy, prop.diasGracia, prop.moraDiaria);
+      fila.moraGeneradaFinal = calcularMoraGenerada(fila, fref, prop.diasGracia, prop.moraDiaria);
       fila.estado = "pagado";
-      fila.fechaPago = hoy;
+      fila.fechaPago = fref;
       fila.moraAplicada = fila.moraPagada;
       idx++;
     } else {
@@ -3029,7 +3030,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
       const c = fila.comprobante;
       if (!c) return p;
 
-      const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado, hoy, p);
+      const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado, hoy, p, c.fechaPagoReal);
 
       if (c.fechaPagoReal) fila.fechaPagoReal = c.fechaPagoReal;
 

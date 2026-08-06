@@ -428,7 +428,7 @@ function VistaImprimible({ prop, proyecto, hoy }) {
               <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
                 <td className="p-1">{f.numero}</td>
                 <td className="p-1">{fmtDate(f.fecha)}</td>
-                <td className="p-1">{f.fechaPagoReal ? fmtDate(f.fechaPagoReal) : "-"}</td>
+                <td className="p-1">{(f.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.fechaPagoReal)) > (prop?.diasGracia || 0)) ? fmtDate(f.fechaPagoReal) : "-"}</td>
                 <td className="p-1 text-right">{fmt(f.capital)}</td>
                 <td className="p-1 text-right">{fmt(f.interes)}</td>
                 <td className="p-1 text-right">{fmt(f.pago)}</td>
@@ -2924,7 +2924,7 @@ function DetalleFila({ f, mora, prop, hoy }) {
         <div className="text-[#8A93A3]">Mora</div>
         <div className={`font-mono ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
       </div>
-      {f.fechaPagoReal && (
+      {f.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.fechaPagoReal)) > (prop?.diasGracia || 0) && (
         <div className="col-span-4 -mt-0.5">
           <span className="text-[#8A93A3]">Fecha real de pago: </span>
           <span className="font-mono text-[#EDE7D9]">{fmtDate(f.fechaPagoReal)}</span>
@@ -3301,7 +3301,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               </button>
               <div className="flex-1">
                 <div className="text-[11px] text-[#8A93A3] mb-1">Comprobante subido {fmtDateTime(f.comprobante.fecha)}</div>
-                {f.comprobante.fechaPagoReal && (
+                {f.comprobante.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.comprobante.fechaPagoReal)) > (prop?.diasGracia || 0) && (
                   <div className="text-[11px] text-[#C9A227] mb-1">Fecha real de pago: {fmtDate(f.comprobante.fechaPagoReal)}</div>
                 )}
                 <div className="text-xs font-mono">Depositó {fmt(f.comprobante.montoDepositado)}</div>

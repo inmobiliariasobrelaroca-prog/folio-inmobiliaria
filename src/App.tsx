@@ -53,7 +53,7 @@ function mesesRestantes(principal, tasaAnual, pago) {
   return Math.max(1, Math.ceil(n));
 }
 
-function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, sistemaAmortizacion }) {
+function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, sistemaAmortizacion, fechaInicioIntereses }) {
   const principal = Math.max(0, precio - enganche);
   const meses = Math.round(plazoAnios * 12);
   const i = tasaAnual / 100 / 12;
@@ -63,14 +63,23 @@ function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, si
   let saldo = principal;
   const filas = [];
   for (let n = 1; n <= meses; n++) {
-    const interes = saldo * i;
-    let capital = esSaldos ? capitalFijo : pagoNivelado - interes;
+    const fecha = addMonths(fechaInicio, n);
+    let interes = saldo * i;
+    // Si el crédito empezó a generar intereses antes de la fecha que se usa para armar el
+    // calendario mensual (ej. hubo semanas entre la entrega y el arranque de cobros), la
+    // cuota #1 carga el interés real por días corridos desde esa fecha, en vez del interés
+    // de un mes calendario estándar. El resto del calendario sigue igual, sin cambios.
+    if (n === 1 && fechaInicioIntereses) {
+      const dias = Math.round((new Date(fecha + "T00:00:00") - new Date(fechaInicioIntereses + "T00:00:00")) / 86400000);
+      if (dias > 0) interes = saldo * (tasaAnual / 100 / 365) * dias;
+    }
+    let capital = esSaldos ? capitalFijo : pagoNivelado - saldo * i;
     if (n === meses || capital > saldo) capital = saldo;
-    const pagoReal = esSaldos ? capital + interes : (n === meses ? capital + interes : pagoNivelado);
+    const pagoReal = esSaldos ? capital + interes : (n === meses ? capital + interes : capital + interes);
     const saldoFinal = Math.max(0, saldo - capital);
     filas.push({
       numero: n,
-      fecha: addMonths(fechaInicio, n),
+      fecha,
       saldoInicial: saldo,
       pago: pagoReal,
       interes,
@@ -459,6 +468,7 @@ function propiedadDesdeFila(row) {
     tasaAnual: Number(row.tasa_anual),
     plazoAnios: Number(row.plazo_anios),
     fechaInicio: row.fecha_inicio,
+    fechaInicioIntereses: row.fecha_inicio_intereses,
     diasGracia: row.dias_gracia,
     moraDiaria: Number(row.mora_diaria),
     diasGraciaLuz: row.dias_gracia_luz,
@@ -483,6 +493,7 @@ function propiedadHaciaFila(p) {
     tasa_anual: p.tasaAnual,
     plazo_anios: p.plazoAnios,
     fecha_inicio: p.fechaInicio,
+    fecha_inicio_intereses: p.fechaInicioIntereses || null,
     dias_gracia: p.diasGracia,
     mora_diaria: p.moraDiaria,
     dias_gracia_luz: p.diasGraciaLuz,
@@ -3229,6 +3240,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         p.tasaAnual = Number(condForm.tasaAnual);
         p.plazoAnios = Number(condForm.plazoAnios);
         p.sistemaAmortizacion = condForm.sistemaAmortizacion || "nivelada";
+        p.fechaInicio = condForm.fechaInicio;
+        p.fechaInicioIntereses = condForm.fechaInicioIntereses || null;
         p.tabla = generarTabla(p);
       }
       return p;
@@ -3594,6 +3607,15 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
                 <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
                 <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
                 <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Fecha base (cuota #1 = un mes después)</span>
+                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Fecha real de inicio (opcional)</span>
+                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicioIntereses || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicioIntereses: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                  <span className="text-[10px] text-[#8A93A3]">Si el crédito empezó antes de la fecha base (ej. hubo semanas entre la entrega y la 1ra cuota), poné aquí esa fecha real — la cuota #1 va a cargar el interés real de esos días extra. Dejalo vacío si no aplica.</span>
+                </label>
               </div>
               <div>
                 <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Sistema de amortización</span>
@@ -3661,6 +3683,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
                 diasGracia: prop.diasGracia, moraDiaria: prop.moraDiaria, diasGraciaLuz: prop.diasGraciaLuz, moraDiariaLuz: prop.moraDiariaLuz,
                 aplicaLuz: prop.aplicaLuz, montoLuzMensual: prop.montoLuzMensual,
                 sistemaAmortizacion: prop.sistemaAmortizacion || "nivelada",
+                fechaInicio: prop.fechaInicio, fechaInicioIntereses: prop.fechaInicioIntereses || "",
               });
             } else {
               const idx = pidiendoPin;
@@ -4262,4 +4285,3 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     </div>
   );
 }
-

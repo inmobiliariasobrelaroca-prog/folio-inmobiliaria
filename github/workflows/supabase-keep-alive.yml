@@ -1,0 +1,27 @@
+name: Mantener Supabase activo
+
+# Le hace un pequeño "ping" a la base de datos cada 3 días para que Supabase
+# nunca la vea como inactiva y la pause (el plan gratis pausa después de ~7 días
+# sin actividad). No modifica ni borra nada, solo hace una consulta de lectura.
+
+on:
+  schedule:
+    - cron: "0 12 */3 * *"   # cada 3 días a las 12:00 UTC (~6am Guatemala)
+  workflow_dispatch: {}       # también se puede correr a mano desde la pestaña "Actions"
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping a la base de datos de Sobre la Roca
+        run: |
+          codigo=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://knquysqjhprnyztkgmwb.supabase.co/rest/v1/roles?select=id&limit=1" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtucXV5c3FqaHBybnl6dGtnbXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDQ4MTAsImV4cCI6MjA5OTQ4MDgxMH0.lbGr2k7_NIiqAYhKRDP0aGZ8-MJsA-ySEFqTemhbexs")
+          echo "Respuesta de Supabase: $codigo"
+          if [ "$codigo" -ge 200 ] && [ "$codigo" -lt 500 ]; then
+            echo "OK — la base respondió, cuenta como actividad."
+          else
+            echo "Ojo: respuesta inesperada ($codigo). Revisar manualmente."
+            exit 1
+          fi

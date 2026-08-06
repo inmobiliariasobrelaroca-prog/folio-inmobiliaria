@@ -4262,3 +4262,4 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     </div>
   );
 }
+

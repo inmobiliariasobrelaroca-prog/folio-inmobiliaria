@@ -4029,6 +4029,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const prop = propiedades.find((p) => p.id === seleccion) || propiedades[0];
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
+  const [fechaAplicarSaldo, setFechaAplicarSaldo] = useState(hoy);
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
@@ -4094,11 +4095,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     }
   };
 
-  const aplicarSaldoAFavor = (idx) => {
+  const aplicarSaldoAFavor = (idx, fechaReferencia) => {
     actualizar(prop.id, (p) => {
       const disponible = p.saldoAFavor || 0;
       if (disponible <= 0) return p;
-      const { restante } = aplicarPagoCascada(p.tabla, idx, disponible, hoy, p);
+      const { restante } = aplicarPagoCascada(p.tabla, idx, disponible, hoy, p, fechaReferencia);
       const aplicado = disponible - restante;
       p.saldoAFavor = restante;
       p.notificaciones = p.notificaciones || [];
@@ -4187,12 +4188,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
 
       {prop.saldoAFavor > 0 && (
         <div className="bg-emerald-950/30 border border-emerald-800 rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-3 flex-wrap">
             <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} de saldo a favor</div>
             {proximaCuota && (
-              <button onClick={() => aplicarSaldoAFavor(prop.tabla.indexOf(proximaCuota))} className="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded-md shrink-0">
-                Aplicar a mi próxima cuota
-              </button>
+              <div className="flex items-center gap-2">
+                <input type="date" value={fechaAplicarSaldo} max={hoy} onChange={(e) => setFechaAplicarSaldo(e.target.value)} title="Fecha real en que se completó (solo si es distinta a hoy)" className="bg-[#0C121C] border border-emerald-800 rounded-md px-2 py-1.5 text-xs" />
+                <button onClick={() => aplicarSaldoAFavor(prop.tabla.indexOf(proximaCuota), fechaAplicarSaldo)} className="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded-md shrink-0">
+                  Aplicar a mi cuota pendiente
+                </button>
+              </div>
             )}
           </div>
         </div>

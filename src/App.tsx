@@ -4,7 +4,7 @@ import logoEmblema from "./assets/emblema_sr.png";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -1041,6 +1041,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [imprimir, setImprimir] = useState(null);
+  const [actualizando, setActualizando] = useState(false);
   const hoy = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
@@ -1061,8 +1062,7 @@ function AppInterno({ perfil, cerrarSesion }) {
     };
   }, [imprimir]);
 
-  useEffect(() => {
-    (async () => {
+  const cargarDatos = async () => {
       const { data: proys, error: errProys } = await supabase.from("proyectos").select("*").order("created_at");
       if (errProys) console.error("Error cargando proyectos:", errProys);
       setProyectos((proys || []).map((r) => ({ id: r.id, nombre: r.nombre, ubicacion: r.ubicacion })));
@@ -1086,12 +1086,12 @@ function AppInterno({ perfil, cerrarSesion }) {
         // sin importar en qué navegador/dispositivo se esté revisando.
         const idsCuotas = (cuotasRows || []).map((r) => r.id);
         let comprobantesPorCuota = {};
+        let historialComprobantesPorCuota = {};
         if (idsCuotas.length > 0) {
           const { data: compRows, error: errComp } = await supabase
             .from("comprobantes").select("*").in("cuota_id", idsCuotas).order("created_at", { ascending: false });
           if (errComp) console.error("Error cargando comprobantes:", errComp);
           for (const row of compRows || []) {
-            if (comprobantesPorCuota[row.cuota_id]) continue; // ya tenemos el más reciente de esa cuota
             let imagenUrl = null;
             try {
               const { data: signed } = await supabase.storage.from("comprobantes").createSignedUrl(row.imagen_url, 3600);
@@ -1099,7 +1099,7 @@ function AppInterno({ perfil, cerrarSesion }) {
             } catch (e) {
               console.error("Error generando enlace del comprobante:", e);
             }
-            comprobantesPorCuota[row.cuota_id] = {
+            const comprobanteObj = {
               imagen: imagenUrl,
               fecha: row.created_at,
               estado: row.estado,
@@ -1112,6 +1112,9 @@ function AppInterno({ perfil, cerrarSesion }) {
               destinoExcedente: row.destino_excedente,
               fechaPagoReal: row.fecha_pago_real,
             };
+            if (!comprobantesPorCuota[row.cuota_id]) comprobantesPorCuota[row.cuota_id] = comprobanteObj; // el más reciente (para revisar/aprobar)
+            if (!historialComprobantesPorCuota[row.cuota_id]) historialComprobantesPorCuota[row.cuota_id] = [];
+            historialComprobantesPorCuota[row.cuota_id].push(comprobanteObj); // todos, para mostrarlos en la tabla ya pagada
           }
         }
 
@@ -1119,6 +1122,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           if (!cuotasPorPropiedad[row.propiedad_id]) cuotasPorPropiedad[row.propiedad_id] = [];
           const fila = cuotaDesdeFila(row);
           fila.comprobante = comprobantesPorCuota[row.id] || null;
+          fila.comprobantesHistorial = (historialComprobantesPorCuota[row.id] || []).slice().reverse(); // orden cronológico
           cuotasPorPropiedad[row.propiedad_id].push(fila);
         });
 
@@ -1168,7 +1172,24 @@ function AppInterno({ perfil, cerrarSesion }) {
       }
       setPropiedades(lista);
       setCargado(true);
-    })();
+  };
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  // Cuando volvés a esta pestaña (o la ventana recupera el foco), se refresca solo desde la
+  // base de datos — así no hace falta recargar la página a mano para ver cambios recientes.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === "visible") cargarDatos();
+    };
+    window.addEventListener("focus", alVolver);
+    document.addEventListener("visibilitychange", alVolver);
+    return () => {
+      window.removeEventListener("focus", alVolver);
+      document.removeEventListener("visibilitychange", alVolver);
+    };
   }, []);
 
   const proySel = proyectos.find((p) => p.id === proyectoSel);
@@ -1254,6 +1275,8 @@ function AppInterno({ perfil, cerrarSesion }) {
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
           onClientes={() => setPantalla("clientes")}
+          onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
+          actualizando={actualizando}
         />
 
         {modo === "inmobiliaria" && pantalla === "clientes" && (
@@ -1349,7 +1372,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes }) {
+function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -1361,6 +1384,11 @@ function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVe
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {onActualizar && (
+            <button onClick={onActualizar} disabled={actualizando} title="Actualizar desde la base de datos" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 disabled:opacity-40">
+              <RefreshCw size={16} className={actualizando ? "animate-spin" : ""} />
+            </button>
+          )}
           {setModo && (
             <div className="flex rounded-full bg-[#1A2333] p-1 text-xs">
               <button onClick={() => setModo("inmobiliaria")} className={`px-3 py-1.5 rounded-full transition ${modo === "inmobiliaria" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
@@ -3383,11 +3411,17 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         )}
 
         {est === "pagado" && f.comprobante && (
-          <div className="mt-3 pt-3 border-t border-[#2A3547] flex items-center gap-3">
-            <button onClick={() => setImagenAmpliada(f.comprobante.imagen)} className="shrink-0">
-              <img src={f.comprobante.imagen} alt="Recibo" className="w-14 h-14 object-cover rounded-md border border-[#2A3547]" />
-            </button>
-            <div className="text-[11px] text-emerald-400">Recibo adjunto</div>
+          <div className="mt-3 pt-3 border-t border-[#2A3547]">
+            <div className="flex items-center gap-3 flex-wrap">
+              {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i) => (
+                <button key={i} onClick={() => setImagenAmpliada(c.imagen)} className="shrink-0" title={`${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
+                  <img src={c.imagen} alt="Recibo" className="w-14 h-14 object-cover rounded-md border border-[#2A3547]" />
+                </button>
+              ))}
+              <div className="text-[11px] text-emerald-400">
+                {f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? `${f.comprobantesHistorial.length} recibos adjuntos` : "Recibo adjunto"}
+              </div>
+            </div>
           </div>
         )}
 

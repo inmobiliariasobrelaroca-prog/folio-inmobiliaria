@@ -4301,7 +4301,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       )}
 
       <div className="text-[11px] text-[#8A93A3] mt-6 text-center leading-relaxed">
-        Los avisos automáticos por SMS, WhatsApp o correo no se envían desde esta vista de demostración — requieren conectar un servicio como Twilio o un proveedor de email al backend.
+        Los avisos automáticos por SMS, WhatsApp o correo no se envían desde esta vista de demostración — requieren conectar un servicio como  o un proveedor de email al backend.
       </div>
     </div>
   );

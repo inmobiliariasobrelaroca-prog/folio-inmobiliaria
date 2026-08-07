@@ -3030,7 +3030,12 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
       const c = fila.comprobante;
       if (!c) return p;
 
-      const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado, hoy, p, c.fechaPagoReal);
+      // Cualquier saldo a favor que ya tuviera (de un depósito anterior que no alcanzó a cubrir
+      // algo completo, ej. la luz) se suma automáticamente aquí — no se le pide al cliente que
+      // lo "aplique" a mano, porque en realidad ya estaba comprometido a completar ese pendiente.
+      const disponiblePrevio = p.saldoAFavor || 0;
+      p.saldoAFavor = 0;
+      const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado + disponiblePrevio, hoy, p, c.fechaPagoReal);
 
       if (c.fechaPagoReal) fila.fechaPagoReal = c.fechaPagoReal;
 
@@ -3429,7 +3434,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         </div>
       )}
       {prop.saldoAFavor > 0 && (
-        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} de saldo a favor pendiente de aplicar.</div>
+        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior — se aplica solo en cuanto entre el próximo pago.</div>
       )}
 
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
@@ -4029,7 +4034,6 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const prop = propiedades.find((p) => p.id === seleccion) || propiedades[0];
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
-  const [fechaAplicarSaldo, setFechaAplicarSaldo] = useState(hoy);
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
@@ -4093,19 +4097,6 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     } finally {
       setSubiendoIdx(null);
     }
-  };
-
-  const aplicarSaldoAFavor = (idx, fechaReferencia) => {
-    actualizar(prop.id, (p) => {
-      const disponible = p.saldoAFavor || 0;
-      if (disponible <= 0) return p;
-      const { restante } = aplicarPagoCascada(p.tabla, idx, disponible, hoy, p, fechaReferencia);
-      const aplicado = disponible - restante;
-      p.saldoAFavor = restante;
-      p.notificaciones = p.notificaciones || [];
-      p.notificaciones.unshift(nuevaNotificacion("inmobiliaria", `${p.cliente} aplicó ${fmt(aplicado)} de su saldo a favor a sus cuotas pendientes.`));
-      return p;
-    });
   };
 
   const cursorIdx = prop.tabla.findIndex((f) => f.estado !== "pagado");
@@ -4188,17 +4179,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
 
       {prop.saldoAFavor > 0 && (
         <div className="bg-emerald-950/30 border border-emerald-800 rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center gap-3 flex-wrap">
-            <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} de saldo a favor</div>
-            {proximaCuota && (
-              <div className="flex items-center gap-2">
-                <input type="date" value={fechaAplicarSaldo} max={hoy} onChange={(e) => setFechaAplicarSaldo(e.target.value)} title="Fecha real en que se completó (solo si es distinta a hoy)" className="bg-[#0C121C] border border-emerald-800 rounded-md px-2 py-1.5 text-xs" />
-                <button onClick={() => aplicarSaldoAFavor(prop.tabla.indexOf(proximaCuota), fechaAplicarSaldo)} className="text-xs bg-emerald-800 hover:bg-emerald-700 px-3 py-1.5 rounded-md shrink-0">
-                  Aplicar a mi cuota pendiente
-                </button>
-              </div>
-            )}
-          </div>
+          <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} guardado de un depósito anterior</div>
+          <div className="text-xs text-emerald-400/80 mt-0.5">Se va a usar automáticamente para completar tu próximo pago pendiente — no tenés que hacer nada.</div>
         </div>
       )}
 

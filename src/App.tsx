@@ -368,6 +368,7 @@ function generarCodigoNumerico() {
 // No depende de ninguna librería externa, así que funciona en cualquier entorno.
 function VistaImprimible({ prop, proyecto, hoy }) {
   const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
+  const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const tarjetas = [
     ["Precio de venta", fmt(prop.precio)],
     ["Enganche", fmt(prop.enganche)],
@@ -381,6 +382,14 @@ function VistaImprimible({ prop, proyecto, hoy }) {
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
   ];
   const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
+  const estadoColor = {
+    pendiente: "bg-gray-100 text-gray-600",
+    gracia: "bg-amber-100 text-amber-700",
+    vencido: "bg-red-100 text-red-700",
+    parcial: "bg-blue-100 text-blue-700",
+    revision: "bg-amber-100 text-amber-700",
+    pagado: "bg-green-100 text-green-700",
+  };
 
   return (
     <div className="hidden print:block bg-white text-[#14212f] p-8" style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
@@ -401,6 +410,31 @@ function VistaImprimible({ prop, proyecto, hoy }) {
           </div>
         ))}
       </div>
+
+      {vencidas.length > 0 && (
+        <div className="mb-6 border border-red-300 rounded-sm p-3 bg-red-50">
+          <div className="text-sm font-bold text-red-800 mb-2">Cuotas atrasadas ({vencidas.length}) — Total para ponerse al día: {fmt(totalParaPonerseAlDia)}</div>
+          {vencidas.map((f) => {
+            const esParcial = f.estado === "parcial";
+            const pasos = explicarPago(f, prop, hoy);
+            const est = calcularEstadoPago(f, hoy, prop);
+            return (
+              <div key={f.numero} className="mb-3 pb-3 border-b border-red-200 last:border-b-0 last:mb-0 last:pb-0">
+                <div className="text-[11px] font-bold mb-1">
+                  Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                  <span className={`inline-block px-1.5 py-0.5 rounded-sm ml-1 ${esParcial ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>{esParcial ? "Parcial" : "Vencida"}</span>
+                  <span className="float-right">Total: {fmt(est.montoRequerido)}</span>
+                </div>
+                <ol className="text-[9px] text-gray-700 space-y-0.5 list-decimal list-inside">
+                  {pasos.map((p, i) => (
+                    <li key={i}><span className="font-bold">{p.titulo}.</span> {p.detalle}</li>
+                  ))}
+                </ol>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="text-sm font-bold mb-2">Tabla de amortización</div>
       <table className="w-full text-[9px] border-collapse mb-6">
@@ -440,7 +474,7 @@ function VistaImprimible({ prop, proyecto, hoy }) {
                   </td>
                 )}
                 <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
-                <td className="p-1">{estadoTxt[est] || est}</td>
+                <td className="p-1"><span className={`inline-block px-1.5 py-0.5 rounded-sm font-bold ${estadoColor[est] || "bg-gray-100 text-gray-600"}`}>{estadoTxt[est] || est}</span></td>
               </tr>
             );
           })}

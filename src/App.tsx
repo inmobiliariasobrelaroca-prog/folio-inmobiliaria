@@ -2573,7 +2573,7 @@ function resumenProp(prop, hoy) {
   const pendienteActual = proximaCuota ? calcularEstadoPago(proximaCuota, hoy, prop) : null;
   // Cuánto hace falta en total para ponerse al día: la parte de capital+interés que falte de
   // TODAS las cuotas sin resolver (no solo la más próxima) + toda la mora + toda la luz pendiente.
-  const totalCuotasPendientes = filas.filter((f) => f.estado !== "pagado").reduce((s, f) => s + Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)), 0);
+  const totalCuotasPendientes = filas.filter((f) => f.estado !== "pagado" && daysBetween(hoy, f.fecha) > 0).reduce((s, f) => s + Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)), 0);
   const totalParaPonerseAlDia = totalCuotasPendientes + moraTotal + luzPendiente;
   return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia };
 }
@@ -2720,9 +2720,14 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                     {vencidas.map((f) => {
                       const est = calcularEstadoPago(f, hoy, p);
                       const mora = calcularMoraCredito(f, hoy, p.diasGracia, p.moraDiaria);
+                      const esParcial = f.estado === "parcial";
                       return (
                         <div key={f.numero} className="flex justify-between font-mono">
-                          <span className="font-sans">Cuota #{f.numero} · vence {fmtDate(f.fecha)}{mora > 0 && <span className="text-red-400/80"> (mora {fmt(mora)})</span>}</span>
+                          <span className="font-sans">
+                            Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                            <span className={esParcial ? "text-blue-400" : "text-red-400"}>({esParcial ? "parcial" : "vencida"})</span>
+                            {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
+                          </span>
                           <span>{fmt(est.montoRequerido)}</span>
                         </div>
                       );
@@ -4414,9 +4419,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div className="space-y-2">
             {vencidas.map((f) => {
               const est = calcularEstadoPago(f, hoy, prop);
+              const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
+              const esParcial = f.estado === "parcial";
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
-                  <div>Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span></div>
+                  <div>
+                    Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${esParcial ? "border-blue-700 text-blue-400" : "border-red-800 text-red-400"}`}>{esParcial ? "Parcial" : "Vencida"}</span>
+                    {mora > 0 && <div className="text-[11px] text-red-400/80">Incluye mora: {fmt(mora)}</div>}
+                  </div>
                   <div className="font-mono">{fmt(est.montoRequerido)}</div>
                 </div>
               );
@@ -4435,9 +4446,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div className="font-mono text-xl mt-1">{fmt(saldoActual)}</div>
         </div>
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <div className="text-[10px] uppercase text-[#8A93A3]">Próximo pago</div>
-          <div className="font-mono text-xl mt-1">{proximaCuota ? fmt(pendienteActual.montoRequerido) : "—"}</div>
-          {proximaCuota && <div className="text-[11px] text-[#8A93A3] mt-0.5">vence {fmtDate(proximaCuota.fecha)}</div>}
+          <div className="text-[10px] uppercase text-[#8A93A3]">{vencidas.length > 1 ? "Total a pagar" : "Próximo pago"}</div>
+          <div className="font-mono text-xl mt-1">{vencidas.length > 1 ? fmt(totalParaPonerseAlDia) : (proximaCuota ? fmt(pendienteActual.montoRequerido) : "—")}</div>
+          {proximaCuota && <div className="text-[11px] text-[#8A93A3] mt-0.5">{vencidas.length > 1 ? `${vencidas.length} cuotas atrasadas` : `vence ${fmtDate(proximaCuota.fecha)}`}</div>}
         </div>
       </div>
 

@@ -3055,7 +3055,8 @@ function VisorGaleria({ galeria, setGaleria }) {
   return (
     <div onClick={() => setGaleria(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
       <div className="text-center max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
-        <img src={actual.imagen} alt="Comprobante ampliado" className="max-w-full max-h-[80vh] rounded-md" />
+        <img src={actual.imagen} alt="Comprobante ampliado" className={`max-w-full max-h-[80vh] rounded-md ${actual.estado === "rechazado" ? "opacity-60 ring-2 ring-red-700" : ""}`} />
+        {actual.estado === "rechazado" && <div className="text-xs font-medium text-red-400 bg-red-950/60 px-2 py-1 rounded">Comprobante rechazado</div>}
         <div className="text-xs text-white/80">
           {fmt(actual.montoDepositado)} · {fmtDate(actual.fechaPagoReal || actual.fecha)}
           {imagenes.length > 1 && <span className="ml-2 text-white/50">({indice + 1}/{imagenes.length})</span>}
@@ -3587,8 +3588,11 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3 flex-wrap">
               {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i, lista) => (
-                <button key={i} onClick={() => setGaleriaAmpliada({ imagenes: lista, indice: i })} className="shrink-0" title={`${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
-                  <img src={c.imagen} alt="Recibo" className="w-14 h-14 object-cover rounded-md border border-[#2A3547]" />
+                <button key={i} onClick={() => setGaleriaAmpliada({ imagenes: lista, indice: i })} className="shrink-0 relative" title={`${c.estado === "rechazado" ? "Rechazado — " : ""}${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
+                  <img src={c.imagen} alt="Recibo" className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`} />
+                  {c.estado === "rechazado" && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-800 text-white text-[8px] font-medium px-1 py-0.5 rounded leading-none">Rechazado</span>
+                  )}
                 </button>
               ))}
               <div className="text-[11px] text-emerald-400">

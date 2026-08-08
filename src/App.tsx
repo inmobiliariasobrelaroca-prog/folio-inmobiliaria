@@ -3033,7 +3033,86 @@ function BotonMas({ onClick, texto, direccion }) {
 }
 
 // Fila de detalle numérico reutilizada en admin y cliente
+// Arma la explicación paso a paso de cómo se aplicó (o se está aplicando) el pago de una
+// cuota, en el mismo orden real que usa el sistema: primero mora, después cuota, después luz.
+function explicarPago(f, prop, hoy) {
+  const pasos = [];
+  const fechaPagoReal = f.fechaPagoReal || f.comprobante?.fechaPagoReal;
+  const limite = fechaLimiteGracia(f.fecha, prop.diasGracia);
+  const fref = fechaPagoReal || hoy;
+  const diasTarde = Math.max(0, daysBetween(fref, limite));
+  const moraGenerada = f.moraGeneradaFinal != null ? f.moraGeneradaFinal : diasTarde * prop.moraDiaria;
+
+  if (fechaPagoReal) {
+    pasos.push({
+      titulo: diasTarde > 0 ? `Fecha de pago registrada: ${fmtDate(fechaPagoReal)} (${diasTarde} día${diasTarde > 1 ? "s" : ""} tarde)` : `Fecha de pago registrada: ${fmtDate(fechaPagoReal)} (a tiempo)`,
+      detalle: `Esta cuota vence el ${fmtDate(f.fecha)}, con ${prop.diasGracia} días de gracia → el límite sin mora era el ${fmtDate(limite)}.`,
+    });
+  }
+
+  pasos.push({
+    titulo: diasTarde > 0 ? `Mora calculada: ${fmt(moraGenerada)}` : "Sin mora — se pagó a tiempo",
+    detalle: diasTarde > 0 ? `${diasTarde} día${diasTarde > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiaria)} de mora diaria de esta propiedad = ${fmt(moraGenerada)}.` : "El pago llegó dentro del plazo de gracia, así que no se generó ningún cargo por mora.",
+  });
+
+  const moraPagada = f.moraPagada || 0;
+  const moraCondonada = f.moraCondonada || 0;
+  if (moraPagada > 0 || moraCondonada > 0) {
+    let detalle = "El sistema siempre cubre primero la mora, después la cuota (capital+interés), y al final la luz. ";
+    if (moraPagada > 0) detalle += `Se cubrieron ${fmt(moraPagada)} de mora con lo depositado. `;
+    if (moraCondonada > 0) detalle += `Se perdonaron ${fmt(moraCondonada)} adicionales de mora.`;
+    pasos.push({ titulo: "Orden de aplicación: mora primero", detalle });
+  }
+
+  const pagadoCuota = f.montoPagadoAcumulado || 0;
+  const faltanteCuota = Math.max(0, f.pago - pagadoCuota);
+  pasos.push({
+    titulo: faltanteCuota > 0.009 ? `Se aplicaron ${fmt(pagadoCuota)} a la cuota (capital + interés)` : `Cuota cubierta completa: ${fmt(pagadoCuota)}`,
+    detalle: faltanteCuota > 0.009 ? `La cuota vale ${fmt(f.pago)} de capital+interés — no alcanzó para cubrirla completa. Falta ${fmt(faltanteCuota)}.` : `La cuota completa (capital + interés) de ${fmt(f.pago)} ya está cubierta.`,
+  });
+
+  if (prop.aplicaLuz) {
+    pasos.push({
+      titulo: f.luzPagado ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}` : `Luz de este mes pendiente: ${fmt(prop.montoLuzMensual)}`,
+      detalle: f.luzPagado ? "La luz de esta cuota ya quedó pagada." : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
+    });
+  }
+
+  if (f.abono > 0) {
+    pasos.push({ titulo: `Sobrante aplicado a capital: ${fmt(f.abono)}`, detalle: "Lo que sobró después de cubrir mora, cuota y luz se aplicó como abono extra a capital, acortando el plazo del crédito." });
+  }
+
+  return pasos;
+}
+
+function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
+  const pasos = explicarPago(f, prop, hoy);
+  return (
+    <div onClick={onCerrar} className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-5">
+      <div onClick={(e) => e.stopPropagation()} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-md max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-1">
+          <div className="font-serif text-lg">Cómo se aplicó este pago</div>
+          <button onClick={onCerrar} className="text-[#8A93A3] hover:text-[#EDE7D9]"><X size={20} /></button>
+        </div>
+        <div className="text-xs text-[#8A93A3] mb-4">Cuota #{f.numero} · vence {fmtDate(f.fecha)}</div>
+        <div className="space-y-4">
+          {pasos.map((p, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="shrink-0 w-6 h-6 rounded-full bg-[#C9A227] text-[#101826] text-xs font-medium flex items-center justify-center">{i + 1}</div>
+              <div>
+                <div className="text-sm font-medium">{p.titulo}</div>
+                <div className="text-xs text-[#8A93A3] mt-0.5">{p.detalle}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetalleFila({ f, mora, prop, hoy }) {
+  const [verExplicacion, setVerExplicacion] = useState(false);
   const luzMora = prop?.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
   return (
     <div className="grid grid-cols-4 gap-2 mt-2.5 pt-2.5 border-t border-[#2A3547] text-[11px]">
@@ -3075,6 +3154,12 @@ function DetalleFila({ f, mora, prop, hoy }) {
           <span className="text-red-400">Pago parcial recibido: {fmt(f.montoPagadoAcumulado || 0)} de {fmt(f.pago)} — falta {fmt(Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)))}</span>
         </div>
       )}
+      {(f.fechaPagoReal || f.comprobante?.fechaPagoReal || (f.montoPagadoAcumulado || 0) > 0) && (
+        <div className="col-span-4 -mt-0.5">
+          <button onClick={() => setVerExplicacion(true)} className="text-[11px] text-[#C9A227] underline">¿Cómo se aplicó este pago?</button>
+        </div>
+      )}
+      {verExplicacion && <ModalExplicacionPago f={f} prop={prop} hoy={hoy} onCerrar={() => setVerExplicacion(false)} />}
     </div>
   );
 }
@@ -3823,6 +3908,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />

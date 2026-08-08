@@ -2696,7 +2696,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
 
       <div className="space-y-3">
         {propiedades.map((p) => {
-          const { saldoActual, vencidas, enRevision, moraTotal, luzPendiente } = resumenProp(p, hoy);
+          const { saldoActual, vencidas, enRevision, moraTotal, luzPendiente, totalParaPonerseAlDia } = resumenProp(p, hoy);
           const alDia = vencidas.length === 0;
           return (
             <button key={p.id} onClick={() => onAbrir(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition">
@@ -2713,11 +2713,33 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                   {enRevision.length > 0 && <span className="text-[10px] px-2 py-1 rounded-full border border-amber-700 text-amber-400 font-medium uppercase tracking-wide">{enRevision.length} por revisar</span>}
                 </div>
               </div>
-              <div className="flex gap-5 mt-3 text-xs font-mono">
-                <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual)}</div></div>
-                {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
-                {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
-              </div>
+
+              {vencidas.length > 1 ? (
+                <div className="mt-3 pt-3 border-t border-[#2A3547] text-xs">
+                  <div className="space-y-1">
+                    {vencidas.map((f) => {
+                      const est = calcularEstadoPago(f, hoy, p);
+                      const mora = calcularMoraCredito(f, hoy, p.diasGracia, p.moraDiaria);
+                      return (
+                        <div key={f.numero} className="flex justify-between font-mono">
+                          <span className="font-sans">Cuota #{f.numero} · vence {fmtDate(f.fecha)}{mora > 0 && <span className="text-red-400/80"> (mora {fmt(mora)})</span>}</span>
+                          <span>{fmt(est.montoRequerido)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
+                    <span className="font-sans">Total para ponerse al día</span>
+                    <span className="text-red-400">{fmt(totalParaPonerseAlDia)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-5 mt-3 text-xs font-mono">
+                  <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual)}</div></div>
+                  {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
+                  {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
+                </div>
+              )}
             </button>
           );
         })}

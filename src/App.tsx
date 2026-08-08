@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
 import {
-  Plus, Zap, Bell, ChevronLeft, ChevronUp, ChevronDown, CheckCircle2,
+  Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
   FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw
 } from "lucide-react";
@@ -2990,11 +2990,51 @@ function DetalleFila({ f, mora, prop, hoy }) {
 
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
+// Visor de comprobantes con flechas para pasar de uno a otro sin cerrar y volver a abrir.
+function VisorGaleria({ galeria, setGaleria }) {
+  const { imagenes, indice } = galeria;
+  const actual = imagenes[indice];
+  const irA = (i) => setGaleria({ imagenes, indice: (i + imagenes.length) % imagenes.length });
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") setGaleria(null);
+      if (e.key === "ArrowRight") irA(indice + 1);
+      if (e.key === "ArrowLeft") irA(indice - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [indice, imagenes]);
+
+  return (
+    <div onClick={() => setGaleria(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
+      <div className="text-center max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <img src={actual.imagen} alt="Comprobante ampliado" className="max-w-full max-h-[80vh] rounded-md" />
+        <div className="text-xs text-white/80">
+          {fmt(actual.montoDepositado)} · {fmtDate(actual.fechaPagoReal || actual.fecha)}
+          {imagenes.length > 1 && <span className="ml-2 text-white/50">({indice + 1}/{imagenes.length})</span>}
+        </div>
+      </div>
+      {imagenes.length > 1 && (
+        <>
+          <button onClick={(e) => { e.stopPropagation(); irA(indice - 1); }} className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 text-white bg-black/40 hover:bg-black/60 rounded-full p-2">
+            <ChevronLeft size={22} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); irA(indice + 1); }} className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 text-white bg-black/40 hover:bg-black/60 rounded-full p-2">
+            <ChevronRight size={22} />
+          </button>
+        </>
+      )}
+      <button onClick={() => setGaleria(null)} className="absolute top-5 right-5 text-white"><X size={24} /></button>
+    </div>
+  );
+}
+
 function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, onImprimir }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
-  const [imagenAmpliada, setImagenAmpliada] = useState(null);
+  const [galeriaAmpliada, setGaleriaAmpliada] = useState(null); // { imagenes: [...], indice: 0 }
   const [subiendoReciboIdx, setSubiendoReciboIdx] = useState(null);
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
   const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
@@ -3330,7 +3370,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         {est === "revision" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3">
-              <button onClick={() => setImagenAmpliada(f.comprobante.imagen)} className="shrink-0">
+              <button onClick={() => setGaleriaAmpliada({ imagenes: f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante], indice: (f.comprobantesHistorial && f.comprobantesHistorial.length > 1) ? f.comprobantesHistorial.length - 1 : 0 })} className="shrink-0">
                 <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
               </button>
               <div className="flex-1">
@@ -3414,8 +3454,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         {est === "pagado" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3 flex-wrap">
-              {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i) => (
-                <button key={i} onClick={() => setImagenAmpliada(c.imagen)} className="shrink-0" title={`${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
+              {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i, lista) => (
+                <button key={i} onClick={() => setGaleriaAmpliada({ imagenes: lista, indice: i })} className="shrink-0" title={`${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
                   <img src={c.imagen} alt="Recibo" className="w-14 h-14 object-cover rounded-md border border-[#2A3547]" />
                 </button>
               ))}
@@ -3706,11 +3746,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         </div>
       )}
 
-      {imagenAmpliada && (
-        <div onClick={() => setImagenAmpliada(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-          <img src={imagenAmpliada} alt="Comprobante ampliado" className="max-w-full max-h-full rounded-md" />
-          <button onClick={() => setImagenAmpliada(null)} className="absolute top-5 right-5 text-white"><X size={24} /></button>
-        </div>
+      {galeriaAmpliada && (
+        <VisorGaleria galeria={galeriaAmpliada} setGaleria={setGaleriaAmpliada} />
       )}
 
       {pidiendoPin !== null && (

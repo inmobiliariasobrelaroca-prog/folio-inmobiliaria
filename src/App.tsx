@@ -2687,6 +2687,7 @@ function NuevoProyecto({ onCancelar, onCrear }) {
 // ---------- Propiedades dentro de un proyecto ----------
 
 function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbrir, puedeCrear }) {
+  const [explicandoPago, setExplicandoPago] = useState(null);
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-1">
@@ -2735,7 +2736,12 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                         <div key={f.numero} className="flex justify-between font-mono">
                           <span className="font-sans">
                             Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
-                            <span className={esParcial ? "text-blue-400" : "text-red-400"}>({esParcial ? "parcial" : "vencida"})</span>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); setExplicandoPago({ f, prop: p }); }}
+                              className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                            >
+                              {esParcial ? "Parcial" : "Vencida"}
+                            </span>
                             {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
                           </span>
                           <span>{fmt(est.montoRequerido)}</span>
@@ -2759,6 +2765,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
           );
         })}
       </div>
+      {explicandoPago && <ModalExplicacionPago f={explicandoPago.f} prop={explicandoPago.prop} hoy={hoy} onCerrar={() => setExplicandoPago(null)} />}
     </div>
   );
 }
@@ -3087,6 +3094,15 @@ function explicarPago(f, prop, hoy) {
 
 function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
   const pasos = explicarPago(f, prop, hoy);
+  const est = calcularEstadoPago(f, hoy, prop);
+  const partes = [
+    { label: "Mora pendiente", valor: est.moraPendiente },
+    { label: "Cuota pendiente (capital+interés)", valor: est.cuotaPendiente },
+    ...(prop.aplicaLuz ? [
+      { label: "Luz pendiente", valor: est.luzPendiente },
+      { label: "Mora de luz pendiente", valor: est.luzMoraPendiente },
+    ] : []),
+  ].filter((p) => p.valor > 0.009);
   return (
     <div onClick={onCerrar} className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-5">
       <div onClick={(e) => e.stopPropagation()} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-md max-h-[80vh] overflow-y-auto">
@@ -3105,6 +3121,28 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-[#2A3547]">
+          {partes.length > 0 ? (
+            <>
+              <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Lo que falta hoy en esta cuota</div>
+              <div className="space-y-1 text-sm font-mono">
+                {partes.map((p, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span className="font-sans text-[#8A93A3]">{p.label}</span>
+                    <span>{fmt(p.valor)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between items-baseline mt-2 pt-2 border-t border-[#2A3547] font-medium">
+                <span className="text-sm">Total de esta cuota</span>
+                <span className="font-mono text-lg text-red-300">{fmt(est.montoRequerido)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-emerald-400 text-center">Esta cuota ya está completamente cubierta.</div>
+          )}
         </div>
       </div>
     </div>
@@ -3257,6 +3295,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
   const [galeriaAmpliada, setGaleriaAmpliada] = useState(null); // { imagenes: [...], indice: 0 }
+  const [explicandoPago, setExplicandoPago] = useState(null);
   const [subiendoReciboIdx, setSubiendoReciboIdx] = useState(null);
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
   const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
@@ -3786,7 +3825,12 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
                 <div key={f.numero} className="flex justify-between items-baseline text-sm font-mono">
                   <span className="font-sans">
                     Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${esParcial ? "border-blue-700 text-blue-400" : "border-red-800 text-red-400"}`}>{esParcial ? "parcial" : "vencida"}</span>
+                    <button
+                      onClick={() => setExplicandoPago(f)}
+                      className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                    >
+                      {esParcial ? "Parcial" : "Vencida"}
+                    </button>
                     {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
                   </span>
                   <span>{fmt(est.montoRequerido)}</span>
@@ -4044,6 +4088,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
       {galeriaAmpliada && (
         <VisorGaleria galeria={galeriaAmpliada} setGaleria={setGaleriaAmpliada} />
       )}
+
+      {explicandoPago && <ModalExplicacionPago f={explicandoPago} prop={prop} hoy={hoy} onCerrar={() => setExplicandoPago(null)} />}
 
       {pidiendoPin !== null && (
         <ModalPin
@@ -4408,6 +4454,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const prop = propiedades.find((p) => p.id === seleccion) || propiedades[0];
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
+  const [explicandoPago, setExplicandoPago] = useState(null);
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
@@ -4551,7 +4598,12 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
                   <div>
                     Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${esParcial ? "border-blue-700 text-blue-400" : "border-red-800 text-red-400"}`}>{esParcial ? "Parcial" : "Vencida"}</span>
+                    <button
+                      onClick={() => setExplicandoPago(f)}
+                      className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                    >
+                      {esParcial ? "Parcial" : "Vencida"}
+                    </button>
                     {mora > 0 && <div className="text-[11px] text-red-400/80">Incluye mora: {fmt(mora)}</div>}
                     {esParcial && (
                       <div className="text-[11px] text-blue-300 mt-1 space-y-0.5">
@@ -4683,6 +4735,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       <div className="text-[11px] text-[#8A93A3] mt-6 text-center leading-relaxed">
         Los avisos automáticos por SMS, WhatsApp o correo no se envían desde esta vista de demostración — requieren conectar un servicio como Twilio o un proveedor de email al backend.
       </div>
+
+      {explicandoPago && <ModalExplicacionPago f={explicandoPago} prop={prop} hoy={hoy} onCerrar={() => setExplicandoPago(null)} />}
     </div>
   );
 }

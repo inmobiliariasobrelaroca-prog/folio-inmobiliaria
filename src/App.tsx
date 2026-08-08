@@ -3368,7 +3368,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs text-[#8A93A3] font-mono">#{f.numero} · {fmtDate(f.fecha)}</div>
-            <div className="font-mono text-sm">{fmt(f.pago)}</div>
+            <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
+            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400/80">último comprobante rechazado</div>}
           </div>
           <div className="flex items-center gap-2">
@@ -4212,7 +4213,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs text-[#8A93A3] font-mono">Cuota #{f.numero} · {fmtDate(f.fecha)}</div>
-            <div className="font-mono text-sm">{fmt(f.pago)}</div>
+            <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
+            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado, sube uno nuevo</div>}
           </div>
           <Badge estado={est} />

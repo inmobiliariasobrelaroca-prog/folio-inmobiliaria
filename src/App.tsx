@@ -1083,13 +1083,14 @@ function AppInterno({ perfil, cerrarSesion }) {
         if (errCuotas) console.error("Error cargando cuotas:", errCuotas);
 
         // Comprobantes reales (con su imagen en Supabase Storage), para que se vean igual
-        // sin importar en qué navegador/dispositivo se esté revisando.
-        const idsCuotas = (cuotasRows || []).map((r) => r.id);
+        // sin importar en qué navegador/dispositivo se esté revisando. No filtramos por lista
+        // de cuota_id acá (con muchas cuotas esa lista arma una URL demasiado larga y Supabase
+        // la rechaza con 400) — los permisos (RLS) ya limitan qué comprobantes puede ver cada quien.
         let comprobantesPorCuota = {};
         let historialComprobantesPorCuota = {};
-        if (idsCuotas.length > 0) {
+        {
           const { data: compRows, error: errComp } = await supabase
-            .from("comprobantes").select("*").in("cuota_id", idsCuotas).order("created_at", { ascending: false });
+            .from("comprobantes").select("*").order("created_at", { ascending: false });
           if (errComp) console.error("Error cargando comprobantes:", errComp);
           for (const row of compRows || []) {
             let imagenUrl = null;

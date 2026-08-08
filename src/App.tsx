@@ -1065,6 +1065,14 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [imprimir, setImprimir] = useState(null);
   const [actualizando, setActualizando] = useState(false);
+  // Cuenta cuántos guardados hacia Supabase están todavía en camino (se disparan en segundo
+  // plano, sin esperarlos). Mientras haya alguno pendiente, el refresco automático no debe
+  // traer datos de la base — llegaría desactualizado y pisaría el cambio recién hecho.
+  const escriturasPendientesRef = React.useRef(0);
+  const marcarEscrituraPendiente = (promesa) => {
+    escriturasPendientesRef.current += 1;
+    promesa.finally(() => { escriturasPendientesRef.current = Math.max(0, escriturasPendientesRef.current - 1); });
+  };
   const hoy = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
@@ -1209,7 +1217,17 @@ function AppInterno({ perfil, cerrarSesion }) {
   // base de datos — así no hace falta recargar la página a mano para ver cambios recientes.
   useEffect(() => {
     const alVolver = () => {
-      if (document.visibilityState === "visible") cargarDatos();
+      if (document.visibilityState !== "visible") return;
+      // Si todavía hay guardados en camino (ej. acabás de subir un comprobante), esperamos a
+      // que terminen antes de refrescar — si no, el refresco puede traer datos viejos y pisar
+      // el cambio recién hecho.
+      let intentos = 0;
+      const esperar = () => {
+        if (escriturasPendientesRef.current === 0 || intentos > 20) { cargarDatos(); return; }
+        intentos += 1;
+        setTimeout(esperar, 300);
+      };
+      esperar();
     };
     window.addEventListener("focus", alVolver);
     document.addEventListener("visibilitychange", alVolver);
@@ -1229,12 +1247,14 @@ function AppInterno({ perfil, cerrarSesion }) {
         if (p.id !== id) return p;
         const actualizado = fn(structuredClone(p));
         guardarComprobantesLocal(id, actualizado.tabla);
-        supabase.from("propiedades").update(propiedadHaciaFila(actualizado)).eq("id", id).then(({ error }) => {
-          if (error) console.error("Error guardando propiedad en Supabase:", error);
-        });
-        sincronizarCuotas(id, actualizado.tabla).catch((err) => console.error("Error guardando cuotas en Supabase:", err));
-        sincronizarCargosLuz(id, actualizado.cargosLuz).catch((err) => console.error("Error guardando cargos de luz:", err));
-        sincronizarNotificaciones(id, actualizado.notificaciones).catch((err) => console.error("Error guardando notificaciones:", err));
+        marcarEscrituraPendiente(
+          supabase.from("propiedades").update(propiedadHaciaFila(actualizado)).eq("id", id).then(({ error }) => {
+            if (error) console.error("Error guardando propiedad en Supabase:", error);
+          })
+        );
+        marcarEscrituraPendiente(sincronizarCuotas(id, actualizado.tabla).catch((err) => console.error("Error guardando cuotas en Supabase:", err)));
+        marcarEscrituraPendiente(sincronizarCargosLuz(id, actualizado.cargosLuz).catch((err) => console.error("Error guardando cargos de luz:", err)));
+        marcarEscrituraPendiente(sincronizarNotificaciones(id, actualizado.notificaciones).catch((err) => console.error("Error guardando notificaciones:", err)));
         return actualizado;
       })
     );

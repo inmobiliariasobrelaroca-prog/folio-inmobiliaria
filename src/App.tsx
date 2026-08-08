@@ -3827,7 +3827,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
               )}
-              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicio)} />
+              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicioIntereses || prop.fechaInicio)} />
             </div>
           </div>
         </div>
@@ -4457,8 +4457,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               const est = calcularEstadoPago(f, hoy, prop);
               const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
               const esParcial = f.estado === "parcial";
-              const limiteGracia = fechaLimiteGracia(f.fecha, prop.diasGracia);
-              const diasAtraso = Math.max(0, daysBetween(hoy, limiteGracia));
+              const diasAtraso = Math.max(0, daysBetween(hoy, f.fecha));
               const fechaPagoRealMostrar = f.fechaPagoReal || f.comprobante?.fechaPagoReal;
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
@@ -4469,7 +4468,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                     {esParcial && (
                       <div className="text-[11px] text-blue-300 mt-1 space-y-0.5">
                         <div>Ya pagaste {fmt(f.montoPagadoAcumulado || 0)} de esta cuota{fechaPagoRealMostrar && <> — la inmobiliaria registró ese pago el {fmtDate(fechaPagoRealMostrar)}</>}.</div>
-                        {diasAtraso > 0 && <div>Llevas {diasAtraso} día{diasAtraso > 1 ? "s" : ""} de atraso desde que se venció el plazo para pagarla completa.</div>}
+                        {diasAtraso > 0 && <div>Llevas {diasAtraso} día{diasAtraso > 1 ? "s" : ""} de atraso desde la fecha en que vencía esta cuota ({fmtDate(f.fecha)}).</div>}
                       </div>
                     )}
                   </div>

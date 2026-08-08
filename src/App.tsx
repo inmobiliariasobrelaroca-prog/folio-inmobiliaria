@@ -2738,8 +2738,9 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                             Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
                             <span
                               onClick={(e) => { e.stopPropagation(); setExplicandoPago({ f, prop: p }); }}
-                              className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium cursor-pointer ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
                             >
+                              {esParcial ? <Clock size={11} /> : <AlertTriangle size={11} />}
                               {esParcial ? "Parcial" : "Vencida"}
                             </span>
                             {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
@@ -3059,7 +3060,9 @@ function explicarPago(f, prop, hoy) {
 
   pasos.push({
     titulo: diasTarde > 0 ? `Mora calculada: ${fmt(moraGenerada)}` : "Sin mora — se pagó a tiempo",
-    detalle: diasTarde > 0 ? `${diasTarde} día${diasTarde > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiaria)} de mora diaria de esta propiedad = ${fmt(moraGenerada)}.` : "El pago llegó dentro del plazo de gracia, así que no se generó ningún cargo por mora.",
+    detalle: diasTarde > 0
+      ? `${diasTarde} día${diasTarde > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiaria)} de mora diaria de esta propiedad = ${fmt(moraGenerada)}.${f.estado !== "pagado" ? " Como esta cuota sigue sin cerrarse por completo, la mora total pendiente sigue subiendo cada día — mirá el total de abajo, calculado hasta hoy." : ""}`
+      : "El pago llegó dentro del plazo de gracia, así que no se generó ningún cargo por mora.",
   });
 
   const moraPagada = f.moraPagada || 0;
@@ -3079,6 +3082,15 @@ function explicarPago(f, prop, hoy) {
   });
 
   if (prop.aplicaLuz) {
+    const limiteLuz = fechaLimiteGracia(f.fecha, prop.diasGraciaLuz);
+    const diasTardeLuz = Math.max(0, daysBetween(fref, limiteLuz));
+    const moraLuzGenerada = diasTardeLuz * prop.moraDiariaLuz;
+    if (!f.luzPagado && diasTardeLuz > 0) {
+      pasos.push({
+        titulo: `Mora de luz calculada: ${fmt(moraLuzGenerada)}`,
+        detalle: `La luz tiene su propia mora, aparte de la del crédito: ${diasTardeLuz} día${diasTardeLuz > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiariaLuz)} de mora diaria de luz = ${fmt(moraLuzGenerada)}.`,
+      });
+    }
     pasos.push({
       titulo: f.luzPagado ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}` : `Luz de este mes pendiente: ${fmt(prop.montoLuzMensual)}`,
       detalle: f.luzPagado ? "La luz de esta cuota ya quedó pagada." : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
@@ -3096,11 +3108,11 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
   const pasos = explicarPago(f, prop, hoy);
   const est = calcularEstadoPago(f, hoy, prop);
   const partes = [
-    { label: "Mora pendiente", valor: est.moraPendiente },
+    { label: `Mora pendiente (hasta hoy, ${fmtDate(hoy)})`, valor: est.moraPendiente },
     { label: "Cuota pendiente (capital+interés)", valor: est.cuotaPendiente },
     ...(prop.aplicaLuz ? [
       { label: "Luz pendiente", valor: est.luzPendiente },
-      { label: "Mora de luz pendiente", valor: est.luzMoraPendiente },
+      { label: `Mora de luz pendiente (hasta hoy, ${fmtDate(hoy)})`, valor: est.luzMoraPendiente },
     ] : []),
   ].filter((p) => p.valor > 0.009);
   return (
@@ -3827,8 +3839,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
                     Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
-                      className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                      className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
                     >
+                      {esParcial ? <Clock size={11} /> : <AlertTriangle size={11} />}
                       {esParcial ? "Parcial" : "Vencida"}
                     </button>
                     {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
@@ -4600,8 +4613,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                     Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
-                      className={`text-xs px-2 py-1 rounded-md border font-medium ${esParcial ? "border-blue-700 text-blue-400 hover:bg-blue-950/40" : "border-red-800 text-red-400 hover:bg-red-950/40"}`}
+                      className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
                     >
+                      {esParcial ? <Clock size={11} /> : <AlertTriangle size={11} />}
                       {esParcial ? "Parcial" : "Vencida"}
                     </button>
                     {mora > 0 && <div className="text-[11px] text-red-400/80">Incluye mora: {fmt(mora)}</div>}

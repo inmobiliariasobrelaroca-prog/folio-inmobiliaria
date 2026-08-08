@@ -2557,7 +2557,11 @@ function ModalAsesor({ asesor, siguienteOrden, onCancelar, onGuardado }) {
 function resumenProp(prop, hoy) {
   const filas = prop.tabla;
   const saldoActual = filas.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
-  const vencidas = filas.filter((f) => estadoReal(f, hoy, prop.diasGracia) === "vencido");
+  // Una cuota cuenta como "vencida" si no está pagada y ya se pasó su plazo de gracia — esto
+  // incluye tanto las que nunca se tocaron como las "parciales" que quedaron a medias y cuyo
+  // plazo ya venció también (antes solo se contaban las 'vencido' literales, dejando fuera
+  // a las parciales atrasadas).
+  const vencidas = filas.filter((f) => f.estado !== "pagado" && daysBetween(hoy, fechaLimiteGracia(f.fecha, prop.diasGracia)) > 0);
   const enRevision = filas.filter((f) => f.estado === "revision");
   const moraCredito = filas.reduce((s, f) => s + calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria), 0);
   const moraLuz = prop.aplicaLuz ? filas.reduce((s, f) => s + calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz), 0) : 0;
@@ -2567,7 +2571,11 @@ function resumenProp(prop, hoy) {
     : 0;
   const proximaCuota = filas.find((f) => f.estado !== "pagado");
   const pendienteActual = proximaCuota ? calcularEstadoPago(proximaCuota, hoy, prop) : null;
-  return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual };
+  // Cuánto hace falta en total para ponerse al día: la parte de capital+interés que falte de
+  // TODAS las cuotas sin resolver (no solo la más próxima) + toda la mora + toda la luz pendiente.
+  const totalCuotasPendientes = filas.filter((f) => f.estado !== "pagado").reduce((s, f) => s + Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)), 0);
+  const totalParaPonerseAlDia = totalCuotasPendientes + moraTotal + luzPendiente;
+  return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia };
 }
 
 // ---------- Proyectos ----------
@@ -4253,7 +4261,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
   const proyecto = proyectos.find((py) => py.id === prop.proyectoId);
-  const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual } = resumenProp(prop, hoy);
+  const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const comparativaAbono = calcularComparativaAbono(prop);
   const alDia = vencidas.length === 0;
   const ventana = useVentana(prop.tabla);
@@ -4374,6 +4382,27 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div className="text-sm">
             <div className="font-medium text-red-300">Tienes {vencidas.length} pago{vencidas.length > 1 ? "s" : ""} vencido{vencidas.length > 1 ? "s" : ""}</div>
             <div className="text-red-400/80 text-xs mt-0.5">Se está generando un cargo por mora de {fmt(moraTotal)}. Ponte al corriente para evitar que siga creciendo.</div>
+          </div>
+        </div>
+      )}
+
+      {vencidas.length > 1 && (
+        <div className="bg-[#161F2E] border border-red-800/60 rounded-lg p-4 mb-4">
+          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Cuotas vencidas</div>
+          <div className="space-y-2">
+            {vencidas.map((f) => {
+              const est = calcularEstadoPago(f, hoy, prop);
+              return (
+                <div key={f.numero} className="flex justify-between items-baseline text-sm">
+                  <div>Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span></div>
+                  <div className="font-mono">{fmt(est.montoRequerido)}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="border-t border-[#2A3547] mt-2.5 pt-2.5 flex justify-between items-baseline">
+            <div className="text-sm font-medium">Total para ponerte al día</div>
+            <div className="font-mono text-lg text-red-300">{fmt(totalParaPonerseAlDia)}</div>
           </div>
         </div>
       )}

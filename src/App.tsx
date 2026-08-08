@@ -616,6 +616,22 @@ async function actualizarEstadoComprobanteBD(propiedadId, cuotaNumero, estado) {
   if (error) console.error("Error actualizando el estado del comprobante:", error);
 }
 
+// La corrección de fecha (¿el cliente pagó antes?) recalcula mora/excedente/destino, pero eso
+// solo servía de algo si quedaba guardado en la base — si la pestaña se refrescaba antes de
+// aprobar, la corrección en memoria se perdía y al aprobar se usaban los datos viejos sin corregir.
+async function actualizarCorreccionComprobanteBD(comprobanteId, datos) {
+  const { error } = await supabase.from("comprobantes").update({
+    fecha_pago_real: datos.fechaCorregida,
+    mora_al_subir: datos.moraAlSubir,
+    monto_requerido: datos.montoRequerido,
+    excedente: datos.excedente,
+    faltante: datos.faltante,
+    resultado: datos.resultado,
+    destino_excedente: datos.destinoExcedente,
+  }).eq("id", comprobanteId);
+  if (error) console.error("Error guardando la corrección del comprobante:", error);
+}
+
 function cargarComprobantesLocal(propiedadId) {
   try {
     const raw = localStorage.getItem(`comprobantes_${propiedadId}`);
@@ -1101,6 +1117,7 @@ function AppInterno({ perfil, cerrarSesion }) {
               console.error("Error generando enlace del comprobante:", e);
             }
             const comprobanteObj = {
+              id: row.id,
               imagen: imagenUrl,
               fecha: row.created_at,
               estado: row.estado,
@@ -3258,16 +3275,29 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
     if (!previewCorregido) return;
     const necesitaDestino = previewCorregido.resultado === "excedente" && previewCorregido.aTiempo;
     if (necesitaDestino && !destinoCorregido) return;
+    const destinoFinal = previewCorregido.resultado === "excedente" ? (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente") : null;
     actualizar((p) => {
       const fila = p.tabla[idx];
       const c = fila.comprobante;
       c.fecha = `${fechaCorregida}T00:00:00.000Z`;
+      c.fechaPagoReal = fechaCorregida;
       c.moraAlSubir = previewCorregido.moraAlSubir;
       c.montoRequerido = previewCorregido.montoRequerido;
       c.excedente = previewCorregido.excedente;
       c.faltante = previewCorregido.faltante;
       c.resultado = previewCorregido.resultado;
-      c.destinoExcedente = previewCorregido.resultado === "excedente" ? (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente") : null;
+      c.destinoExcedente = destinoFinal;
+      if (c.id) {
+        actualizarCorreccionComprobanteBD(c.id, {
+          fechaCorregida,
+          moraAlSubir: previewCorregido.moraAlSubir,
+          montoRequerido: previewCorregido.montoRequerido,
+          excedente: previewCorregido.excedente,
+          faltante: previewCorregido.faltante,
+          resultado: previewCorregido.resultado,
+          destinoExcedente: destinoFinal,
+        }).catch((err) => console.error(err));
+      }
       return p;
     });
     setCorrigiendoIdx(null);

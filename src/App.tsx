@@ -601,6 +601,7 @@ async function guardarComprobanteEnBD(cuotaId, path, datos) {
     resultado: datos.resultado,
     destino_excedente: datos.destinoExcedente,
     fecha_pago_real: datos.fechaPagoReal || null,
+    nota_cliente: datos.notaCliente || null,
     estado: "revision",
   });
   if (error) console.error("Error guardando el registro del comprobante:", error);
@@ -630,6 +631,11 @@ async function actualizarCorreccionComprobanteBD(comprobanteId, datos) {
     destino_excedente: datos.destinoExcedente,
   }).eq("id", comprobanteId);
   if (error) console.error("Error guardando la corrección del comprobante:", error);
+}
+
+async function actualizarNotaInmobiliariaBD(comprobanteId, nota) {
+  const { error } = await supabase.from("comprobantes").update({ nota_inmobiliaria: nota }).eq("id", comprobanteId);
+  if (error) console.error("Error guardando la nota de la inmobiliaria:", error);
 }
 
 function cargarComprobantesLocal(propiedadId) {
@@ -1129,6 +1135,8 @@ function AppInterno({ perfil, cerrarSesion }) {
               resultado: row.resultado,
               destinoExcedente: row.destino_excedente,
               fechaPagoReal: row.fecha_pago_real,
+              notaCliente: row.nota_cliente,
+              notaInmobiliaria: row.nota_inmobiliaria,
             };
             if (!comprobantesPorCuota[row.cuota_id]) comprobantesPorCuota[row.cuota_id] = comprobanteObj; // el más reciente (para revisar/aprobar)
             if (!historialComprobantesPorCuota[row.cuota_id]) historialComprobantesPorCuota[row.cuota_id] = [];
@@ -3031,6 +3039,8 @@ function VisorGaleria({ galeria, setGaleria }) {
           {fmt(actual.montoDepositado)} · {fmtDate(actual.fechaPagoReal || actual.fecha)}
           {imagenes.length > 1 && <span className="ml-2 text-white/50">({indice + 1}/{imagenes.length})</span>}
         </div>
+        {actual.notaCliente && <div className="text-xs text-white/70 max-w-md">Nota del cliente: {actual.notaCliente}</div>}
+        {actual.notaInmobiliaria && <div className="text-xs text-[#C9A227] max-w-md">Nota interna: {actual.notaInmobiliaria}</div>}
       </div>
       {imagenes.length > 1 && (
         <>
@@ -3043,6 +3053,49 @@ function VisorGaleria({ galeria, setGaleria }) {
         </>
       )}
       <button onClick={() => setGaleria(null)} className="absolute top-5 right-5 text-white"><X size={24} /></button>
+    </div>
+  );
+}
+
+// Caja para que la inmobiliaria deje su propia nota sobre un comprobante (aparte de la nota
+// que haya escrito el cliente). Se guarda directo en la base de datos al presionar Guardar.
+function NotaInmobiliaria({ comprobante, actualizar }) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(comprobante.notaInmobiliaria || "");
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async () => {
+    if (!comprobante.id) return;
+    setGuardando(true);
+    await actualizarNotaInmobiliariaBD(comprobante.id, texto.trim() || null);
+    actualizar((p) => {
+      p.tabla.forEach((f) => {
+        if (f.comprobante?.id === comprobante.id) f.comprobante.notaInmobiliaria = texto.trim() || null;
+        (f.comprobantesHistorial || []).forEach((c) => { if (c.id === comprobante.id) c.notaInmobiliaria = texto.trim() || null; });
+      });
+      return p;
+    });
+    setGuardando(false);
+    setEditando(false);
+  };
+
+  if (!editando) {
+    return comprobante.notaInmobiliaria ? (
+      <div className="mt-2 text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2 flex justify-between items-start gap-2">
+        <div><span className="text-[#8A93A3]">Nota interna: </span>{comprobante.notaInmobiliaria}</div>
+        <button onClick={() => setEditando(true)} className="text-[#8A93A3] hover:text-[#EDE7D9] shrink-0"><Pencil size={12} /></button>
+      </div>
+    ) : (
+      <button onClick={() => setEditando(true)} className="mt-2 text-[11px] text-[#8A93A3] underline">+ Agregar nota interna</button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-1.5">
+      <textarea value={texto} onChange={(e) => setTexto(e.target.value)} maxLength={300} rows={2} placeholder="Nota interna sobre este pago (no la ve el cliente)..." className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:border-[#C9A227]" />
+      <div className="flex gap-2">
+        <button onClick={() => { setTexto(comprobante.notaInmobiliaria || ""); setEditando(false); }} className="text-[11px] bg-[#2A3547] px-2.5 py-1 rounded-md">Cancelar</button>
+        <button onClick={guardar} disabled={guardando} className="text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-2.5 py-1 rounded-md">{guardando ? "Guardando..." : "Guardar"}</button>
+      </div>
     </div>
   );
 }
@@ -3419,8 +3472,15 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
                   </div>
                 )}
                 {f.comprobante.resultado === "completo" && <div className="text-[11px] text-emerald-400">Cubre exactamente lo que debía</div>}
+                {f.comprobante.notaCliente && (
+                  <div className="text-[11px] text-[#EDE7D9] bg-[#0C121C] border border-[#2A3547] rounded-md p-2 mt-1.5">
+                    <span className="text-[#8A93A3]">Nota del cliente: </span>{f.comprobante.notaCliente}
+                  </div>
+                )}
               </div>
             </div>
+
+            <NotaInmobiliaria comprobante={f.comprobante} actualizar={actualizar} />
 
             {corrigiendoIdx !== idx ? (
               <button onClick={() => abrirCorreccion(idx)} className="mt-2 text-[11px] text-[#8A93A3] underline">
@@ -4055,6 +4115,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const [destino, setDestino] = useState(null);
   const [archivo, setArchivo] = useState(null);
   const [fechaPagoReal, setFechaPagoReal] = useState(hoy);
+  const [notaCliente, setNotaCliente] = useState("");
 
   const montoNum = Number(monto) || 0;
   const { moraPendiente, luzPendiente, luzMoraPendiente, montoRequerido } = calcularEstadoPago(f, hoy, prop);
@@ -4076,6 +4137,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       resultado,
       destinoExcedente: resultado === "excedente" ? (necesitaDestino ? destino : "creditoSiguiente") : null,
       fechaPagoReal,
+      notaCliente: notaCliente.trim() || null,
     });
   };
 
@@ -4097,6 +4159,11 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
         <input type="date" value={fechaPagoReal} max={hoy} onChange={(e) => setFechaPagoReal(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
       </label>
       <CampoMoneda label="¿Cuánto depositaste?" value={monto} onChange={setMonto} />
+
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Descripción o referencia (opcional)</span>
+        <textarea value={notaCliente} onChange={(e) => setNotaCliente(e.target.value)} maxLength={300} rows={2} placeholder="Ej. No. de referencia, motivo del pago, cualquier aclaración..." className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#C9A227]" />
+      </label>
 
       {montoNum > 0 && faltante > 0.009 && (
         <div className="text-[11px] text-blue-300">Depositando esto, quedarían pendientes {fmt(faltante)} que se sumarán a tu siguiente cuota.</div>
@@ -4188,6 +4255,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           resultado: datos.resultado,
           destinoExcedente: datos.destinoExcedente,
           fechaPagoReal: datos.fechaPagoReal,
+          notaCliente: datos.notaCliente || null,
+          notaInmobiliaria: null,
         };
         fila.estado = "revision";
         p.notificaciones = p.notificaciones || [];

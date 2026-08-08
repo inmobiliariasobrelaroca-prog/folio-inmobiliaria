@@ -1307,7 +1307,17 @@ function AppInterno({ perfil, cerrarSesion }) {
     setProyectos((prev) => prev.map((p) => (p.id === id ? { ...p, ...datos } : p)));
   };
 
-  if (!cargado) return <div className="min-h-screen bg-[#101826]" />;
+  if (!cargado) {
+    return (
+      <div className="min-h-screen bg-[#101826] flex flex-col items-center justify-center gap-4">
+        <div className="relative w-16 h-16 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-[#2A3547] border-t-[#C9A227] animate-spin" />
+          <img src={logoEmblema} alt="Sobre la Roca" className="w-9 h-9 object-contain" />
+        </div>
+        <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">Cargando…</div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -3195,7 +3205,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
   const [previewCorregido, setPreviewCorregido] = useState(null);
   const [destinoCorregido, setDestinoCorregido] = useState(null);
 
-  const { saldoActual, moraCredito, moraLuz, moraTotal, luzPendiente } = resumenProp(prop, hoy);
+  const { saldoActual, vencidas, moraCredito, moraLuz, moraTotal, luzPendiente, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const ventana = useVentana(prop.tabla);
 
   const marcarPagado = (idx) => {
@@ -3677,6 +3687,32 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
       {moraTotal > 0 && (
         <div className="text-[11px] text-[#8A93A3] mb-2">
           Desglose: {moraCredito > 0 && <span>mora crédito {fmt(moraCredito)}</span>}{moraCredito > 0 && moraLuz > 0 && " · "}{moraLuz > 0 && <span>mora luz {fmt(moraLuz)}</span>}
+        </div>
+      )}
+      {vencidas.length > 0 && (
+        <div className="bg-[#161F2E] border border-red-800/60 rounded-lg p-4 mb-4">
+          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Cuotas atrasadas ({vencidas.length})</div>
+          <div className="space-y-1.5">
+            {vencidas.map((f) => {
+              const est = calcularEstadoPago(f, hoy, prop);
+              const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
+              const esParcial = f.estado === "parcial";
+              return (
+                <div key={f.numero} className="flex justify-between items-baseline text-sm font-mono">
+                  <span className="font-sans">
+                    Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${esParcial ? "border-blue-700 text-blue-400" : "border-red-800 text-red-400"}`}>{esParcial ? "parcial" : "vencida"}</span>
+                    {mora > 0 && <span className="text-red-400/80"> · mora {fmt(mora)}</span>}
+                  </span>
+                  <span>{fmt(est.montoRequerido)}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between items-baseline font-medium mt-2 pt-2 border-t border-[#2A3547]">
+            <span className="text-sm">Total para ponerse al día</span>
+            <span className="font-mono text-red-400">{fmt(totalParaPonerseAlDia)}</span>
+          </div>
         </div>
       )}
       {prop.saldoAFavor > 0 && (

@@ -527,6 +527,7 @@ function cuotaHaciaFila(f, propiedadId) {
     abono: f.abono || 0,
     monto_pagado_acumulado: f.montoPagadoAcumulado || 0,
     ultimo_rechazo_fecha: f.ultimoRechazo?.fecha || null,
+    ultimo_rechazo_motivo: f.ultimoRechazo?.motivo || null,
     luz_pagado: !!f.luzPagado,
     luz_fecha_pago: f.luzFechaPago || null,
     luz_mora_pagada: f.luzMoraPagada || 0,
@@ -552,7 +553,7 @@ function cuotaDesdeFila(row) {
     moraAplicada: Number(row.mora_pagada || 0),
     abono: Number(row.abono || 0),
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
-    ultimoRechazo: row.ultimo_rechazo_fecha ? { fecha: row.ultimo_rechazo_fecha } : null,
+    ultimoRechazo: row.ultimo_rechazo_fecha ? { fecha: row.ultimo_rechazo_fecha, motivo: row.ultimo_rechazo_motivo } : null,
     luzPagado: !!row.luz_pagado,
     luzFechaPago: row.luz_fecha_pago,
     luzMoraPagada: Number(row.luz_mora_pagada || 0),
@@ -3203,18 +3204,26 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
     });
   };
 
-  const rechazarComprobante = (idx) => {
+  const [rechazandoIdx, setRechazandoIdx] = useState(null);
+  const [motivoRechazo, setMotivoRechazo] = useState("");
+
+  const confirmarRechazo = (idx) => {
     const numero = prop.tabla[idx].numero;
     actualizarEstadoComprobanteBD(prop.id, numero, "rechazado").catch((err) => console.error(err));
     actualizar((p) => {
       const fila = p.tabla[idx];
       fila.estado = "pendiente";
       fila.comprobante = null;
-      fila.ultimoRechazo = { fecha: hoy };
+      fila.ultimoRechazo = { fecha: hoy, motivo: motivoRechazo.trim() || null };
       p.notificaciones = p.notificaciones || [];
-      p.notificaciones.unshift(nuevaNotificacion("cliente", `Tu comprobante de la cuota #${fila.numero} fue rechazado. Por favor sube uno nuevo o contáctanos.`));
+      const msg = motivoRechazo.trim()
+        ? `Tu comprobante de la cuota #${fila.numero} fue rechazado: ${motivoRechazo.trim()}`
+        : `Tu comprobante de la cuota #${fila.numero} fue rechazado. Por favor sube uno nuevo o contáctanos.`;
+      p.notificaciones.unshift(nuevaNotificacion("cliente", msg));
       return p;
     });
+    setRechazandoIdx(null);
+    setMotivoRechazo("");
   };
 
   // Adjuntar el recibo/foto de un pago que ya se marcó como pagado (por ejemplo, historial
@@ -3423,7 +3432,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
             <div className="text-xs text-[#8A93A3] font-mono">#{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
             {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
-            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400/80">último comprobante rechazado</div>}
+            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
+              <div className="text-[11px] text-red-400/80">último comprobante rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}</div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Badge estado={est} />
@@ -3529,10 +3540,20 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               </div>
             )}
             {puede("aprobar_rechazar_pagos") ? (
-              <div className="flex gap-2 mt-2.5">
-                <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
-                <button onClick={() => rechazarComprobante(idx)} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
-              </div>
+              rechazandoIdx === idx ? (
+                <div className="mt-2.5 space-y-1.5">
+                  <textarea value={motivoRechazo} onChange={(e) => setMotivoRechazo(e.target.value)} maxLength={300} rows={2} placeholder="¿Por qué se rechaza? El cliente va a ver este texto..." className="w-full bg-[#0C121C] border border-red-800 rounded-md px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:border-red-600" />
+                  <div className="flex gap-2">
+                    <button onClick={() => { setRechazandoIdx(null); setMotivoRechazo(""); }} className="flex-1 text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md">Cancelar</button>
+                    <button onClick={() => confirmarRechazo(idx)} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Confirmar rechazo</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2 mt-2.5">
+                  <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
+                  <button onClick={() => { setRechazandoIdx(idx); setMotivoRechazo(""); }} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
+                </div>
+              )
             ) : (
               <div className="mt-2.5 text-[11px] text-[#8A93A3]">No tienes permiso para aprobar o rechazar pagos.</div>
             )}
@@ -4284,7 +4305,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
             <div className="text-xs text-[#8A93A3] font-mono">Cuota #{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
             {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
-            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado, sube uno nuevo</div>}
+            {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
+              <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}, sube uno nuevo</div>
+            )}
           </div>
           <Badge estado={est} />
         </div>

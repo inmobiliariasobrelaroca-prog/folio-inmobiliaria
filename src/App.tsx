@@ -4457,12 +4457,21 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               const est = calcularEstadoPago(f, hoy, prop);
               const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
               const esParcial = f.estado === "parcial";
+              const limiteGracia = fechaLimiteGracia(f.fecha, prop.diasGracia);
+              const diasAtraso = Math.max(0, daysBetween(hoy, limiteGracia));
+              const fechaPagoRealMostrar = f.fechaPagoReal || f.comprobante?.fechaPagoReal;
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
                   <div>
                     Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
                     <span className={`text-[10px] px-1.5 py-0.5 rounded border ${esParcial ? "border-blue-700 text-blue-400" : "border-red-800 text-red-400"}`}>{esParcial ? "Parcial" : "Vencida"}</span>
                     {mora > 0 && <div className="text-[11px] text-red-400/80">Incluye mora: {fmt(mora)}</div>}
+                    {esParcial && (
+                      <div className="text-[11px] text-blue-300 mt-1 space-y-0.5">
+                        <div>Ya pagaste {fmt(f.montoPagadoAcumulado || 0)} de esta cuota{fechaPagoRealMostrar && <> — la inmobiliaria registró ese pago el {fmtDate(fechaPagoRealMostrar)}</>}.</div>
+                        {diasAtraso > 0 && <div>Llevas {diasAtraso} día{diasAtraso > 1 ? "s" : ""} de atraso desde que se venció el plazo para pagarla completa.</div>}
+                      </div>
+                    )}
                   </div>
                   <div className="font-mono">{fmt(est.montoRequerido)}</div>
                 </div>

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es-GT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cotizador · Sobre la Roca</title>
+<meta name="theme-color" content="#0C121C">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#101826; --panel:#0C121C; --ink:#EDE7D9; --mut:#8A93A3;
+    --acc:#C9A227; --accInk:#0a0f18; --line:#2A3547; --alert:#e07a5f;
+    --serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow-x:hidden}
+  a{color:var(--acc)}
+  a:hover{color:#dcb63c}
+
+  header{
+    position:sticky;top:0;z-index:5;background:var(--panel);
+    border-bottom:1px solid var(--line);
+    padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top));
+    display:flex;align-items:center;gap:10px
+  }
+  header img{width:30px;height:30px;object-fit:contain;border-radius:3px}
+  header .t{font-family:var(--serif);font-size:16px;line-height:1.1}
+  header .s{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+  header .volver{margin-left:auto;font-size:13px;color:var(--acc);text-decoration:none;padding:10px 4px}
+
+  main{max-width:440px;margin:0 auto;padding:14px 14px 40px;display:flex;flex-direction:column;gap:14px}
+
+  .kicker{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--acc)}
+  h1{font-family:var(--serif);font-size:26px;line-height:1.05;margin:2px 0 0;font-weight:500}
+
+  .campos{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .campo{display:flex;flex-direction:column;gap:5px}
+  .ancho{grid-column:1/-1}
+  label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+  input{
+    width:100%;background:#0d1420;border:1px solid var(--line);border-radius:3px;
+    color:var(--ink);padding:11px 11px;font-family:var(--mono);font-size:16px;outline:none;
+    min-height:44px
+  }
+  input::placeholder{color:#55607040;font-family:var(--sans)}
+  input:focus{border-color:var(--acc);outline:2px solid transparent}
+  input.texto{font-family:var(--sans)}
+
+  .seg{display:flex;gap:6px}
+  .seg button{
+    flex:1;padding:12px 6px;border:1px solid var(--line);border-radius:3px;background:none;
+    color:var(--ink);font-family:var(--sans);font-size:12.5px;cursor:pointer;min-height:44px
+  }
+  .seg button[aria-pressed="true"]{background:var(--acc);color:var(--accInk);border-color:var(--acc);font-weight:600}
+  .nota{font-size:11.5px;color:var(--mut);line-height:1.45}
+
+  .resultado{border:1px solid var(--acc);border-radius:3px;padding:15px;display:flex;flex-direction:column;gap:11px}
+  .cuota{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+  .cuota .big{font-family:var(--serif);font-size:34px;line-height:1;color:var(--acc)}
+  .cuota .sm{font-family:var(--serif);font-size:19px}
+  .desglose{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+  .fila{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
+  .fila span:last-child{font-family:var(--mono);white-space:nowrap}
+  .fila.total{font-size:14px;font-weight:600;border-top:1px solid var(--line);padding-top:8px}
+
+  .acciones{display:flex;flex-direction:column;gap:9px}
+  .btn{
+    display:block;width:100%;text-align:center;padding:15px;border:none;border-radius:3px;
+    background:var(--acc);color:var(--accInk);font-family:var(--sans);font-size:15px;font-weight:600;
+    text-decoration:none;cursor:pointer;min-height:48px
+  }
+  .btn.sec{background:none;border:1px solid var(--line);color:var(--ink);font-weight:400}
+
+  .hoja{display:none}
+
+  @media print{
+    @page{margin:14mm}
+    header,main{display:none !important}
+    html,body{background:#fff;color:#111}
+    .hoja{display:block;font-family:var(--serif)}
+    .hoja .marca{display:flex;align-items:center;gap:10px;border-bottom:2px solid #C9A227;padding-bottom:10px;margin-bottom:16px}
+    .hoja .marca img{width:44px;height:44px;object-fit:contain}
+    .hoja h2{font-size:24px;margin:0;font-weight:500}
+    .hoja .sub{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#666}
+    .hoja .datos{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-family:var(--sans);font-size:11px;margin-bottom:16px}
+    .hoja .datos b{font-weight:600}
+    .hoja .destacado{border:1px solid #C9A227;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+    .hoja .destacado .n{font-size:30px}
+    .hoja table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:9.5px}
+    .hoja th{text-align:right;border-bottom:1px solid #999;padding:5px 4px;font-family:var(--sans);font-size:8.5px;text-transform:uppercase;letter-spacing:.08em}
+    .hoja th:first-child,.hoja td:first-child{text-align:left}
+    .hoja td{text-align:right;padding:4px;border-bottom:1px solid #eee}
+    .hoja .pie{margin-top:14px;font-family:var(--sans);font-size:9px;color:#666;line-height:1.5}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="/icons/icon-192.png" alt="Sobre la Roca">
+  <div>
+    <div class="t">Sobre la Roca</div>
+    <div class="s">Cotizador</div>
+  </div>
+  <a class="volver" href="/">Volver</a>
+</header>
+
+<main>
+  <div>
+    <div class="kicker">Solo vendedores</div>
+    <h1>Cotizador</h1>
+  </div>
+
+  <div class="campos">
+    <div class="campo ancho">
+      <label for="propiedad">Propiedad</label>
+      <input class="texto" id="propiedad" type="text" placeholder="Casa 5 · Los Eucaliptos">
+    </div>
+    <div class="campo">
+      <label for="cliente">Cliente</label>
+      <input class="texto" id="cliente" type="text" placeholder="Nombre completo">
+    </div>
+    <div class="campo">
+      <label for="whatsapp">WhatsApp</label>
+      <input id="whatsapp" type="tel" inputmode="tel" placeholder="5555 5555">
+    </div>
+    <div class="campo">
+      <label for="precio">Precio de venta Q</label>
+      <input id="precio" type="text" inputmode="decimal" value="485,000.00">
+    </div>
+    <div class="campo">
+      <label for="enganche">Enganche Q</label>
+      <input id="enganche" type="text" inputmode="decimal" value="75,000.00">
+    </div>
+    <div class="campo">
+      <label for="tasa">Tasa anual %</label>
+      <input id="tasa" type="text" inputmode="decimal" value="12.00">
+    </div>
+    <div class="campo">
+      <label for="anios">Años de crédito</label>
+      <input id="anios" type="text" inputmode="decimal" value="25">
+    </div>
+    <div class="campo">
+      <label for="gracia">Días de gracia</label>
+      <input id="gracia" type="text" inputmode="decimal" value="3">
+    </div>
+    <div class="campo">
+      <label for="mora">Mora Q por día</label>
+      <input id="mora" type="text" inputmode="decimal" value="100.00">
+    </div>
+    <div class="campo ancho">
+      <label for="luz">Luz mensual Q · 0 si no aplica</label>
+      <input id="luz" type="text" inputmode="decimal" value="0.00">
+    </div>
+  </div>
+
+  <div class="campo">
+    <label>Sistema de amortización</label>
+    <div class="seg">
+      <button type="button" id="bt-nivelada" aria-pressed="true">Cuota nivelada</button>
+      <button type="button" id="bt-saldos" aria-pressed="false">Sobre saldos</button>
+    </div>
+    <div class="nota" id="explicacion"></div>
+  </div>
+
+  <div class="resultado">
+    <div class="cuota">
+      <div>
+        <label id="etiquetaCuota">Cuota mensual</label>
+        <div class="big" id="rCuota">Q0.00</div>
+      </div>
+      <div style="text-align:right">
+        <label>Plazo</label>
+        <div class="sm" id="rPlazo">0 meses</div>
+      </div>
+    </div>
+    <div class="desglose" id="bloqueLuz" hidden>
+      <div class="fila"><span>+ Luz mensual</span><span id="rLuz"></span></div>
+      <div class="fila total"><span>= Total mensual</span><span id="rMensual"></span></div>
+    </div>
+    <div class="desglose">
+      <div class="fila"><span>Precio de venta</span><span id="rPrecio"></span></div>
+      <div class="fila"><span id="lEnganche">− Enganche</span><span id="rEnganche"></span></div>
+      <div class="fila"><span>= Monto a financiar</span><span id="rFinanciado"></span></div>
+      <div class="fila"><span>+ Intereses del plan</span><span id="rIntereses"></span></div>
+      <div class="fila total"><span>= Total a pagar</span><span id="rTotal"></span></div>
+      <div class="nota" id="notaTotal"></div>
+    </div>
+    <div class="nota" id="notaMora"></div>
+  </div>
+
+  <div class="acciones">
+    <button class="btn" id="btWhatsapp" type="button">Enviar por WhatsApp</button>
+    <button class="btn sec" type="button" onclick="window.print()">Imprimir o guardar PDF</button>
+  </div>
+
+  <div class="nota" style="text-align:center">La cotización impresa detalla los primeros 24 meses, aunque el plazo sea mayor.</div>
+</main>
+
+<div class="hoja" id="hoja"></div>
+
+<script>
+(function(){
+  var ids = ['propiedad','cliente','whatsapp','precio','enganche','tasa','anios','gracia','mora','luz'];
+  var el = {}; ids.forEach(function(k){ el[k] = document.getElementById(k); });
+  var tipo = 'nivelada';
+  var urlWhatsapp = '';
+
+  function num(v){ return Number(String(v==null?'':v).replace(/[^0-9.\-]/g,'')) || 0; }
+  function q(n){ return 'Q' + Number(n||0).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function pct(n){ return Number(n||0).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}) + '%'; }
+  function fmt(v,d){ return num(v).toLocaleString('es-GT',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+
+  // Mismas formulas que src/App.tsx (pagoMensual / generarTabla)
+  function calculo(){
+    var P = Math.max(0, num(el.precio.value) - num(el.enganche.value));
+    var n = Math.max(1, Math.round(num(el.anios.value) * 12));
+    var i = num(el.tasa.value) / 100 / 12;
+    if (tipo === 'nivelada'){
+      var cuota = i > 0 ? (P*i)/(1-Math.pow(1+i,-n)) : P/n;
+      return {P:P,n:n,i:i,primera:cuota,total:cuota*n};
+    }
+    var capital = P/n;
+    var primera = capital + P*i;
+    var total = capital*n + P*i*(n+1)/2;
+    return {P:P,n:n,i:i,primera:primera,total:total,capital:capital};
+  }
+
+  function tabla(c, meses){
+    var filas = [], saldo = c.P;
+    var cuotaFija = tipo === 'nivelada' ? c.primera : 0;
+    for (var k=1; k<=Math.min(meses, c.n); k++){
+      var interes = saldo * c.i;
+      var capital = tipo === 'nivelada' ? cuotaFija - interes : c.capital;
+      var pago = capital + interes;
+      var fin = Math.max(0, saldo - capital);
+      filas.push({n:k, cuota:pago, capital:capital, interes:interes, saldo:fin});
+      saldo = fin;
+    }
+    return filas;
+  }
+
+  function pintar(){
+    var c = calculo();
+    var luz = num(el.luz.value);
+    document.getElementById('rCuota').textContent = q(c.primera);
+    document.getElementById('rPlazo').textContent = c.n + ' meses';
+    document.getElementById('etiquetaCuota').textContent = tipo === 'nivelada' ? 'Cuota mensual' : 'Primera cuota';
+    document.getElementById('rPrecio').textContent = q(num(el.precio.value));
+    document.getElementById('lEnganche').textContent = '− Enganche ' + pct((num(el.enganche.value)/Math.max(1,num(el.precio.value)))*100);
+    document.getElementById('rEnganche').textContent = q(num(el.enganche.value));
+    document.getElementById('rFinanciado').textContent = q(c.P);
+    document.getElementById('rIntereses').textContent = q(c.total - c.P);
+    document.getElementById('bloqueLuz').hidden = luz <= 0;
+    document.getElementById('rLuz').textContent = q(luz);
+    document.getElementById('rMensual').textContent = q(c.primera + luz);
+    document.getElementById('rTotal').textContent = q(c.total + num(el.enganche.value));
+    document.getElementById('notaTotal').textContent = 'Precio de venta más intereses del plan. Es el costo de la casa'
+      + (luz > 0 ? '; la luz se cobra aparte cada mes.' : '.');
+    document.getElementById('explicacion').textContent = tipo === 'nivelada'
+      ? 'Tasa ' + pct(num(el.tasa.value)) + ' anual. La misma cuota todos los meses.'
+      : 'Capital fijo más interés sobre el saldo: la cuota baja cada mes.';
+    document.getElementById('notaMora').textContent =
+      'Mora ' + q(num(el.mora.value)) + ' por día después de ' + num(el.gracia.value) + ' días de gracia.'
+      + (luz > 0 ? ' Incluye ' + q(luz) + ' de luz mensual.' : '');
+
+    var tel = String(el.whatsapp.value).replace(/\D/g,'');
+    if (tel.length === 8) tel = '502' + tel;
+    var msg = 'Cotización · Sobre la Roca\n'
+      + (el.propiedad.value ? el.propiedad.value + '\n' : '')
+      + (el.cliente.value ? 'Cliente: ' + el.cliente.value + '\n' : '')
+      + '\nPrecio: ' + q(num(el.precio.value))
+      + '\nEnganche: ' + q(num(el.enganche.value))
+      + '\n' + (tipo === 'nivelada' ? 'Cuota mensual' : 'Primera cuota') + ': ' + q(c.primera)
+      + (luz > 0 ? '\nLuz mensual: ' + q(luz) + '\nTotal mensual: ' + q(c.primera + luz) : '')
+      + '\nPlazo: ' + c.n + ' meses'
+      + '\nTasa: ' + pct(num(el.tasa.value)) + ' anual'
+      + '\nSistema: ' + (tipo === 'nivelada' ? 'Cuota nivelada' : 'Sobre saldos');
+    urlWhatsapp = 'https://wa.me/' + (tel || '') + '?text=' + encodeURIComponent(msg);
+
+    hoja(c, luz);
+    guardar();
+  }
+
+  function hoja(c, luz){
+    var filas = tabla(c, 24);
+    var hoy = new Date().toLocaleDateString('es-GT',{day:'numeric',month:'long',year:'numeric'});
+    var h = '<div class="marca"><img src="/icons/icon-192.png" alt=""><div>'
+      + '<h2>Sobre la Roca</h2><div class="sub">Cotización de financiamiento</div></div></div>'
+      + '<div class="datos">'
+      + '<div><b>Propiedad:</b> ' + (el.propiedad.value || '—') + '</div>'
+      + '<div><b>Fecha:</b> ' + hoy + '</div>'
+      + '<div><b>Cliente:</b> ' + (el.cliente.value || '—') + '</div>'
+      + '<div><b>Sistema:</b> ' + (tipo === 'nivelada' ? 'Cuota nivelada' : 'Sobre saldos') + '</div>'
+      + '<div><b>Precio:</b> ' + q(num(el.precio.value)) + '</div>'
+      + '<div><b>Enganche:</b> ' + q(num(el.enganche.value)) + '</div>'
+      + '<div><b>Tasa:</b> ' + pct(num(el.tasa.value)) + ' anual</div>'
+      + '<div><b>Plazo:</b> ' + c.n + ' meses</div>'
+      + '</div>'
+      + '<div class="destacado"><div><div class="sub">'
+      + (tipo === 'nivelada' ? 'Cuota mensual' : 'Primera cuota')
+      + '</div><div class="n">' + q(c.primera) + '</div></div>'
+      + '<div style="text-align:right"><div class="sub">Monto a financiar</div><div class="n">' + q(c.P) + '</div></div></div>'
+      + (luz > 0
+        ? '<div class="datos" style="grid-template-columns:1fr"><div><b>Luz mensual:</b> ' + q(luz)
+          + ' &middot; <b>Total mensual con luz:</b> ' + q(c.primera + luz)
+          + '</div></div>'
+        : '')
+      + '<table><thead><tr><th>Mes</th><th>Cuota</th><th>Capital</th><th>Interés</th><th>Saldo</th></tr></thead><tbody>';
+    filas.forEach(function(f){
+      h += '<tr><td>' + f.n + '</td><td>' + q(f.cuota) + '</td><td>' + q(f.capital)
+         + '</td><td>' + q(f.interes) + '</td><td>' + q(f.saldo) + '</td></tr>';
+    });
+    h += '</tbody></table><div class="pie">'
+      + 'Mora de ' + q(num(el.mora.value)) + ' por día después de ' + num(el.gracia.value) + ' días de gracia.'
+      + (luz > 0 ? ' La tabla muestra solo la cuota del crédito; el cargo de luz de ' + q(luz) + ' se cobra aparte cada mes.' : '')
+      + '<br>Se detallan los primeros 24 meses de ' + c.n + '. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.'
+      + '</div>';
+    document.getElementById('hoja').innerHTML = h;
+  }
+
+  function guardar(){
+    try{
+      var d = {tipo:tipo};
+      ids.forEach(function(k){ d[k] = el[k].value; });
+      localStorage.setItem('sr_cotizador', JSON.stringify(d));
+    }catch(e){}
+  }
+  function restaurar(){
+    try{
+      var d = JSON.parse(localStorage.getItem('sr_cotizador') || 'null');
+      if(!d) return;
+      ids.forEach(function(k){ if(d[k] != null) el[k].value = d[k]; });
+      if(d.tipo) tipo = d.tipo;
+    }catch(e){}
+  }
+
+  function setTipo(t){
+    tipo = t;
+    document.getElementById('bt-nivelada').setAttribute('aria-pressed', String(t === 'nivelada'));
+    document.getElementById('bt-saldos').setAttribute('aria-pressed', String(t === 'saldos'));
+    pintar();
+  }
+  document.getElementById('btWhatsapp').onclick = function(){ window.open(urlWhatsapp, '_blank', 'noopener'); };
+  document.getElementById('bt-nivelada').onclick = function(){ setTipo('nivelada'); };
+  document.getElementById('bt-saldos').onclick = function(){ setTipo('saldos'); };
+
+  ids.forEach(function(k){ el[k].addEventListener('input', pintar); });
+  ['precio','enganche','mora','luz'].forEach(function(k){
+    el[k].addEventListener('blur', function(){ el[k].value = fmt(el[k].value, 2); pintar(); });
+  });
+  ['tasa'].forEach(function(k){
+    el[k].addEventListener('blur', function(){ el[k].value = fmt(el[k].value, 2); pintar(); });
+  });
+
+  restaurar();
+  setTipo(tipo);
+})();
+</script>
+</body>
+</html>

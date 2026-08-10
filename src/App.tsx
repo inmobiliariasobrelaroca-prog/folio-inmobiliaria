@@ -4517,6 +4517,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
   const [explicandoPago, setExplicandoPago] = useState(null);
+  const [tab, setTab] = useState("tabla");
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
@@ -4635,6 +4636,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <Printer size={13} /> Descargar tabla de pagos (PDF)
         </button>
       </div>
+
+      <div className="flex gap-1 border-b border-[#2A3547] mb-4">
+        <button onClick={() => setTab("tabla")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "tabla" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Clock size={14} /> Tabla de pagos</button>
+        <button onClick={() => setTab("condiciones")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "condiciones" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><FileText size={14} /> Condiciones</button>
+      </div>
+
+      {tab === "tabla" && (<>
 
       {!alDia && (
         <div className="bg-red-950/40 border border-red-800 rounded-lg p-4 mb-4 flex gap-3 items-start">
@@ -4792,6 +4800,55 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      </>)}
+
+      {tab === "condiciones" && (
+        <div className="space-y-4">
+          {(prop.documentos || []).length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Documentos</div>
+              {prop.documentos.map((doc) => (
+                <div key={doc.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-md bg-[#1A2333] flex items-center justify-center shrink-0">
+                    <FileText size={18} className="text-[#C9A227]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">{doc.nombre}</div>
+                    <div className="text-[11px] text-[#8A93A3]">Subido {fmtDateTime(doc.fecha)}</div>
+                  </div>
+                  <button onClick={() => verDocumentoStorage(doc.archivoUrl)} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md flex items-center gap-1.5 shrink-0">
+                    <Download size={13} /> Ver
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones de tu crédito</div>
+            <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
+              <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
+              <Fila2 label="Enganche" value={fmt(prop.enganche)} />
+              <Fila2 label="Monto financiado" value={fmt(Math.max(0, prop.precio - prop.enganche))} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
+              <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
+              <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
+              <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
+              {prop.aplicaLuz && (
+                <>
+                  <Fila2 label="Luz mensual" value={fmt(prop.montoLuzMensual)} />
+                  <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
+                </>
+              )}
+              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicioIntereses || prop.fechaInicio)} />
+            </div>
+          </div>
         </div>
       )}
 

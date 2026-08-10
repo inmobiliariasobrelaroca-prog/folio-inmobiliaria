@@ -1,0 +1,80 @@
+/* movil.css — ajustes solo para telefono.
+   No toca escritorio (>640px) ni la vista de impresion.
+   Cargado despues de Tailwind, por eso los !important. */
+
+@media screen and (max-width: 640px) {
+
+  /* 1. Que nada se salga de la pantalla */
+  html, body { overflow-x: hidden; }
+  * { max-width: 100%; }
+
+  /* 2. Cabecera compacta.
+     Antes ocupaba ~330px de alto y los iconos de la derecha se cortaban.
+     Ahora el logo es mas chico, el titulo va en una linea y los iconos
+     bajan a un segundo renglon en vez de salirse. */
+  div[class*="sticky"][class*="top-0"] {
+    padding: 10px 12px !important;
+  }
+  div[class*="sticky"][class*="top-0"] > div {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    row-gap: 10px !important;
+  }
+  div[class*="sticky"][class*="top-0"] img {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  div[class*="sticky"][class*="top-0"] [class*="font-serif"] {
+    font-size: 15px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+  }
+  /* "CONTROL FINANCIERO" se esconde en telefono: es decorativo
+     y ahi es donde se encimaba el icono de recargar. */
+  div[class*="sticky"][class*="top-0"] [class*="tracking-widest"] {
+    display: none !important;
+  }
+
+  /* 3. Tarjetas de cifras: de 3 columnas a 1.
+     Es lo que hacia que "GTQ 996,712.61" se saliera de su tarjeta. */
+  [class*="grid-cols-3"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 4. Nombres completos.
+     "Diagonal Lucas ..." y "Diagonal 3 y 19 Calle Z..." ahora
+     se parten en dos lineas en vez de cortarse. */
+  [class*="truncate"] {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+  }
+
+  /* 5. Los campos no hacen zoom al tocarlos.
+     Cualquier input de menos de 16px hace que el telefono
+     acerque la pantalla y descuadre todo. */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* 6. Botones comodos de tocar. Solo los que llevan texto;
+     los iconos sueltos se quedan como estan. */
+  button:not([class*="p-1"]):not([class*="p-2"]) {
+    min-height: 44px;
+  }
+
+  /* 7. Las filas de pestañas que se deslizan de lado
+     dejan de mostrar la barra gris. */
+  [class*="overflow-x-auto"] {
+    scrollbar-width: none;
+  }
+  [class*="overflow-x-auto"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 8. Respetar la barra de gestos del telefono al final del scroll. */
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

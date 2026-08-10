@@ -1,3 +1,5 @@
+import './index.css';
+import './movil.css';
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";

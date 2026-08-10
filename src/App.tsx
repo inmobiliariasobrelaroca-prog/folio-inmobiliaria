@@ -1117,13 +1117,28 @@ function AppInterno({ perfil, cerrarSesion }) {
     const nombreCliente = (imprimir.prop?.cliente || "estado-de-cuenta").trim();
     const fechaHoy = (imprimir.hoy || "").replaceAll("-", "");
     document.title = `${nombreCliente} - Estado de cuenta ${fechaHoy}`;
+    let terminado = false;
+    const limpiar = () => {
+      if (terminado) return;
+      terminado = true;
+      setImprimir(null);
+      document.title = tituloOriginal;
+    };
     const t = setTimeout(() => window.print(), 80);
-    const onAfter = () => { setImprimir(null); document.title = tituloOriginal; };
-    window.addEventListener("afterprint", onAfter);
+    // "afterprint" no siempre se dispara al cancelar (sobre todo en Safari/Mac) — por eso además
+    // limpiamos apenas la ventana recupera el foco (que pasa siempre al cerrarse el diálogo, se
+    // haya impreso o cancelado), con un pequeño margen para no pisar el propio window.print().
+    const onFoco = () => setTimeout(limpiar, 200);
+    window.addEventListener("afterprint", limpiar);
+    window.addEventListener("focus", onFoco);
+    // Resguardo final: si ninguno de los dos disparó, no dejamos el botón trabado para siempre.
+    const tSeguridad = setTimeout(limpiar, 15000);
     return () => {
       clearTimeout(t);
-      window.removeEventListener("afterprint", onAfter);
-      document.title = tituloOriginal;
+      clearTimeout(tSeguridad);
+      window.removeEventListener("afterprint", limpiar);
+      window.removeEventListener("focus", onFoco);
+      if (!terminado) document.title = tituloOriginal;
     };
   }, [imprimir]);
 

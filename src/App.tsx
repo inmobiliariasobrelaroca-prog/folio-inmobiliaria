@@ -950,7 +950,12 @@ function Login({ onIngreso }) {
     try {
       const codigoLimpio = codigoAsesor.trim();
       const { email: emailAsesor } = await llamarFuncionPublica("validar-codigo-acceso", { codigo: codigoLimpio });
-      const { data, error } = await supabase.auth.signInWithPassword({ email: emailAsesor, password: codigoLimpio });
+      // La contraseña real de la cuenta NO es el código tal cual: Supabase Auth
+      // exige mínimo 6 caracteres y el código de asesor es de 4 dígitos. Se usa
+      // el mismo relleno fijo que aplica gestionar-asesores al crear/regenerar
+      // la cuenta (ver passwordDesdeCodigoAsesor allá) — el asesor solo necesita
+      // memorizar el código de 4 dígitos, este relleno es invisible para él.
+      const { data, error } = await supabase.auth.signInWithPassword({ email: emailAsesor, password: `slr-${codigoLimpio}` });
       if (error) { setError("Código incorrecto."); return; }
       onIngreso(data.session);
     } catch (err) {

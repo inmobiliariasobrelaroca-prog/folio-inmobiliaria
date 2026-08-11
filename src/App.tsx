@@ -939,7 +939,7 @@ function Login({ onIngreso }) {
     onIngreso(data.session);
   };
 
-  // Equipo por código (asesores internos/externos, 8 dígitos). La validación
+  // Equipo por código (asesores internos/externos, 4 dígitos). La validación
   // del código y el límite de intentos viven en la Edge Function
   // validar-codigo-acceso, no aquí — este handler solo completa el login una
   // vez que el servidor confirma que el código es válido y está activo.
@@ -1006,13 +1006,13 @@ function Login({ onIngreso }) {
           <form onSubmit={ingresarAsesor} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu código de asesor</span>
-              <input type="text" inputMode="numeric" maxLength={8} placeholder="Ej. 48213907" required value={codigoAsesor} onChange={(e) => setCodigoAsesor(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
+              <input type="text" inputMode="numeric" maxLength={4} placeholder="Ej. 4821" required value={codigoAsesor} onChange={(e) => setCodigoAsesor(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
             </label>
             {error && <div className="text-xs text-red-400">{error}</div>}
-            <button type="submit" disabled={cargando || codigoAsesor.length !== 8} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+            <button type="submit" disabled={cargando || codigoAsesor.length !== 4} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
               {cargando ? "Entrando..." : "Iniciar sesión"}
             </button>
-            <p className="text-[11px] text-[#8A93A3] text-center">Código de 8 dígitos que te dio la inmobiliaria.</p>
+            <p className="text-[11px] text-[#8A93A3] text-center">Código de 4 dígitos que te dio la inmobiliaria.</p>
           </form>
         )}
       </div>
@@ -2074,7 +2074,7 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
                   {u.nombre}
                   {u.activo === false && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 uppercase tracking-wide">Desactivado</span>}
                 </div>
-                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 8 dígitos" : "Asesor externo · código de 8 dígitos") : u.email}</div>
+                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 4 dígitos" : "Asesor externo · código de 4 dígitos") : u.email}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
@@ -2132,7 +2132,7 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
   );
 }
 
-// El código de 8 dígitos solo se puede ver en este momento (justo después de
+// El código de 4 dígitos solo se puede ver en este momento (justo después de
 // generarse) — la base no lo vuelve a mostrar en ninguna pantalla. Entrégalo
 // a la persona por un canal seguro y que lo memorice o lo guarde ella misma.
 function ModalCodigoGenerado({ info, onCerrar }) {
@@ -2202,7 +2202,7 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
 
         {esAsesor ? (
-          <p className="text-[11px] text-[#8A93A3]">Se genera un código de 8 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta.</p>
+          <p className="text-[11px] text-[#8A93A3]">Se genera un código de 4 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta.</p>
         ) : (
           <>
             <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

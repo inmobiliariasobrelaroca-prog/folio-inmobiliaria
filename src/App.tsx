@@ -1452,6 +1452,16 @@ async function construirPdfCotizacion(d) {
 // WhatsApp — muestra esos montos y un total mensual que los suma a la cuota.
 const LINK_SITIO_VENTAS = "https://sobrelaroca-ventas.vercel.app";
 
+// Confirmado en el código de sobrelaroca-ventas (index.html, función render():
+// `if (partes[0] === 'propiedad' && partes[1]) await vistaDetalle(partes[1])`
+// leyendo el hash `#/propiedad/<id>`) — usa ruteo por hash y el <id> es
+// exactamente el uuid de propiedades_venta.id, la misma tabla y el mismo
+// proyecto de Supabase que usa esta app. Por eso alcanza con el id que ya
+// trae `propiedad` aquí, sin necesitar el campo `codigo`.
+function linkPropiedadVenta(propiedad) {
+  return `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
+}
+
 function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
@@ -1525,7 +1535,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     `\nPlazo: ${meses} meses` +
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
     `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
-    `\n\nMás propiedades: ${LINK_SITIO_VENTAS}` +
+    `\n\nAquí puedes ver tu propiedad: ${linkPropiedadVenta(propiedad)}` +
     (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 

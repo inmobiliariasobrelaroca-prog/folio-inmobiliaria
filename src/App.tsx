@@ -1267,6 +1267,12 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                   <div className="text-[11px] text-[#8A93A3]">Mínimo: {fmt(p.condiciones.precio_minimo)}</div>
                 )}
                 {p.precio == null && <div className="text-[11px] text-[#8A93A3]">Precio pendiente de cargar</div>}
+                {(p.aplica_luz || p.aplica_mantenimiento) && (
+                  <div className="flex gap-1 mt-1">
+                    {p.aplica_luz && <span className="text-[9px] bg-[#0C121C] border border-[#2A3547] rounded-full px-1.5 py-0.5 text-[#8A93A3]">+ Luz</span>}
+                    {p.aplica_mantenimiento && <span className="text-[9px] bg-[#0C121C] border border-[#2A3547] rounded-full px-1.5 py-0.5 text-[#8A93A3]">+ Mantenimiento</span>}
+                  </div>
+                )}
               </div>
             </button>
           ))}
@@ -1296,8 +1302,14 @@ function limpiarNombreArchivo(txt) {
 // deja enviar ni imprimir. El precio mínimo/máximo solo se le muestra en
 // números al asesor que ya tiene permiso de ver el precio mínimo de
 // negociación (puedeVerMinimo) — a los demás se les avisa sin revelar la
-// cifra, igual que ya se hacía en la lista de propiedades. Tampoco se le
-// muestra al cliente el desglose de intereses del plan en ningún lado.
+// cifra, igual que ya se hacía en la lista de propiedades.
+//
+// (2026-08-13) La vista previa en pantalla no desglosa intereses, pero la
+// tabla de cuotas que se imprime/guarda como PDF sí muestra capital e interés
+// por cuota (pedido explícito). Si la propiedad tiene luz y/o mantenimiento
+// como cargo aparte (propiedad.aplica_luz / aplica_mantenimiento, los fija el
+// administrador), el encabezado de la cotización — en pantalla, PDF y
+// WhatsApp — muestra esos montos y un total mensual que los suma a la cuota.
 function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
@@ -1338,6 +1350,16 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
   const esSaldos = sistema === "saldos";
   const cuota = anios ? (esSaldos ? principal / meses + principal * (tasaNum / 100 / 12) : pagoMensual(principal, tasaNum, meses)) : 0;
 
+  // Cargos mensuales aparte de la cuota de crédito (luz, mantenimiento) — los
+  // fija el administrador por propiedad. El gran total es lo que el cliente
+  // realmente paga cada mes, no solo la cuota del crédito.
+  const aplicaLuz = !!propiedad.aplica_luz;
+  const aplicaMantenimiento = !!propiedad.aplica_mantenimiento;
+  const montoLuz = aplicaLuz ? Number(propiedad.monto_luz_mensual) || 0 : 0;
+  const montoMantenimiento = aplicaMantenimiento ? Number(propiedad.monto_mantenimiento_mensual) || 0 : 0;
+  const tieneCargosAdicionales = aplicaLuz || aplicaMantenimiento;
+  const totalMensual = cuota + montoLuz + montoMantenimiento;
+
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
   const listoParaEnviar = datosCompletos && !fueraDeRango;
 
@@ -1349,6 +1371,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
     `\nPrecio: ${fmt(precioNum)}` +
     `\nEnganche: ${fmt(engancheNum)}` +
     `\n${esSaldos ? "Primera cuota" : "Cuota mensual"}: ${fmt(cuota)}` +
+    (aplicaLuz ? `\nLuz mensual: ${fmt(montoLuz)}` : "") +
+    (aplicaMantenimiento ? `\nMantenimiento mensual: ${fmt(montoMantenimiento)}` : "") +
+    (tieneCargosAdicionales ? `\nTotal mensual: ${fmt(totalMensual)}` : "") +
     `\nPlazo: ${meses} meses` +
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
     `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}`;
@@ -1370,8 +1395,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
   }, [datosCompletos, propiedad.codigo, propiedad.nombre, cliente]);
 
   // Tabla de cuotas para la impresión/PDF: al menos 2 años (24 meses), o el
-  // plazo completo si es más corto que eso. No se incluye la columna de
-  // interés por cuota — el plan no debe mostrarle el desglose de intereses.
+  // plazo completo si es más corto que eso. Sí incluye capital e interés por
+  // cuota (pedido explícito) — la vista previa en pantalla, antes de
+  // imprimir, se mantiene simple y no repite ese desglose.
   const mesesTabla = Math.min(meses, 24);
   const tabla = datosCompletos
     ? generarTabla({ precio: precioNum, enganche: engancheNum, tasaAnual: tasaNum, plazoAnios: Number(anios) || 0, fechaInicio: hoy, sistemaAmortizacion: sistema }).slice(0, mesesTabla)
@@ -1430,6 +1456,13 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
                 <div className="flex justify-between"><span>− Enganche</span><span className="font-mono">{fmt(engancheNum)}</span></div>
                 <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
               </div>
+              {tieneCargosAdicionales && (
+                <div className="border-t border-[#2A3547] pt-3 space-y-1.5 text-xs">
+                  {aplicaLuz && <div className="flex justify-between"><span>Luz mensual</span><span className="font-mono">{fmt(montoLuz)}</span></div>}
+                  {aplicaMantenimiento && <div className="flex justify-between"><span>Mantenimiento mensual</span><span className="font-mono">{fmt(montoMantenimiento)}</span></div>}
+                  <div className="flex justify-between font-medium text-[#C9A227] border-t border-[#2A3547] pt-1.5"><span>= Total mensual</span><span className="font-mono">{fmt(totalMensual)}</span></div>
+                </div>
+              )}
               <div className="text-[11px] text-[#8A93A3]">
                 Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
               </div>
@@ -1483,12 +1516,27 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
             </div>
           </div>
 
+          {tieneCargosAdicionales && (
+            <div className="border-2 border-[#101826] p-3 mb-4">
+              <div className="grid grid-cols-2 gap-2 text-[11px] mb-2">
+                {aplicaLuz && <div><b>Luz mensual:</b> {fmt(montoLuz)}</div>}
+                {aplicaMantenimiento && <div><b>Mantenimiento mensual:</b> {fmt(montoMantenimiento)}</div>}
+              </div>
+              <div className="flex justify-between items-end border-t border-gray-300 pt-2">
+                <div className="text-[10px] uppercase font-bold text-gray-600">Total mensual (cuota + luz + mantenimiento)</div>
+                <div className="text-xl font-bold">{fmt(totalMensual)}</div>
+              </div>
+            </div>
+          )}
+
           <div className="text-sm font-bold mb-2">Tabla de cuotas{meses > mesesTabla ? ` (primeros ${mesesTabla} meses de ${meses})` : ""}</div>
           <table className="w-full text-[9px] border-collapse mb-3">
             <thead>
               <tr className="bg-[#101826] text-white">
                 <th className="p-1 text-left">#</th>
                 <th className="p-1 text-left">Fecha</th>
+                <th className="p-1 text-right">Capital</th>
+                <th className="p-1 text-right">Interés</th>
                 <th className="p-1 text-right">Cuota</th>
                 <th className="p-1 text-right">Saldo</th>
               </tr>
@@ -1498,6 +1546,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
                 <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
                   <td className="p-1">{f.numero}</td>
                   <td className="p-1">{fmtDate(f.fecha)}</td>
+                  <td className="p-1 text-right">{fmt(f.capital)}</td>
+                  <td className="p-1 text-right">{fmt(f.interes)}</td>
                   <td className="p-1 text-right">{fmt(f.pago)}</td>
                   <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
                 </tr>
@@ -2979,6 +3029,10 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
       financiamiento_propio: !!p.financiamiento_propio,
       financiamiento_enganche_desde: p.financiamiento_propio ? Number(p.financiamiento_enganche_desde) || null : null,
       financiamiento_plazo_max_anios: p.financiamiento_propio ? Number(p.financiamiento_plazo_max_anios) || null : null,
+      aplica_luz: !!p.aplica_luz,
+      monto_luz_mensual: p.aplica_luz ? Number(p.monto_luz_mensual) || null : null,
+      aplica_mantenimiento: !!p.aplica_mantenimiento,
+      monto_mantenimiento_mensual: p.aplica_mantenimiento ? Number(p.monto_mantenimiento_mensual) || null : null,
       google_maps_url: p.google_maps_url || null,
       google_maps_lat: p.google_maps_lat === "" || p.google_maps_lat == null ? null : Number(p.google_maps_lat),
       google_maps_lng: p.google_maps_lng === "" || p.google_maps_lng == null ? null : Number(p.google_maps_lng),
@@ -3108,6 +3162,29 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
             <div className="grid grid-cols-2 gap-2 mt-3">
               <Campo label="Enganche desde (Q)" type="number" min="0" value={p.financiamiento_enganche_desde ?? ""} onChange={(e) => set("financiamiento_enganche_desde")(e.target.value)} />
               <Campo label="Plazo máx. (años)" type="number" min="0" value={p.financiamiento_plazo_max_anios ?? ""} onChange={(e) => set("financiamiento_plazo_max_anios")(e.target.value)} />
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Cargos mensuales adicionales</span>
+          <p className="text-[11px] text-[#6b7280] mb-2.5">Si el comprador paga luz y/o mantenimiento aparte de la cuota de crédito, el cotizador del asesor los suma a un total mensual junto con la cuota.</p>
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-sm">El comprador paga luz</span>
+            <input type="checkbox" checked={!!p.aplica_luz} onChange={(e) => set("aplica_luz")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
+          </label>
+          {p.aplica_luz && (
+            <div className="mt-2">
+              <CampoMoneda label="Monto mensual de luz" value={p.monto_luz_mensual ?? ""} onChange={(n) => set("monto_luz_mensual")(n)} />
+            </div>
+          )}
+          <label className="flex items-center justify-between cursor-pointer mt-3">
+            <span className="text-sm">El comprador paga mantenimiento</span>
+            <input type="checkbox" checked={!!p.aplica_mantenimiento} onChange={(e) => set("aplica_mantenimiento")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
+          </label>
+          {p.aplica_mantenimiento && (
+            <div className="mt-2">
+              <CampoMoneda label="Monto mensual de mantenimiento" value={p.monto_mantenimiento_mensual ?? ""} onChange={(n) => set("monto_mantenimiento_mensual")(n)} />
             </div>
           )}
         </div>

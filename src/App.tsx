@@ -4015,7 +4015,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
               {(() => {
-                const cuotaVigente = prop.tabla.find((f) => f.estado !== "pagado") || prop.tabla[prop.tabla.length - 1];
+                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
                 if (!cuotaVigente) return null;
                 const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
                 const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();
@@ -4848,7 +4848,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
               {(() => {
-                const cuotaVigente = prop.tabla.find((f) => f.estado !== "pagado") || prop.tabla[prop.tabla.length - 1];
+                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
                 if (!cuotaVigente) return null;
                 const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
                 const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();

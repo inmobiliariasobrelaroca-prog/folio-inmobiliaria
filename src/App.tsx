@@ -2702,6 +2702,15 @@ function PestanaRoles({ roles, proyectos, propiedades, proyectosVenta, propiedad
 // Checklist de proyectos/propiedades para restringir el alcance de un rol. Marcar un proyecto
 // entero cubre automáticamente todas sus propiedades; también se pueden marcar propiedades
 // sueltas de proyectos que no están completos.
+//
+// (2026-08-15) Este componente se usa SOLO para "Cartera" (cobros/cuotas/
+// clientes) — es la función original de roles/alcance, previa a los
+// asesores de paso6, y se deja igual hasta que se confirme si también hay
+// que quitarle el atajo de "proyecto completo". Para "Catálogo de venta"
+// (lo que ve el asesor en el cotizador) se usa SelectorAlcanceVenta, más
+// abajo, que ya NO tiene esa opción — pedido explícito de Carlos: un asesor
+// externo asignado a un proyecto no debe ver automáticamente todas sus
+// casas, solo las que se le asignen una por una.
 function SelectorAlcance({
   proyectos, propiedades, restringido, setRestringido, proyectosSel, setProyectosSel, propiedadesSel, setPropiedadesSel,
   titulo = "Restringir a proyectos/propiedades específicos (si no, ve todo)",
@@ -2742,6 +2751,59 @@ function SelectorAlcance({
   );
 }
 
+// Alcance del catálogo de venta (lo que ve el asesor en el cotizador).
+// Distinto de SelectorAlcance de arriba a propósito: aquí NO existe la
+// opción de marcar un proyecto completo — el proyecto solo se muestra como
+// encabezado para agrupar y encontrar más fácil sus casas en la lista, pero
+// el acceso real siempre es casa por casa (propiedadesSel /
+// roles_propiedades_venta). Así, asignar a un asesor externo al proyecto
+// "La Esperanza" ya no le da automáticamente sus 3 casas — el admin marca
+// exactamente cuáles.
+function SelectorAlcanceVenta({ proyectosVenta, propiedadesVenta, restringido, setRestringido, propiedadesSel, setPropiedadesSel }) {
+  const toggleProp = (id) => {
+    setPropiedadesSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const grupos = proyectosVenta
+    .map((p) => ({ proyecto: p, props: propiedadesVenta.filter((pr) => pr.proyecto_venta_id === p.id) }))
+    .filter((g) => g.props.length);
+  const sueltas = propiedadesVenta.filter((pr) => !proyectosVenta.some((p) => p.id === pr.proyecto_venta_id));
+
+  return (
+    <div className="space-y-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+      <label className="flex items-center gap-2 text-xs cursor-pointer">
+        <input type="checkbox" checked={restringido} onChange={(e) => setRestringido(e.target.checked)} />
+        Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)
+      </label>
+      {restringido && (
+        <div className="space-y-2.5 pt-1.5 border-t border-[#2A3547] max-h-64 overflow-y-auto">
+          {grupos.map((g) => (
+            <div key={g.proyecto.id}>
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">{g.proyecto.nombre}</div>
+              {g.props.map((pr) => (
+                <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer pl-1">
+                  <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} />
+                  {pr.nombre}
+                </label>
+              ))}
+            </div>
+          ))}
+          {sueltas.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Sin proyecto</div>
+              {sueltas.map((pr) => (
+                <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer pl-1">
+                  <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} />
+                  {pr.nombre}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVenta, onActualizado }) {
   const [editando, setEditando] = useState(false);
   const [permisos, setPermisos] = useState(rol.permisos || {});
@@ -2749,22 +2811,19 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
   const [restringidoVenta, setRestringidoVenta] = useState(rol.ambito_restringido_venta !== false);
-  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
   const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
   const usaCatalogoVenta = !!(permisos.ver_propiedades_asignadas);
 
   const empezarEdicion = async () => {
-    const [{ data: rp }, { data: rpr }, { data: rpv }, { data: rprv }] = await Promise.all([
+    const [{ data: rp }, { data: rpr }, { data: rprv }] = await Promise.all([
       supabase.from("roles_proyectos").select("proyecto_id").eq("rol_id", rol.id),
       supabase.from("roles_propiedades").select("propiedad_id").eq("rol_id", rol.id),
-      supabase.from("roles_proyectos_venta").select("proyecto_venta_id").eq("rol_id", rol.id),
       supabase.from("roles_propiedades_venta").select("propiedad_venta_id").eq("rol_id", rol.id),
     ]);
     setProyectosSel((rp || []).map((r) => r.proyecto_id));
     setPropiedadesSel((rpr || []).map((r) => r.propiedad_id));
-    setProyectosVentaSel((rpv || []).map((r) => r.proyecto_venta_id));
     setPropiedadesVentaSel((rprv || []).map((r) => r.propiedad_venta_id));
     setPermisos(rol.permisos || {});
     setRestringido(!!rol.ambito_restringido);
@@ -2781,11 +2840,11 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
       if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: rol.id, proyecto_id })));
       if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: rol.id, propiedad_id })));
     }
-    await supabase.from("roles_proyectos_venta").delete().eq("rol_id", rol.id);
+    // Catálogo de venta: ya no existe "proyecto completo" (ver SelectorAlcanceVenta) — solo
+    // roles_propiedades_venta, casa por casa.
     await supabase.from("roles_propiedades_venta").delete().eq("rol_id", rol.id);
-    if (restringidoVenta) {
-      if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: rol.id, proyecto_venta_id })));
-      if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: rol.id, propiedad_venta_id })));
+    if (restringidoVenta && propiedadesVentaSel.length) {
+      await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: rol.id, propiedad_venta_id })));
     }
     setGuardando(false);
     setEditando(false);
@@ -2838,14 +2897,10 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
           {usaCatalogoVenta && (
             <div>
               <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
-              <SelectorAlcance
-                proyectos={proyectosVenta} propiedades={propiedadesVenta}
+              <SelectorAlcanceVenta
+                proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
                 restringido={restringidoVenta} setRestringido={setRestringidoVenta}
-                proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
                 propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
-                titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
-                getEtiquetaPropiedad={(pr) => pr.nombre}
-                campoProyectoDePropiedad="proyecto_venta_id"
               />
             </div>
           )}
@@ -2870,7 +2925,6 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
   const [restringidoVenta, setRestringidoVenta] = useState(true);
-  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
   const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
@@ -2888,9 +2942,9 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
         if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: nuevo.id, proyecto_id })));
         if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: nuevo.id, propiedad_id })));
       }
-      if (usaCatalogoVenta && restringidoVenta) {
-        if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: nuevo.id, proyecto_venta_id })));
-        if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: nuevo.id, propiedad_venta_id })));
+      // Catálogo de venta: casa por casa nada más (ver SelectorAlcanceVenta) — sin "proyecto completo".
+      if (usaCatalogoVenta && restringidoVenta && propiedadesVentaSel.length) {
+        await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: nuevo.id, propiedad_venta_id })));
       }
     }
     setGuardando(false);
@@ -2923,14 +2977,10 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
         {usaCatalogoVenta && (
           <div>
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
-            <SelectorAlcance
-              proyectos={proyectosVenta} propiedades={propiedadesVenta}
+            <SelectorAlcanceVenta
+              proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
               restringido={restringidoVenta} setRestringido={setRestringidoVenta}
-              proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
               propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
-              titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
-              getEtiquetaPropiedad={(pr) => pr.nombre}
-              campoProyectoDePropiedad="proyecto_venta_id"
             />
           </div>
         )}

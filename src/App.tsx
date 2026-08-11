@@ -3,6 +3,8 @@ import './movil.css';
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
@@ -1290,6 +1292,144 @@ function limpiarNombreArchivo(txt) {
   return sinAcentos.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "cotizacion";
 }
 
+// El logo es decorativo en el PDF — si por lo que sea no se puede leer (sin
+// conexión, bloqueo de red, etc.) el PDF se genera igual, solo sin el logo.
+async function cargarImagenDataUrl(url) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(lector.result);
+      lector.onerror = () => reject(new Error("No se pudo leer la imagen"));
+      lector.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Arma el PDF real de la cotización con jsPDF + jspdf-autotable — no depende
+// del diálogo "Imprimir" del navegador (que a veces agrega su propio
+// encabezado/pie con la URL de la página, ver conversación con Carlos). Con
+// esto el asesor obtiene un archivo .pdf de verdad, que se puede adjuntar en
+// WhatsApp. El pie de página (asesor + link de ventas) se repite en cada
+// hoja, vía el hook didDrawPage de autoTable.
+async function construirPdfCotizacion(d) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const xIzq = 14;
+  const xDer = 196;
+  const anchoUtil = xDer - xIzq;
+
+  const logoDataUrl = await cargarImagenDataUrl(logoEmblema);
+
+  const dibujarPiePagina = () => {
+    const alto = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(210, 210, 210);
+    doc.setLineWidth(0.2);
+    doc.line(xIzq, alto - 14, xDer, alto - 14);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.text(`Tu asesor: ${d.asesorNombre}${d.asesorTelefono ? ` · ${d.asesorTelefono}` : ""}`, xIzq, alto - 9);
+    doc.setTextColor(201, 162, 39);
+    doc.text(d.linkVentas, xDer, alto - 9, { align: "right" });
+  };
+
+  let y = 16;
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, "PNG", xIzq, 10, 12, 12); } catch {}
+  }
+  const xTitulo = logoDataUrl ? xIzq + 15 : xIzq;
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(16, 24, 38);
+  doc.text("Sobre la Roca", xTitulo, y);
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(130, 130, 130);
+  doc.text("COTIZACIÓN DE FINANCIAMIENTO", xTitulo, y + 4.5);
+
+  doc.setDrawColor(201, 162, 39);
+  doc.setLineWidth(0.6);
+  doc.line(xIzq, 24, xDer, 24);
+
+  y = 31;
+  const filaInfo = (izqLbl, izqVal, derLbl, derVal) => {
+    doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
+    doc.text(izqLbl, xIzq, y);
+    doc.text(derLbl, xIzq + anchoUtil / 2, y);
+    doc.setFont(undefined, "normal"); doc.setTextColor(20, 20, 20);
+    doc.text(izqVal, xIzq + 22, y);
+    doc.text(derVal, xIzq + anchoUtil / 2 + 22, y);
+    y += 6;
+  };
+  filaInfo("Propiedad:", d.propiedadNombre, "Fecha:", d.fecha);
+  filaInfo("Cliente:", d.cliente || "—", "Sistema:", d.sistemaTexto);
+  filaInfo("Precio:", d.precioTexto, "Enganche:", d.engancheTexto);
+  filaInfo("Tasa:", d.tasaTexto, "Plazo:", d.plazoTexto);
+
+  y += 2;
+  doc.setDrawColor(201, 162, 39);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(xIzq, y, anchoUtil, 16, 1, 1);
+  doc.setFont(undefined, "normal"); doc.setFontSize(7); doc.setTextColor(130, 130, 130);
+  doc.text(d.cuotaEtiqueta, xIzq + 4, y + 6);
+  doc.text("MONTO A FINANCIAR", xDer - 4, y + 6, { align: "right" });
+  doc.setFont(undefined, "bold"); doc.setFontSize(13); doc.setTextColor(16, 24, 38);
+  doc.text(d.cuotaTexto, xIzq + 4, y + 13);
+  doc.text(d.montoFinanciarTexto, xDer - 4, y + 13, { align: "right" });
+  y += 20;
+
+  if (d.tieneCargosAdicionales) {
+    const altoCaja = d.aplicaLuz && d.aplicaMantenimiento ? 22 : 18;
+    doc.setDrawColor(16, 24, 38);
+    doc.setLineWidth(0.5);
+    doc.rect(xIzq, y, anchoUtil, altoCaja);
+    let yCargo = y + 5;
+    doc.setFont(undefined, "normal"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
+    if (d.aplicaLuz) { doc.text(`Luz mensual: ${d.luzTexto}`, xIzq + 4, yCargo); yCargo += 5; }
+    if (d.aplicaMantenimiento) { doc.text(`Mantenimiento mensual: ${d.mantenimientoTexto}`, xIzq + 4, yCargo); yCargo += 5; }
+    doc.setDrawColor(210, 210, 210);
+    doc.line(xIzq + 3, y + altoCaja - 6, xDer - 3, y + altoCaja - 6);
+    doc.setFont(undefined, "bold"); doc.setFontSize(9);
+    doc.text(`TOTAL MENSUAL (${d.componentesTotalMensual.toUpperCase()})`, xIzq + 4, y + altoCaja - 1.5);
+    doc.text(d.totalMensualTexto, xDer - 4, y + altoCaja - 1.5, { align: "right" });
+    y += altoCaja + 6;
+  }
+
+  doc.setFont(undefined, "bold"); doc.setFontSize(10); doc.setTextColor(16, 24, 38);
+  doc.text(`Tabla de cuotas${d.notaTablaParcial ? ` (${d.notaTablaParcial})` : ""}`, xIzq, y);
+  y += 3;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["#", "Fecha", "Capital", "Interés", "Cuota", "Saldo"]],
+    body: d.filasTabla,
+    theme: "striped",
+    styles: { fontSize: 7.5, cellPadding: 1.3, textColor: [30, 30, 30] },
+    headStyles: { fillColor: [16, 24, 38], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    columnStyles: {
+      0: { cellWidth: 10 },
+      2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" },
+    },
+    margin: { left: xIzq, right: 14, bottom: 20 },
+    didDrawPage: dibujarPiePagina,
+  });
+
+  const alturaPagina = doc.internal.pageSize.getHeight();
+  let yFinal = (doc.lastAutoTable?.finalY || y) + 6;
+  let nuevaPagina = false;
+  if (yFinal > alturaPagina - 28) { doc.addPage(); yFinal = 20; nuevaPagina = true; }
+
+  doc.setFont(undefined, "normal"); doc.setFontSize(7.5); doc.setTextColor(110, 110, 110);
+  doc.text(doc.splitTextToSize(d.disclaimerTexto, anchoUtil), xIzq, yFinal);
+  if (nuevaPagina) dibujarPiePagina();
+
+  return doc;
+}
+
 // Cotizador integrado del asesor: mismo cálculo y formato que public/cotizador.html
 // (esa página sigue siendo la referencia), pero precargado desde la propiedad
 // elegida y sin campos de mora/luz editables — el catálogo de venta no tiene
@@ -1321,6 +1461,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [tasaAnual, setTasaAnual] = useState(cond.financiamiento_tasa_anual ?? "");
   const [anios, setAnios] = useState(propiedad.financiamiento_plazo_max_anios ?? "");
   const [sistema, setSistema] = useState("nivelada");
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [errorPdf, setErrorPdf] = useState("");
 
   const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
   const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
@@ -1411,6 +1553,87 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     ? generarTabla({ precio: precioNum, enganche: engancheNum, tasaAnual: tasaNum, plazoAnios: Number(anios) || 0, fechaInicio: hoy, sistemaAmortizacion: sistema }).slice(0, mesesTabla)
     : [];
 
+  const nombreArchivoPdf = () => {
+    const idPropiedad = propiedad.codigo || propiedad.nombre;
+    const sufijoCliente = cliente ? `-${limpiarNombreArchivo(cliente)}` : "";
+    return `Cotizacion-${limpiarNombreArchivo(idPropiedad)}${sufijoCliente}.pdf`;
+  };
+
+  // Junta todo lo que necesita construirPdfCotizacion, ya formateado — así esa
+  // función solo dibuja, sin tener que conocer el estado de este componente.
+  const armarDatosPdf = () => ({
+    propiedadNombre: propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
+    fecha: fmtDate(hoy),
+    cliente,
+    sistemaTexto: esSaldos ? "Sobre saldos" : "Cuota nivelada",
+    precioTexto: fmt(precioNum),
+    engancheTexto: fmt(engancheNum),
+    tasaTexto: `${fmtNum(tasaNum)}% anual`,
+    plazoTexto: `${meses} meses`,
+    cuotaEtiqueta: esSaldos ? "PRIMERA CUOTA" : "CUOTA MENSUAL",
+    cuotaTexto: fmt(cuota),
+    montoFinanciarTexto: fmt(principal),
+    tieneCargosAdicionales,
+    aplicaLuz,
+    aplicaMantenimiento,
+    luzTexto: fmt(montoLuz),
+    mantenimientoTexto: fmt(montoMantenimiento),
+    componentesTotalMensual,
+    totalMensualTexto: fmt(totalMensual),
+    notaTablaParcial: meses > mesesTabla ? `primeros ${mesesTabla} meses de ${meses}` : "",
+    filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
+    disclaimerTexto:
+      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.` +
+      (meses > mesesTabla ? ` La tabla completa tiene ${meses} cuotas — arriba se muestra una muestra de los primeros ${mesesTabla} meses; pide la tabla completa a la inmobiliaria.` : ""),
+    asesorNombre: asesor?.nombre || "—",
+    asesorTelefono: asesor?.telefono || "",
+    linkVentas: LINK_SITIO_VENTAS.replace("https://", ""),
+  });
+
+  const descargarPdf = async () => {
+    setErrorPdf("");
+    setGenerandoPdf(true);
+    try {
+      const doc = await construirPdfCotizacion(armarDatosPdf());
+      doc.save(nombreArchivoPdf());
+    } catch (e) {
+      setErrorPdf("No se pudo generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
+
+  // Intenta adjuntar el PDF directamente al compartir (Web Share API con
+  // archivos — funciona en navegadores móviles modernos: el asesor elige
+  // WhatsApp y el contacto desde el panel nativo de "Compartir"). WhatsApp no
+  // ofrece ninguna forma de adjuntar un archivo a un chat específico desde un
+  // link (wa.me solo acepta texto) — por eso en desktop, o si el navegador no
+  // soporta compartir archivos, se abre el chat con el texto de siempre y el
+  // PDF se descarga aparte para adjuntarlo a mano.
+  const enviarPorWhatsApp = async () => {
+    setErrorPdf("");
+    setGenerandoPdf(true);
+    try {
+      const doc = await construirPdfCotizacion(armarDatosPdf());
+      const archivo = new File([doc.output("blob")], nombreArchivoPdf(), { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        try {
+          await navigator.share({ files: [archivo], text: mensajeWhatsapp });
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return; // el asesor canceló el panel de compartir
+          // cualquier otro error: sigue al plan B de abajo
+        }
+      }
+      window.open(urlWhatsapp, "_blank", "noopener");
+      doc.save(nombreArchivoPdf());
+    } catch (e) {
+      setErrorPdf("No se pudo preparar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="print:hidden">
@@ -1484,10 +1707,16 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           {puedeEnviar && listoParaEnviar && (
             <div className="space-y-2">
-              <button type="button" onClick={() => window.open(urlWhatsapp, "_blank", "noopener")} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">Enviar por WhatsApp</button>
-              <button type="button" onClick={() => window.print()} className="w-full border border-[#2A3547] text-[#EDE7D9] py-3 rounded-md text-sm">Imprimir o guardar PDF</button>
+              <button type="button" disabled={generandoPdf} onClick={enviarPorWhatsApp} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md text-sm">
+                {generandoPdf ? "Preparando PDF..." : "Enviar por WhatsApp (con PDF)"}
+              </button>
+              <button type="button" disabled={generandoPdf} onClick={descargarPdf} className="w-full border border-[#2A3547] text-[#EDE7D9] disabled:opacity-40 py-3 rounded-md text-sm">
+                {generandoPdf ? "Preparando PDF..." : "Descargar PDF"}
+              </button>
+              <button type="button" onClick={() => window.print()} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
+              {errorPdf && <div className="text-[11px] text-red-400 text-center">{errorPdf}</div>}
               <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
-                En la ventana de impresión, si ves una casilla como "Encabezados y pies de página" o "Show Header and Footer", desactívala antes de guardar — si no, el navegador agrega automáticamente la dirección web de esta página al pie de cada hoja.
+                "Enviar por WhatsApp" y "Descargar PDF" generan el archivo directamente, sin depender del navegador. En el celular, al enviar, elige WhatsApp en el panel de compartir y selecciona el contacto ahí. Si usas "Imprimir directamente" en vez de esto, recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
               </p>
             </div>
           )}

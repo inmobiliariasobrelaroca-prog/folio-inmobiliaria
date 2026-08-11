@@ -1255,13 +1255,13 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
               <div className="p-3">
                 <div className="text-sm font-medium">{p.nombre}</div>
                 <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
-                {puedeVerLista && p.condiciones?.precio != null && (
-                  <div className="text-[#C9A227] font-serif text-lg">{fmt(p.condiciones.precio)}</div>
+                {puedeVerLista && p.precio != null && (
+                  <div className="text-[#C9A227] font-serif text-lg">{fmt(p.precio)}</div>
                 )}
                 {puedeVerMinimo && p.condiciones?.precio_minimo != null && (
                   <div className="text-[11px] text-[#8A93A3]">Mínimo: {fmt(p.condiciones.precio_minimo)}</div>
                 )}
-                {!p.condiciones?.precio && <div className="text-[11px] text-[#8A93A3]">Precio pendiente de cargar</div>}
+                {p.precio == null && <div className="text-[11px] text-[#8A93A3]">Precio pendiente de cargar</div>}
               </div>
             </button>
           ))}
@@ -1279,7 +1279,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
-  const [precio, setPrecio] = useState(cond.precio ?? "");
+  const [precio, setPrecio] = useState(propiedad.precio ?? "");
   const [enganche, setEnganche] = useState(propiedad.financiamiento_enganche_desde ?? "");
   const [tasaAnual, setTasaAnual] = useState(cond.financiamiento_tasa_anual ?? "");
   const [anios, setAnios] = useState(propiedad.financiamiento_plazo_max_anios ?? "");
@@ -1420,6 +1420,76 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Código de acceso recién generado: aviso a prueba de recargas ----------
+//
+// El modal "bonito" de PestanaUsuarios (ModalCodigoGenerado) depende de que React
+// llegue a pintar un nuevo estado en memoria — y en la práctica eso se estaba
+// perdiendo (con o sin alert() de por medio) sin que quede ningún error en
+// consola, probablemente por alguna recarga/remontaje que se lleva el estado por
+// delante antes de que se alcance a ver. En vez de seguir cazando esa causa
+// exacta, esto guarda el código en localStorage EN EL MOMENTO en que llega del
+// servidor — sobrevive cualquier recarga completa de la página — y lo muestra
+// desde un componente montado siempre arriba del todo de AppInterno (no dentro
+// de la pantalla de Equipo, que sí se desmonta al refrescar la lista). No se
+// borra hasta que la persona confirme "Ya lo anoté".
+const CLAVE_CODIGO_PENDIENTE = "slr_codigo_pendiente";
+const EVENTO_CODIGO_PENDIENTE = "slr:codigo-pendiente";
+
+function guardarCodigoPendiente(nombre, codigo) {
+  try {
+    localStorage.setItem(CLAVE_CODIGO_PENDIENTE, JSON.stringify({ nombre, codigo }));
+  } catch {}
+  // Para que un AvisoCodigoPendiente ya montado en esta misma pestaña se entere
+  // sin necesitar una recarga (el evento "storage" del navegador solo avisa a
+  // OTRAS pestañas, nunca a la que hizo el cambio).
+  window.dispatchEvent(new Event(EVENTO_CODIGO_PENDIENTE));
+}
+
+function leerCodigoPendiente() {
+  try {
+    const crudo = localStorage.getItem(CLAVE_CODIGO_PENDIENTE);
+    return crudo ? JSON.parse(crudo) : null;
+  } catch {
+    return null;
+  }
+}
+
+function AvisoCodigoPendiente() {
+  const [info, setInfo] = useState(leerCodigoPendiente);
+
+  useEffect(() => {
+    const actualizar = () => setInfo(leerCodigoPendiente());
+    window.addEventListener(EVENTO_CODIGO_PENDIENTE, actualizar);
+    // Además revisa cada vez que la pestaña vuelve a estar visible — cubre el
+    // caso de una recarga completa de la página mientras este componente ya
+    // estaba montado.
+    document.addEventListener("visibilitychange", actualizar);
+    return () => {
+      window.removeEventListener(EVENTO_CODIGO_PENDIENTE, actualizar);
+      document.removeEventListener("visibilitychange", actualizar);
+    };
+  }, []);
+
+  if (!info) return null;
+
+  const cerrar = () => {
+    try { localStorage.removeItem(CLAVE_CODIGO_PENDIENTE); } catch {}
+    setInfo(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-6">
+      <div className="bg-[#161F2E] border border-[#C9A227] rounded-lg p-5 w-full max-w-sm space-y-3 text-center">
+        <KeyRound size={22} className="text-[#C9A227] mx-auto" />
+        <div className="font-serif text-lg">Código para {info.nombre}</div>
+        <div className="font-mono text-3xl tracking-[0.25em] text-[#C9A227] bg-[#0C121C] border border-[#2A3547] rounded-md py-3">{info.codigo}</div>
+        <p className="text-[11px] text-[#8A93A3]">Anótalo o compártelo ahora — no se vuelve a mostrar. Si se pierde, usa "Nuevo código" para generar otro.</p>
+        <button onClick={cerrar} className="w-full bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md text-sm">Ya lo anoté</button>
+      </div>
     </div>
   );
 }
@@ -1710,6 +1780,7 @@ function AppInterno({ perfil, cerrarSesion }) {
 
   return (
     <>
+      <AvisoCodigoPendiente />
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
         <TopBar
           modo={modo}
@@ -1971,8 +2042,15 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
     setOcupado(u.id);
     try {
       const { codigo } = await llamarGestionAsesores({ accion: "regenerar_codigo", usuario_id: u.id });
+      // Guarda el código de inmediato — ver el comentario junto a
+      // guardarCodigoPendiente más arriba en el archivo: esto es lo que
+      // garantiza que se vea, sin importar qué pase después.
+      guardarCodigoPendiente(u.nombre, codigo);
       setCodigoGenerado({ nombre: u.nombre, codigo });
-      onCreado();
+      // No llamamos onCreado() (refresca la lista) aquí todavía — ver el
+      // comentario en ModalCodigoGenerado más abajo: refrescar ahora
+      // reemplaza esta pantalla completa por "Cargando..." y se pierde el
+      // código antes de que llegue a mostrarse.
     } catch (e) {
       alert(e.message);
     } finally {
@@ -2021,12 +2099,35 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
           onCancelar={() => setCreando(false)}
           onCreado={(resultado) => {
             setCreando(false);
-            if (resultado?.codigo) setCodigoGenerado({ nombre: resultado.nombre, codigo: resultado.codigo });
+            if (resultado?.codigo) {
+              // Hay código que mostrar (asesor nuevo): no refrescamos todavía,
+              // ver el comentario en ModalCodigoGenerado de abajo.
+              setCodigoGenerado({ nombre: resultado.nombre, codigo: resultado.codigo });
+            } else {
+              // Staff nuevo (correo/contraseña propios): no hay código que
+              // mostrar, refresca de una vez.
+              onCreado();
+            }
+          }}
+        />
+      )}
+      {codigoGenerado && (
+        <ModalCodigoGenerado
+          info={codigoGenerado}
+          onCerrar={() => {
+            // Recién AHORA refrescamos la lista (onCreado = cargar en
+            // PantallaEquipo). cargar() pone cargando=true de inmediato, lo
+            // que reemplaza esta pantalla entera por "Cargando..." y
+            // desmonta PestanaUsuarios — si eso pasaba antes de que el
+            // usuario alcanzara a ver el código (como pasaba al refrescar
+            // inmediatamente después de crear_asesor/regenerar_codigo), el
+            // código se perdía sin mostrarse nunca. Al esperar a que el
+            // propio usuario cierre este modal, ya lo vio y lo guardó.
+            setCodigoGenerado(null);
             onCreado();
           }}
         />
       )}
-      {codigoGenerado && <ModalCodigoGenerado info={codigoGenerado} onCerrar={() => setCodigoGenerado(null)} />}
     </div>
   );
 }
@@ -2066,6 +2167,12 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
     try {
       if (esAsesor) {
         const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, tipo, rol_id: rolId });
+        // Guarda el código de inmediato, antes que cualquier otra cosa — ver
+        // el comentario junto a guardarCodigoPendiente más arriba en el
+        // archivo: esto es lo que garantiza que se vea, sin depender de que
+        // React alcance a re-renderizar antes de que algo (una recarga, un
+        // remount) se lleve el estado por delante.
+        guardarCodigoPendiente(nombre, codigo);
         onCreado({ nombre, codigo });
       } else {
         await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });
@@ -2649,11 +2756,13 @@ function PantallaPropiedadesVenta({ proyectoId, onVolver, onAbrirPropiedad }) {
   );
 }
 
-// Precio de lista y precio mínimo de negociación, en propiedades_venta_condiciones
+// Precio mínimo de negociación (y tasa sugerida), en propiedades_venta_condiciones
 // — deliberadamente separada de propiedades_venta, que tiene lectura pública
-// para el sitio web. Ver supabase/migrations/20260811000000_asesores_codigo_permisos.sql.
-// Solo la ve el equipo con permiso de administrar el catálogo; los asesores
-// la leen a través de su propia policy de RLS, no de esta pantalla.
+// para el sitio web. El precio DE LISTA sí vive en propiedades_venta.precio
+// (columna que ya existía) y se edita en el formulario principal de arriba,
+// junto a "Mostrar precio". Ver supabase/migrations/20260811000000_asesores_codigo_permisos.sql.
+// Esta sección la ve el equipo con permiso de administrar el catálogo; los
+// asesores la leen a través de su propia policy de RLS, no de esta pantalla.
 function CondicionesVentaPrivadas({ propiedadId }) {
   const [cond, setCond] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -2665,7 +2774,7 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     (async () => {
       setCargando(true);
       const { data } = await supabase.from("propiedades_venta_condiciones").select("*").eq("propiedad_venta_id", propiedadId).maybeSingle();
-      setCond(data || { precio: "", precio_minimo: "", financiamiento_tasa_anual: "" });
+      setCond(data || { precio_minimo: "", financiamiento_tasa_anual: "" });
       setCargando(false);
     })();
   }, [propiedadId]);
@@ -2676,7 +2785,6 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     setGuardado(false);
     const datos = {
       propiedad_venta_id: propiedadId,
-      precio: cond.precio === "" || cond.precio == null ? null : Number(cond.precio),
       precio_minimo: cond.precio_minimo === "" || cond.precio_minimo == null ? null : Number(cond.precio_minimo),
       financiamiento_tasa_anual: cond.financiamiento_tasa_anual === "" || cond.financiamiento_tasa_anual == null ? null : Number(cond.financiamiento_tasa_anual),
     };
@@ -2691,12 +2799,9 @@ function CondicionesVentaPrivadas({ propiedadId }) {
   return (
     <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
       <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1">Condiciones privadas de venta</span>
-      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público. Precarga el cotizador del asesor.</p>
+      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público, ni siquiera si "Mostrar precio" está apagado arriba. Precarga el cotizador del asesor.</p>
       <div className="grid grid-cols-2 gap-2">
-        <CampoMoneda label="Precio de lista" value={cond.precio} onChange={(n) => setCond({ ...cond, precio: n })} />
         <CampoMoneda label="Precio mínimo de negociación" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
-      </div>
-      <div className="mt-2">
         <Campo label="Tasa anual sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
       </div>
       {error && <div className="text-xs text-red-400 mt-2">{error}</div>}
@@ -2753,6 +2858,8 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
       niveles: p.niveles === "" || p.niveles == null ? null : Number(p.niveles),
       parqueos: p.parqueos === "" || p.parqueos == null ? null : Number(p.parqueos),
       estado: p.estado,
+      precio: p.precio === "" || p.precio == null ? null : Number(p.precio),
+      mostrar_precio: p.mostrar_precio !== false,
       financiamiento_propio: !!p.financiamiento_propio,
       financiamiento_enganche_desde: p.financiamiento_propio ? Number(p.financiamiento_enganche_desde) || null : null,
       financiamiento_plazo_max_anios: p.financiamiento_propio ? Number(p.financiamiento_plazo_max_anios) || null : null,
@@ -2844,6 +2951,17 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
             {ESTADOS_VENTA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
+
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <div className="grid grid-cols-2 gap-2">
+            <CampoMoneda label="Precio" value={p.precio} onChange={(n) => set("precio")(n)} />
+            <label className="flex items-center gap-2 mt-5">
+              <input type="checkbox" checked={p.mostrar_precio !== false} onChange={(e) => set("mostrar_precio")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
+              <span className="text-sm">Mostrar precio en el sitio público</span>
+            </label>
+          </div>
+          <p className="text-[11px] text-[#6b7280] mt-2">Si apagas "Mostrar precio", el sitio público oculta el precio pero la propiedad se sigue viendo. El precio mínimo de negociación (privado, solo equipo y asesores) se carga aparte, en "Condiciones privadas de venta" más abajo.</p>
+        </div>
 
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2">Características</span>

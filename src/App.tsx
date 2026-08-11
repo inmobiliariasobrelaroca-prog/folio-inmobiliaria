@@ -1603,20 +1603,36 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     }
   };
 
-  // Abre WhatsApp con el mismo mensaje de texto de siempre (toda la
+  // Siempre abre WhatsApp con el mismo mensaje de texto de siempre (toda la
   // información de la propiedad, para que el cliente la pueda leer directo
   // en el chat sin depender de abrir un PDF — hay clientes que no saben
-  // abrirlo o cuyo teléfono lo bloquea) Y ADEMÁS descarga el PDF con la
-  // tabla de pagos completa, listo para adjuntarlo en el mismo chat.
-  // WhatsApp no ofrece ninguna forma de adjuntar un archivo a un chat
-  // específico desde un link (wa.me solo acepta texto) — por eso el PDF se
-  // descarga aparte y el asesor lo adjunta a mano si el cliente lo pide.
+  // abrirlo o cuyo teléfono lo bloquea). Además, para el PDF:
+  //  - En celular (si el navegador soporta compartir archivos): abre el
+  //    panel nativo de "Compartir" ya con el PDF listo — el asesor solo
+  //    elige WhatsApp y el contacto y lo envía, SIN descargar ni adjuntar
+  //    nada a mano.
+  //  - En computadora, o si el navegador no soporta compartir archivos: no
+  //    queda otra que descargarlo (no hay una "app de WhatsApp" a la que
+  //    entregárselo directo desde el navegador de escritorio).
+  // No se manda el PDF junto con el texto en un solo paso porque WhatsApp,
+  // cuando recibe un documento (a diferencia de una foto), no acepta un
+  // texto/leyenda pegado al archivo — por eso van como dos envíos: el
+  // mensaje de texto (siempre) y el PDF (compartido o descargado aparte).
   const enviarPorWhatsApp = async () => {
     setErrorPdf("");
     setGenerandoPdf(true);
     try {
       const doc = await construirPdfCotizacion(armarDatosPdf());
       window.open(urlWhatsapp, "_blank", "noopener");
+      const archivo = new File([doc.output("blob")], nombreArchivoPdf(), { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        try {
+          await navigator.share({ files: [archivo] });
+          return; // el asesor ya lo mandó (o canceló) desde el panel nativo, no hace falta descargar
+        } catch (err) {
+          if (err?.name === "AbortError") return; // canceló el panel de compartir, no insistir con la descarga
+        }
+      }
       doc.save(nombreArchivoPdf());
     } catch (e) {
       setErrorPdf("No se pudo preparar el PDF: " + e.message);
@@ -1707,7 +1723,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <button type="button" onClick={() => window.print()} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
               {errorPdf && <div className="text-[11px] text-red-400 text-center">{errorPdf}</div>}
               <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
-                "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre (toda la información de la propiedad, para que el cliente la vea sin necesidad de abrir nada) y al mismo tiempo descarga el PDF con la tabla de pagos completa — adjúntalo en el mismo chat si el cliente lo pide. Si usas "Imprimir directamente" en vez de esto, recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
+                "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre (toda la información de la propiedad, para que el cliente la vea sin necesidad de abrir nada) y además abre el panel de compartir del celular ya con el PDF listo — solo elige WhatsApp y el contacto para mandarlo, sin descargar nada. En computadora sí se descarga el PDF, porque no hay panel de compartir para entregárselo directo al navegador. Si usas "Imprimir directamente" en vez de esto, recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
               </p>
             </div>
           )}

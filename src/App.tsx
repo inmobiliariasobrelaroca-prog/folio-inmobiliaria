@@ -1452,14 +1452,18 @@ async function construirPdfCotizacion(d) {
 // WhatsApp — muestra esos montos y un total mensual que los suma a la cuota.
 const LINK_SITIO_VENTAS = "https://sobrelaroca-ventas.vercel.app";
 
-// Confirmado en el código de sobrelaroca-ventas (index.html, función render():
-// `if (partes[0] === 'propiedad' && partes[1]) await vistaDetalle(partes[1])`
-// leyendo el hash `#/propiedad/<id>`) — usa ruteo por hash y el <id> es
-// exactamente el uuid de propiedades_venta.id, la misma tabla y el mismo
-// proyecto de Supabase que usa esta app. Por eso alcanza con el id que ya
-// trae `propiedad` aquí, sin necesitar el campo `codigo`.
+// sobrelaroca-ventas (index.html) usa ruteo por hash con dos rutas
+// equivalentes a la misma ficha de propiedad:
+//   #/propiedad/<uuid>   — siempre funciona, es propiedades_venta.id
+//   #/casa/<codigo>      — más corta y legible (ej. #/casa/4), busca por
+//                          propiedades_venta.codigo; agregada 2026-08-15
+//                          específicamente para que el link que se manda
+//                          por WhatsApp se vea más corto/bonito que el uuid.
+// Si la propiedad no tiene código asignado, cae al link largo con el uuid
+// (siempre funciona, solo no se ve tan corto).
 function linkPropiedadVenta(propiedad) {
-  return `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
+  const codigo = propiedad.codigo ? String(propiedad.codigo).trim() : "";
+  return codigo ? `${LINK_SITIO_VENTAS}/#/casa/${encodeURIComponent(codigo)}` : `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
 }
 
 function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {

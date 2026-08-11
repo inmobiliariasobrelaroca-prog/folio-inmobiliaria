@@ -1359,6 +1359,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
   const montoMantenimiento = aplicaMantenimiento ? Number(propiedad.monto_mantenimiento_mensual) || 0 : 0;
   const tieneCargosAdicionales = aplicaLuz || aplicaMantenimiento;
   const totalMensual = cuota + montoLuz + montoMantenimiento;
+  // Solo menciona los cargos que de verdad aplican a ESTA propiedad — si no
+  // cobra mantenimiento (como Casa 4 de La Esperanza), la etiqueta no debe
+  // decir "+ mantenimiento" aunque el total en sí ya no lo incluya.
+  const componentesTotalMensual = ["cuota", aplicaLuz && "luz", aplicaMantenimiento && "mantenimiento"].filter(Boolean).join(" + ");
 
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
   const listoParaEnviar = datosCompletos && !fueraDeRango;
@@ -1523,7 +1527,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
                 {aplicaMantenimiento && <div><b>Mantenimiento mensual:</b> {fmt(montoMantenimiento)}</div>}
               </div>
               <div className="flex justify-between items-end border-t border-gray-300 pt-2">
-                <div className="text-[10px] uppercase font-bold text-gray-600">Total mensual (cuota + luz + mantenimiento)</div>
+                <div className="text-[10px] uppercase font-bold text-gray-600">Total mensual ({componentesTotalMensual})</div>
                 <div className="text-xl font-bold">{fmt(totalMensual)}</div>
               </div>
             </div>

@@ -4014,9 +4014,20 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla[0] && (
-                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-              )}
+              {(() => {
+                const cuotaVigente = prop.tabla.find((f) => f.estado !== "pagado") || prop.tabla[prop.tabla.length - 1];
+                if (!cuotaVigente) return null;
+                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
+                const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();
+                return (
+                  <>
+                    <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+                    {diaVigente !== diaOriginal && (
+                      <div className="text-[11px] text-[#8A93A3] -mt-1">Cambió de día {diaOriginal} a día {diaVigente} a partir de la cuota #{cuotaVigente.numero} ({fmtDate(cuotaVigente.fecha)}).</div>
+                    )}
+                  </>
+                );
+              })()}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
@@ -4836,9 +4847,20 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla[0] && (
-                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-              )}
+              {(() => {
+                const cuotaVigente = prop.tabla.find((f) => f.estado !== "pagado") || prop.tabla[prop.tabla.length - 1];
+                if (!cuotaVigente) return null;
+                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
+                const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();
+                return (
+                  <>
+                    <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+                    {diaVigente !== diaOriginal && (
+                      <div className="text-[11px] text-[#8A93A3] -mt-1">Cambió de día {diaOriginal} a día {diaVigente} a partir de la cuota #{cuotaVigente.numero} ({fmtDate(cuotaVigente.fecha)}).</div>
+                    )}
+                  </>
+                );
+              })()}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <>

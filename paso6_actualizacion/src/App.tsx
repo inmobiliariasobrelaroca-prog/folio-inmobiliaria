@@ -1972,7 +1972,10 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
     try {
       const { codigo } = await llamarGestionAsesores({ accion: "regenerar_codigo", usuario_id: u.id });
       setCodigoGenerado({ nombre: u.nombre, codigo });
-      onCreado();
+      // No llamamos onCreado() (refresca la lista) aquí todavía — ver el
+      // comentario en ModalCodigoGenerado más abajo: refrescar ahora
+      // reemplaza esta pantalla completa por "Cargando..." y se pierde el
+      // código antes de que llegue a mostrarse.
     } catch (e) {
       alert(e.message);
     } finally {
@@ -2021,12 +2024,35 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
           onCancelar={() => setCreando(false)}
           onCreado={(resultado) => {
             setCreando(false);
-            if (resultado?.codigo) setCodigoGenerado({ nombre: resultado.nombre, codigo: resultado.codigo });
+            if (resultado?.codigo) {
+              // Hay código que mostrar (asesor nuevo): no refrescamos todavía,
+              // ver el comentario en ModalCodigoGenerado de abajo.
+              setCodigoGenerado({ nombre: resultado.nombre, codigo: resultado.codigo });
+            } else {
+              // Staff nuevo (correo/contraseña propios): no hay código que
+              // mostrar, refresca de una vez.
+              onCreado();
+            }
+          }}
+        />
+      )}
+      {codigoGenerado && (
+        <ModalCodigoGenerado
+          info={codigoGenerado}
+          onCerrar={() => {
+            // Recién AHORA refrescamos la lista (onCreado = cargar en
+            // PantallaEquipo). cargar() pone cargando=true de inmediato, lo
+            // que reemplaza esta pantalla entera por "Cargando..." y
+            // desmonta PestanaUsuarios — si eso pasaba antes de que el
+            // usuario alcanzara a ver el código (como pasaba al refrescar
+            // inmediatamente después de crear_asesor/regenerar_codigo), el
+            // código se perdía sin mostrarse nunca. Al esperar a que el
+            // propio usuario cierre este modal, ya lo vio y lo guardó.
+            setCodigoGenerado(null);
             onCreado();
           }}
         />
       )}
-      {codigoGenerado && <ModalCodigoGenerado info={codigoGenerado} onCerrar={() => setCodigoGenerado(null)} />}
     </div>
   );
 }

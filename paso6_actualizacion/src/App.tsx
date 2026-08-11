@@ -1971,6 +1971,11 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
     setOcupado(u.id);
     try {
       const { codigo } = await llamarGestionAsesores({ accion: "regenerar_codigo", usuario_id: u.id });
+      // alert() nativo primero — ver el comentario igual de arriba, en
+      // ModalNuevoUsuario.crear(): garantiza que el código se vea sin
+      // depender de que React alcance a re-renderizar antes de que algo
+      // (una recarga, un remount) se lleve el estado por delante.
+      alert(`Nuevo código de acceso para ${u.nombre}:\n\n${codigo}\n\nAnótalo o compártelo ahora — no se vuelve a mostrar.`);
       setCodigoGenerado({ nombre: u.nombre, codigo });
       // No llamamos onCreado() (refresca la lista) aquí todavía — ver el
       // comentario en ModalCodigoGenerado más abajo: refrescar ahora
@@ -2092,6 +2097,13 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
     try {
       if (esAsesor) {
         const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, tipo, rol_id: rolId });
+        // alert() nativo ANTES que cualquier otra cosa: es sincrónico y se
+        // pinta de inmediato, sin depender de que React vuelva a renderizar
+        // — así el código nunca se pierde, ni siquiera si algo (una recarga
+        // por bfcache, por ejemplo) se lleva por delante el estado justo
+        // después de esto. El modal bonito de abajo sigue existiendo como
+        // respaldo, pero este alert es el que garantiza que sí se vea.
+        alert(`Código de acceso para ${nombre}:\n\n${codigo}\n\nAnótalo o compártelo ahora — no se vuelve a mostrar. Si se pierde, usa "Nuevo código" en la lista de usuarios para generar otro.`);
         onCreado({ nombre, codigo });
       } else {
         await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });

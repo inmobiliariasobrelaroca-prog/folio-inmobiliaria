@@ -1486,6 +1486,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             <div className="space-y-2">
               <button type="button" onClick={() => window.open(urlWhatsapp, "_blank", "noopener")} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">Enviar por WhatsApp</button>
               <button type="button" onClick={() => window.print()} className="w-full border border-[#2A3547] text-[#EDE7D9] py-3 rounded-md text-sm">Imprimir o guardar PDF</button>
+              <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
+                En la ventana de impresión, si ves una casilla como "Encabezados y pies de página" o "Show Header and Footer", desactívala antes de guardar — si no, el navegador agrega automáticamente la dirección web de esta página al pie de cada hoja.
+              </p>
             </div>
           )}
           {!puedeEnviar && (

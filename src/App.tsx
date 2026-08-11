@@ -1221,7 +1221,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   }, []);
 
   if (seleccionada) {
-    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} onVolver={() => setSeleccionada(null)} />;
+    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} puedeVerMinimo={puedeVerMinimo} onVolver={() => setSeleccionada(null)} />;
   }
 
   return (
@@ -1258,7 +1258,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                 {p.fotoPortada ? <img src={p.fotoPortada} alt={p.nombre} className="w-full h-full object-cover" /> : <Building2 size={28} className="text-[#3a4864]" />}
               </div>
               <div className="p-3">
-                <div className="text-sm font-medium">{p.nombre}</div>
+                <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
                 <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
                 {puedeVerLista && p.precio != null && (
                   <div className="text-[#C9A227] font-serif text-lg">{fmt(p.precio)}</div>
@@ -1276,11 +1276,29 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   );
 }
 
+// Nombre sugerido del PDF que arma el navegador al "Imprimir → Guardar como
+// PDF" (usa document.title). Sin acentos/espacios/símbolos raros para que se
+// vea bien como nombre de archivo en cualquier sistema operativo.
+function limpiarNombreArchivo(txt) {
+  const sinAcentos = String(txt || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return sinAcentos.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "cotizacion";
+}
+
 // Cotizador integrado del asesor: mismo cálculo y formato que public/cotizador.html
 // (esa página sigue siendo la referencia), pero precargado desde la propiedad
 // elegida y sin campos de mora/luz editables — el catálogo de venta no tiene
 // esos datos por propiedad, así que se usa el default de la inmobiliaria.
-function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
+//
+// Reglas de rango pedidas por Carlos (2026-08-12): precio y tasa tienen
+// mínimo Y máximo (los fija el administrador en "Condiciones privadas de
+// venta"); el enganche solo tiene mínimo (financiamiento_enganche_desde); los
+// años de crédito quedan libres, sin rango, a propósito. Fuera de rango no se
+// deja enviar ni imprimir. El precio mínimo/máximo solo se le muestra en
+// números al asesor que ya tiene permiso de ver el precio mínimo de
+// negociación (puedeVerMinimo) — a los demás se les avisa sin revelar la
+// cifra, igual que ya se hacía en la lista de propiedades. Tampoco se le
+// muestra al cliente el desglose de intereses del plan en ningún lado.
+function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -1290,20 +1308,38 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
   const [anios, setAnios] = useState(propiedad.financiamiento_plazo_max_anios ?? "");
   const [sistema, setSistema] = useState("nivelada");
 
+  const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
+  const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
+  const engancheMin = propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null;
+  const tasaMin = cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null;
+  const tasaMax = cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null;
+
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
   const tasaNum = Number(tasaAnual) || 0;
   const meses = Math.max(1, Math.round((Number(anios) || 0) * 12));
   const principal = Math.max(0, precioNum - engancheNum);
 
+  const precioFueraDeRango = precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
+  const engancheFueraDeRango = engancheMin != null && engancheNum < engancheMin;
+  const tasaFueraDeRango = tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
+  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
+
+  const precioHint = (precioMin != null || precioMax != null)
+    ? (puedeVerMinimo
+        ? `Permitido: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
+        : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
+    : null;
+  const engancheHint = engancheMin != null ? `Mínimo: ${fmt(engancheMin)}` : null;
+  const tasaHint = (tasaMin != null || tasaMax != null)
+    ? `Permitido: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
+    : null;
+
   const esSaldos = sistema === "saldos";
   const cuota = anios ? (esSaldos ? principal / meses + principal * (tasaNum / 100 / 12) : pagoMensual(principal, tasaNum, meses)) : 0;
-  const totalPagado = esSaldos
-    ? principal + principal * (tasaNum / 100 / 12) * ((meses + 1) / 2)
-    : cuota * meses;
-  const intereses = Math.max(0, totalPagado - principal);
 
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
+  const listoParaEnviar = datosCompletos && !fueraDeRango;
 
   const telLimpio = whatsapp.replace(/\D/g, "");
   const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
@@ -1320,6 +1356,27 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
 
   const hoy = new Date().toISOString().slice(0, 10);
 
+  // El nombre de archivo que sugiere "Imprimir → Guardar como PDF" lo toma el
+  // navegador de document.title. Se restaura el título original al salir de
+  // esta pantalla, para no dejarlo pegado en el resto de la app.
+  useEffect(() => {
+    const tituloOriginal = document.title;
+    if (datosCompletos) {
+      const idPropiedad = propiedad.codigo || propiedad.nombre;
+      const sufijoCliente = cliente ? `-${limpiarNombreArchivo(cliente)}` : "";
+      document.title = `Cotizacion-${limpiarNombreArchivo(idPropiedad)}${sufijoCliente}`;
+    }
+    return () => { document.title = tituloOriginal; };
+  }, [datosCompletos, propiedad.codigo, propiedad.nombre, cliente]);
+
+  // Tabla de cuotas para la impresión/PDF: al menos 2 años (24 meses), o el
+  // plazo completo si es más corto que eso. No se incluye la columna de
+  // interés por cuota — el plan no debe mostrarle el desglose de intereses.
+  const mesesTabla = Math.min(meses, 24);
+  const tabla = datosCompletos
+    ? generarTabla({ precio: precioNum, enganche: engancheNum, tasaAnual: tasaNum, plazoAnios: Number(anios) || 0, fechaInicio: hoy, sistemaAmortizacion: sistema }).slice(0, mesesTabla)
+    : [];
+
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="print:hidden">
@@ -1327,7 +1384,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
           <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
           <div>
             <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Cotizador</div>
-            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}</div>
+            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}{propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}</div>
           </div>
         </div>
 
@@ -1337,11 +1394,14 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
             <Campo label="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5555 5555" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} />
-            <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} />
+            <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
+            <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} hint={engancheHint} invalid={engancheFueraDeRango} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={tasaAnual} onChange={(e) => setTasaAnual(e.target.value)} />
+            <div>
+              <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={tasaAnual} onChange={(e) => setTasaAnual(e.target.value)} />
+              {tasaHint && <p className={`text-[10px] mt-1 ${tasaFueraDeRango ? "text-red-400" : "text-[#6b7280]"}`}>{tasaHint}</p>}
+            </div>
             <Campo label="Años de crédito" type="number" min="1" step="1" value={anios} onChange={(e) => setAnios(e.target.value)} />
           </div>
 
@@ -1354,7 +1414,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
           </div>
 
           {datosCompletos && (
-            <div className="border border-[#C9A227] rounded-lg p-4 space-y-3">
+            <div className={`border rounded-lg p-4 space-y-3 ${fueraDeRango ? "border-red-500" : "border-[#C9A227]"}`}>
               <div className="flex justify-between items-end">
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{esSaldos ? "Primera cuota" : "Cuota mensual"}</div>
@@ -1368,17 +1428,20 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
               <div className="border-t border-[#2A3547] pt-3 space-y-1.5 text-xs">
                 <div className="flex justify-between"><span>Precio de venta</span><span className="font-mono">{fmt(precioNum)}</span></div>
                 <div className="flex justify-between"><span>− Enganche</span><span className="font-mono">{fmt(engancheNum)}</span></div>
-                <div className="flex justify-between"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
-                <div className="flex justify-between"><span>+ Intereses del plan</span><span className="font-mono">{fmt(intereses)}</span></div>
-                <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Total a pagar</span><span className="font-mono">{fmt(principal + intereses)}</span></div>
+                <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
               </div>
               <div className="text-[11px] text-[#8A93A3]">
                 Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
               </div>
+              {fueraDeRango && (
+                <div className="text-[11px] text-red-400 border-t border-red-900 pt-2">
+                  Hay valores fuera del rango permitido para esta propiedad — ajústalos arriba para poder enviar o imprimir.
+                </div>
+              )}
             </div>
           )}
 
-          {puedeEnviar && datosCompletos && (
+          {puedeEnviar && listoParaEnviar && (
             <div className="space-y-2">
               <button type="button" onClick={() => window.open(urlWhatsapp, "_blank", "noopener")} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">Enviar por WhatsApp</button>
               <button type="button" onClick={() => window.print()} className="w-full border border-[#2A3547] text-[#EDE7D9] py-3 rounded-md text-sm">Imprimir o guardar PDF</button>
@@ -1400,7 +1463,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
-            <div><b>Propiedad:</b> {propiedad.nombre}</div>
+            <div><b>Propiedad:</b> {propiedad.nombre}{propiedad.codigo ? ` (#${propiedad.codigo})` : ""}</div>
             <div><b>Fecha:</b> {fmtDate(hoy)}</div>
             <div><b>Cliente:</b> {cliente || "—"}</div>
             <div><b>Sistema:</b> {esSaldos ? "Sobre saldos" : "Cuota nivelada"}</div>
@@ -1419,6 +1482,32 @@ function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
               <div className="text-2xl">{fmt(principal)}</div>
             </div>
           </div>
+
+          <div className="text-sm font-bold mb-2">Tabla de cuotas{meses > mesesTabla ? ` (primeros ${mesesTabla} meses de ${meses})` : ""}</div>
+          <table className="w-full text-[9px] border-collapse mb-3">
+            <thead>
+              <tr className="bg-[#101826] text-white">
+                <th className="p-1 text-left">#</th>
+                <th className="p-1 text-left">Fecha</th>
+                <th className="p-1 text-right">Cuota</th>
+                <th className="p-1 text-right">Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tabla.map((f, i) => (
+                <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
+                  <td className="p-1">{f.numero}</td>
+                  <td className="p-1">{fmtDate(f.fecha)}</td>
+                  <td className="p-1 text-right">{fmt(f.pago)}</td>
+                  <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {meses > mesesTabla && (
+            <div className="text-[9px] text-gray-500 mb-3">La tabla completa tiene {meses} cuotas — esta es una muestra de los primeros {mesesTabla} meses. Pide la tabla completa a la inmobiliaria.</div>
+          )}
+
           <div className="text-[9px] text-gray-500 leading-relaxed">
             Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
             Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
@@ -2779,10 +2868,12 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     (async () => {
       setCargando(true);
       const { data } = await supabase.from("propiedades_venta_condiciones").select("*").eq("propiedad_venta_id", propiedadId).maybeSingle();
-      setCond(data || { precio_minimo: "", financiamiento_tasa_anual: "" });
+      setCond(data || { precio_minimo: "", precio_maximo: "", financiamiento_tasa_anual: "", tasa_interes_minima: "", tasa_interes_maxima: "" });
       setCargando(false);
     })();
   }, [propiedadId]);
+
+  const aNumeroONull = (v) => (v === "" || v == null ? null : Number(v));
 
   const guardar = async () => {
     setGuardando(true);
@@ -2790,9 +2881,22 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     setGuardado(false);
     const datos = {
       propiedad_venta_id: propiedadId,
-      precio_minimo: cond.precio_minimo === "" || cond.precio_minimo == null ? null : Number(cond.precio_minimo),
-      financiamiento_tasa_anual: cond.financiamiento_tasa_anual === "" || cond.financiamiento_tasa_anual == null ? null : Number(cond.financiamiento_tasa_anual),
+      precio_minimo: aNumeroONull(cond.precio_minimo),
+      precio_maximo: aNumeroONull(cond.precio_maximo),
+      financiamiento_tasa_anual: aNumeroONull(cond.financiamiento_tasa_anual),
+      tasa_interes_minima: aNumeroONull(cond.tasa_interes_minima),
+      tasa_interes_maxima: aNumeroONull(cond.tasa_interes_maxima),
     };
+    if (datos.precio_minimo != null && datos.precio_maximo != null && datos.precio_minimo > datos.precio_maximo) {
+      setGuardando(false);
+      setError("El precio mínimo no puede ser mayor que el máximo.");
+      return;
+    }
+    if (datos.tasa_interes_minima != null && datos.tasa_interes_maxima != null && datos.tasa_interes_minima > datos.tasa_interes_maxima) {
+      setGuardando(false);
+      setError("La tasa mínima no puede ser mayor que la máxima.");
+      return;
+    }
     const { error } = await supabase.from("propiedades_venta_condiciones").upsert(datos, { onConflict: "propiedad_venta_id" });
     setGuardando(false);
     if (error) { setError(error.message); return; }
@@ -2804,10 +2908,16 @@ function CondicionesVentaPrivadas({ propiedadId }) {
   return (
     <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
       <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1">Condiciones privadas de venta</span>
-      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público, ni siquiera si "Mostrar precio" está apagado arriba. Precarga el cotizador del asesor.</p>
+      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público, ni siquiera si "Mostrar precio" está apagado arriba. Estos rangos son los que el cotizador del asesor no lo deja pasar.</p>
       <div className="grid grid-cols-2 gap-2">
-        <CampoMoneda label="Precio mínimo de negociación" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
-        <Campo label="Tasa anual sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
+        <CampoMoneda label="Precio mínimo" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
+        <CampoMoneda label="Precio máximo" value={cond.precio_maximo} onChange={(n) => setCond({ ...cond, precio_maximo: n })} />
+      </div>
+      <p className="text-[11px] text-[#6b7280] mt-2.5 mb-1.5">El enganche mínimo se carga arriba, en "Enganche desde" — el cotizador no deja poner menos que eso. Los años de crédito quedan libres, sin rango.</p>
+      <div className="grid grid-cols-3 gap-2">
+        <Campo label="Tasa sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
+        <Campo label="Tasa mínima %" type="number" min="0" step="0.01" value={cond.tasa_interes_minima ?? ""} onChange={(e) => setCond({ ...cond, tasa_interes_minima: e.target.value })} />
+        <Campo label="Tasa máxima %" type="number" min="0" step="0.01" value={cond.tasa_interes_maxima ?? ""} onChange={(e) => setCond({ ...cond, tasa_interes_maxima: e.target.value })} />
       </div>
       {error && <div className="text-xs text-red-400 mt-2">{error}</div>}
       <button onClick={guardar} disabled={guardando} className="mt-3 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-3 py-2 rounded-md">
@@ -2856,6 +2966,7 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
     setError("");
     const datos = {
       nombre: p.nombre,
+      codigo: p.codigo?.trim() || null,
       descripcion: p.descripcion,
       caracteristicas: p.caracteristicas || [],
       habitaciones: p.habitaciones === "" || p.habitaciones == null ? null : Number(p.habitaciones),
@@ -2937,7 +3048,12 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
       </div>
 
       <div className="space-y-4">
-        <Campo label="Nombre" value={p.nombre || ""} onChange={(e) => set("nombre")(e.target.value)} />
+        <div className="grid grid-cols-3 gap-2">
+          <div className="col-span-2">
+            <Campo label="Nombre" value={p.nombre || ""} onChange={(e) => set("nombre")(e.target.value)} />
+          </div>
+          <Campo label="Código (No. de casa)" value={p.codigo || ""} onChange={(e) => set("codigo")(e.target.value)} placeholder="Ej. CASA-14" />
+        </div>
         <label className="block">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Descripción</span>
           <textarea value={p.descripcion || ""} onChange={(e) => set("descripcion")(e.target.value)} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm min-h-[90px]" />
@@ -3695,7 +3811,7 @@ function Campo({ label, ...props }) {
 
 // Campo de dinero: muestra el número con comas de miles mientras el usuario escribe,
 // para que no se confunda si está poniendo cientos, miles o millones.
-function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
+function CampoMoneda({ label, value, onChange, placeholder, disabled, hint, invalid }) {
   const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT", { maximumFractionDigits: 2 }) : "";
   const [texto, setTexto] = useState(formatear(value));
 
@@ -3726,9 +3842,10 @@ function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
           onChange={manejarCambio}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227] disabled:opacity-40"
+          className={`w-full bg-[#161F2E] border ${invalid ? "border-red-500" : "border-[#2A3547]"} rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227] disabled:opacity-40`}
         />
       </div>
+      {hint && <p className={`text-[10px] mt-1 ${invalid ? "text-red-400" : "text-[#6b7280]"}`}>{hint}</p>}
     </label>
   );
 }

@@ -1603,42 +1603,14 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     }
   };
 
-  // Siempre abre WhatsApp con el mismo mensaje de texto de siempre (toda la
-  // información de la propiedad, para que el cliente la pueda leer directo
-  // en el chat sin depender de abrir un PDF — hay clientes que no saben
-  // abrirlo o cuyo teléfono lo bloquea). Además, para el PDF:
-  //  - En celular (si el navegador soporta compartir archivos): abre el
-  //    panel nativo de "Compartir" ya con el PDF listo — el asesor solo
-  //    elige WhatsApp y el contacto y lo envía, SIN descargar ni adjuntar
-  //    nada a mano.
-  //  - En computadora, o si el navegador no soporta compartir archivos: no
-  //    queda otra que descargarlo (no hay una "app de WhatsApp" a la que
-  //    entregárselo directo desde el navegador de escritorio).
-  // No se manda el PDF junto con el texto en un solo paso porque WhatsApp,
-  // cuando recibe un documento (a diferencia de una foto), no acepta un
-  // texto/leyenda pegado al archivo — por eso van como dos envíos: el
-  // mensaje de texto (siempre) y el PDF (compartido o descargado aparte).
-  const enviarPorWhatsApp = async () => {
-    setErrorPdf("");
-    setGenerandoPdf(true);
-    try {
-      const doc = await construirPdfCotizacion(armarDatosPdf());
-      window.open(urlWhatsapp, "_blank", "noopener");
-      const archivo = new File([doc.output("blob")], nombreArchivoPdf(), { type: "application/pdf" });
-      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        try {
-          await navigator.share({ files: [archivo] });
-          return; // el asesor ya lo mandó (o canceló) desde el panel nativo, no hace falta descargar
-        } catch (err) {
-          if (err?.name === "AbortError") return; // canceló el panel de compartir, no insistir con la descarga
-        }
-      }
-      doc.save(nombreArchivoPdf());
-    } catch (e) {
-      setErrorPdf("No se pudo preparar el PDF: " + e.message);
-    } finally {
-      setGenerandoPdf(false);
-    }
+  // Vuelta a lo básico (pedido explícito de Carlos, 2026-08-15): "Enviar por
+  // WhatsApp" solo abre el chat con el mensaje de texto de siempre — nada de
+  // PDF adjunto ni panel de compartir. El texto ya trae toda la información
+  // de la propiedad y ahora también el link directo a esa casa en el sitio
+  // de ventas (ver linkPropiedadVenta). "Descargar PDF" se deja aparte, como
+  // botón independiente, por si alguna vez se necesita a mano.
+  const enviarPorWhatsApp = () => {
+    window.open(urlWhatsapp, "_blank", "noopener");
   };
 
   return (
@@ -1714,8 +1686,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           {puedeEnviar && listoParaEnviar && (
             <div className="space-y-2">
-              <button type="button" disabled={generandoPdf} onClick={enviarPorWhatsApp} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md text-sm">
-                {generandoPdf ? "Preparando..." : "Enviar por WhatsApp"}
+              <button type="button" onClick={enviarPorWhatsApp} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">
+                Enviar por WhatsApp
               </button>
               <button type="button" disabled={generandoPdf} onClick={descargarPdf} className="w-full border border-[#2A3547] text-[#EDE7D9] disabled:opacity-40 py-3 rounded-md text-sm">
                 {generandoPdf ? "Preparando PDF..." : "Descargar PDF"}
@@ -1723,7 +1695,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <button type="button" onClick={() => window.print()} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
               {errorPdf && <div className="text-[11px] text-red-400 text-center">{errorPdf}</div>}
               <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
-                "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre (toda la información de la propiedad, para que el cliente la vea sin necesidad de abrir nada) y además abre el panel de compartir del celular ya con el PDF listo — solo elige WhatsApp y el contacto para mandarlo, sin descargar nada. En computadora sí se descarga el PDF, porque no hay panel de compartir para entregárselo directo al navegador. Si usas "Imprimir directamente" en vez de esto, recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
+                "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre, con toda la información de la propiedad y el link para ver esa casa en el sitio de ventas. "Descargar PDF" genera aparte un PDF con la tabla de pagos completa, por si lo necesitas adjuntar a mano. Si usas "Imprimir directamente", recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
               </p>
             </div>
           )}

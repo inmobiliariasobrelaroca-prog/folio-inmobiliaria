@@ -362,6 +362,26 @@ async function llamarGestionUsuarios(body) {
   return llamarFuncionSesion("gestionar-usuarios", body);
 }
 
+async function llamarGestionAsesores(body) {
+  return llamarFuncionSesion("gestionar-asesores", body);
+}
+
+// Llamada a una Edge Function SIN sesión todavía (login con código, antes de
+// autenticar). supabase.functions.invoke manda la llave anon automáticamente,
+// que sí satisface la verificación estándar de JWT de la función.
+async function llamarFuncionPublica(nombreFuncion, body) {
+  const { data, error } = await supabase.functions.invoke(nombreFuncion, { body });
+  if (error) {
+    let mensaje = error.message || "Error en el servidor";
+    try {
+      const contexto = await error.context?.json?.();
+      if (contexto?.error) mensaje = contexto.error;
+    } catch {}
+    throw new Error(mensaje);
+  }
+  return data;
+}
+
 function generarCodigoNumerico() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
@@ -889,10 +909,11 @@ function CambiarPasswordInicial({ cerrarSesion, onListo }) {
 }
 
 function Login({ onIngreso }) {
-  const [modo, setModo] = useState("cliente"); // 'cliente' | 'staff'
+  const [modo, setModo] = useState("cliente"); // 'cliente' | 'staff' | 'asesor'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [codigo, setCodigo] = useState("");
+  const [codigoAsesor, setCodigoAsesor] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
 
@@ -918,6 +939,27 @@ function Login({ onIngreso }) {
     onIngreso(data.session);
   };
 
+  // Equipo por código (asesores internos/externos, 8 dígitos). La validación
+  // del código y el límite de intentos viven en la Edge Function
+  // validar-codigo-acceso, no aquí — este handler solo completa el login una
+  // vez que el servidor confirma que el código es válido y está activo.
+  const ingresarAsesor = async (e) => {
+    e.preventDefault();
+    setError("");
+    setCargando(true);
+    try {
+      const codigoLimpio = codigoAsesor.trim();
+      const { email: emailAsesor } = await llamarFuncionPublica("validar-codigo-acceso", { codigo: codigoLimpio });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: emailAsesor, password: codigoLimpio });
+      if (error) { setError("Código incorrecto."); return; }
+      onIngreso(data.session);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex items-center justify-center p-5">
       <div className="w-full max-w-sm">
@@ -928,8 +970,9 @@ function Login({ onIngreso }) {
         </div>
 
         <div className="flex rounded-full bg-[#1A2333] p-1 text-xs mb-4">
-          <button type="button" onClick={() => { setModo("cliente"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Soy cliente</button>
-          <button type="button" onClick={() => { setModo("staff"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "staff" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Soy inmobiliaria</button>
+          <button type="button" onClick={() => { setModo("cliente"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
+          <button type="button" onClick={() => { setModo("staff"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "staff" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
+          <button type="button" onClick={() => { setModo("asesor"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "asesor" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Asesor</button>
         </div>
 
         {modo === "cliente" ? (
@@ -944,7 +987,7 @@ function Login({ onIngreso }) {
             </button>
             <p className="text-[11px] text-[#8A93A3] text-center">Tu código te lo dio la inmobiliaria. Si lo perdiste, pídeles que te lo regeneren.</p>
           </form>
-        ) : (
+        ) : modo === "staff" ? (
           <form onSubmit={ingresarStaff} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Correo</span>
@@ -958,6 +1001,18 @@ function Login({ onIngreso }) {
             <button type="submit" disabled={cargando} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
               {cargando ? "Entrando..." : "Iniciar sesión"}
             </button>
+          </form>
+        ) : (
+          <form onSubmit={ingresarAsesor} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu código de asesor</span>
+              <input type="text" inputMode="numeric" maxLength={8} placeholder="Ej. 48213907" required value={codigoAsesor} onChange={(e) => setCodigoAsesor(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
+            </label>
+            {error && <div className="text-xs text-red-400">{error}</div>}
+            <button type="submit" disabled={cargando || codigoAsesor.length !== 8} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+              {cargando ? "Entrando..." : "Iniciar sesión"}
+            </button>
+            <p className="text-[11px] text-[#8A93A3] text-center">Código de 8 dígitos que te dio la inmobiliaria.</p>
           </form>
         )}
       </div>
@@ -1013,6 +1068,15 @@ export default function App() {
       const uid = sesion.user.id;
       const { data: usuario } = await supabase.from("usuarios").select("*, roles(*)").eq("id", uid).maybeSingle();
       if (usuario) {
+        if (usuario.activo === false) {
+          // Defensa en profundidad: aunque la Edge Function ya revisa esto
+          // antes del login (para equipo/asesores con código), una sesión de
+          // staff con correo/contraseña no pasa por ahí, y una cuenta pudo
+          // desactivarse después de que alguien ya tenía sesión abierta.
+          await supabase.auth.signOut();
+          setPerfil({ tipo: "desactivado" });
+          return;
+        }
         setPerfil({ tipo: "staff", usuario });
         return;
       }
@@ -1054,6 +1118,16 @@ export default function App() {
     );
   }
 
+  if (perfil.tipo === "desactivado") {
+    return (
+      <div className="min-h-screen bg-[#101826] text-[#EDE7D9] flex flex-col items-center justify-center gap-3 p-5 text-center">
+        <div className="text-sm">Tu cuenta fue desactivada.</div>
+        <div className="text-xs text-[#8A93A3]">Contacta al administrador si crees que es un error.</div>
+        <button onClick={cerrarSesion} className="text-xs bg-[#2A3547] px-3 py-2 rounded-md mt-2">Cerrar sesión</button>
+      </div>
+    );
+  }
+
   if (perfil.tipo === "cliente" && perfil.debeCambiarPassword) {
     return (
       <CambiarPasswordInicial
@@ -1083,7 +1157,271 @@ export default function App() {
     );
   }
 
+  if (perfil.tipo === "staff" && (perfil.usuario?.tipo === "asesor_interno" || perfil.usuario?.tipo === "asesor_externo")) {
+    return <PantallaAsesor perfil={perfil} cerrarSesion={cerrarSesion} />;
+  }
+
   return <AppInterno perfil={perfil} cerrarSesion={cerrarSesion} />;
+}
+
+// ---------- Pantalla del asesor (interno/externo) ----------
+//
+// Todo lo que ve un asesor: sus propiedades asignadas (el alcance real lo
+// filtra RLS en la base, aquí solo se hace un select normal), el cotizador
+// precargado y enviar por WhatsApp/PDF. No hay acceso a cartera, cobros,
+// saldos ni comprobantes — ni siquiera se importan esas tablas aquí.
+
+const MORA_DIARIA_COTIZACION_ASESOR = 100; // Q100/día, el default de la inmobiliaria (ver CLAUDE.md)
+const DIAS_GRACIA_COTIZACION_ASESOR = 3;
+
+function PantallaAsesor({ perfil, cerrarSesion }) {
+  const usuario = perfil.usuario;
+  const permisos = usuario?.roles?.permisos || {};
+  const puedeVerMinimo = !!permisos.ver_precio_minimo;
+  const puedeVerLista = !!permisos.ver_precio_lista;
+  const puedeCotizar = !!permisos.cotizar;
+  const puedeEnviar = !!permisos.enviar_cotizacion;
+
+  const [propiedades, setPropiedades] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+  const [seleccionada, setSeleccionada] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setCargando(true);
+      setError("");
+      const { data: props, error: errProps } = await supabase
+        .from("propiedades_venta")
+        .select("*, proyectos_venta(nombre), fotos_propiedad_venta(archivo_url, orden)")
+        .order("nombre");
+      if (errProps) { setError(errProps.message); setCargando(false); return; }
+      const ids = (props || []).map((p) => p.id);
+      let condiciones = [];
+      if (ids.length) {
+        const { data: cond } = await supabase
+          .from("propiedades_venta_condiciones")
+          .select("*")
+          .in("propiedad_venta_id", ids);
+        condiciones = cond || [];
+      }
+      const combinadas = (props || []).map((p) => ({
+        ...p,
+        condiciones: condiciones.find((c) => c.propiedad_venta_id === p.id) || null,
+        fotoPortada: (p.fotos_propiedad_venta || []).slice().sort((a, b) => a.orden - b.orden)[0]?.archivo_url || null,
+      }));
+      setPropiedades(combinadas);
+      setCargando(false);
+    })();
+  }, []);
+
+  if (seleccionada) {
+    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} onVolver={() => setSeleccionada(null)} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
+      <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center justify-between">
+        <div>
+          <div className="font-serif text-xl">Sobre la Roca</div>
+          <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
+            {usuario?.tipo === "asesor_interno" ? "Asesor interno" : "Asesor externo"} · {usuario?.nombre}
+          </div>
+        </div>
+        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] flex items-center gap-1"><LogOut size={14} /> Salir</button>
+      </div>
+
+      <div className="max-w-2xl mx-auto p-5 pb-24">
+        <h1 className="font-serif text-2xl mb-1">Tus propiedades</h1>
+        <p className="text-xs text-[#8A93A3] mb-5">Las que la inmobiliaria te asignó para vender.</p>
+
+        {cargando && <div className="text-sm text-[#8A93A3]">Cargando...</div>}
+        {error && <div className="text-sm text-red-400">{error}</div>}
+        {!cargando && propiedades.length === 0 && (
+          <div className="text-sm text-[#8A93A3]">Todavía no tienes propiedades asignadas. Pide a la inmobiliaria que te asigne alguna.</div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {propiedades.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => puedeCotizar && setSeleccionada(p)}
+              disabled={!puedeCotizar}
+              className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden hover:border-[#C9A227] transition disabled:opacity-60"
+            >
+              <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden">
+                {p.fotoPortada ? <img src={p.fotoPortada} alt={p.nombre} className="w-full h-full object-cover" /> : <Building2 size={28} className="text-[#3a4864]" />}
+              </div>
+              <div className="p-3">
+                <div className="text-sm font-medium">{p.nombre}</div>
+                <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
+                {puedeVerLista && p.condiciones?.precio != null && (
+                  <div className="text-[#C9A227] font-serif text-lg">{fmt(p.condiciones.precio)}</div>
+                )}
+                {puedeVerMinimo && p.condiciones?.precio_minimo != null && (
+                  <div className="text-[11px] text-[#8A93A3]">Mínimo: {fmt(p.condiciones.precio_minimo)}</div>
+                )}
+                {!p.condiciones?.precio && <div className="text-[11px] text-[#8A93A3]">Precio pendiente de cargar</div>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Cotizador integrado del asesor: mismo cálculo y formato que public/cotizador.html
+// (esa página sigue siendo la referencia), pero precargado desde la propiedad
+// elegida y sin campos de mora/luz editables — el catálogo de venta no tiene
+// esos datos por propiedad, así que se usa el default de la inmobiliaria.
+function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
+  const cond = propiedad.condiciones || {};
+  const [cliente, setCliente] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [precio, setPrecio] = useState(cond.precio ?? "");
+  const [enganche, setEnganche] = useState(propiedad.financiamiento_enganche_desde ?? "");
+  const [tasaAnual, setTasaAnual] = useState(cond.financiamiento_tasa_anual ?? "");
+  const [anios, setAnios] = useState(propiedad.financiamiento_plazo_max_anios ?? "");
+  const [sistema, setSistema] = useState("nivelada");
+
+  const precioNum = Number(precio) || 0;
+  const engancheNum = Number(enganche) || 0;
+  const tasaNum = Number(tasaAnual) || 0;
+  const meses = Math.max(1, Math.round((Number(anios) || 0) * 12));
+  const principal = Math.max(0, precioNum - engancheNum);
+
+  const esSaldos = sistema === "saldos";
+  const cuota = anios ? (esSaldos ? principal / meses + principal * (tasaNum / 100 / 12) : pagoMensual(principal, tasaNum, meses)) : 0;
+  const totalPagado = esSaldos
+    ? principal + principal * (tasaNum / 100 / 12) * ((meses + 1) / 2)
+    : cuota * meses;
+  const intereses = Math.max(0, totalPagado - principal);
+
+  const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
+
+  const telLimpio = whatsapp.replace(/\D/g, "");
+  const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
+  const mensajeWhatsapp =
+    `Cotización · Sobre la Roca\n${propiedad.nombre}\n` +
+    (cliente ? `Cliente: ${cliente}\n` : "") +
+    `\nPrecio: ${fmt(precioNum)}` +
+    `\nEnganche: ${fmt(engancheNum)}` +
+    `\n${esSaldos ? "Primera cuota" : "Cuota mensual"}: ${fmt(cuota)}` +
+    `\nPlazo: ${meses} meses` +
+    `\nTasa: ${fmtNum(tasaNum)}% anual` +
+    `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}`;
+  const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
+
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
+      <div className="print:hidden">
+        <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center gap-3">
+          <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Cotizador</div>
+            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}</div>
+          </div>
+        </div>
+
+        <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
+            <Campo label="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5555 5555" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} />
+            <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={tasaAnual} onChange={(e) => setTasaAnual(e.target.value)} />
+            <Campo label="Años de crédito" type="number" min="1" step="1" value={anios} onChange={(e) => setAnios(e.target.value)} />
+          </div>
+
+          <div>
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Sistema de amortización</span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setSistema("nivelada")} className={`flex-1 text-xs py-2.5 rounded-md border ${sistema === "nivelada" ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>Cuota nivelada</button>
+              <button type="button" onClick={() => setSistema("saldos")} className={`flex-1 text-xs py-2.5 rounded-md border ${sistema === "saldos" ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>Sobre saldos</button>
+            </div>
+          </div>
+
+          {datosCompletos && (
+            <div className="border border-[#C9A227] rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{esSaldos ? "Primera cuota" : "Cuota mensual"}</div>
+                  <div className="font-serif text-3xl text-[#C9A227]">{fmt(cuota)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Plazo</div>
+                  <div className="font-serif text-lg">{meses} meses</div>
+                </div>
+              </div>
+              <div className="border-t border-[#2A3547] pt-3 space-y-1.5 text-xs">
+                <div className="flex justify-between"><span>Precio de venta</span><span className="font-mono">{fmt(precioNum)}</span></div>
+                <div className="flex justify-between"><span>− Enganche</span><span className="font-mono">{fmt(engancheNum)}</span></div>
+                <div className="flex justify-between"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
+                <div className="flex justify-between"><span>+ Intereses del plan</span><span className="font-mono">{fmt(intereses)}</span></div>
+                <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Total a pagar</span><span className="font-mono">{fmt(principal + intereses)}</span></div>
+              </div>
+              <div className="text-[11px] text-[#8A93A3]">
+                Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
+              </div>
+            </div>
+          )}
+
+          {puedeEnviar && datosCompletos && (
+            <div className="space-y-2">
+              <button type="button" onClick={() => window.open(urlWhatsapp, "_blank", "noopener")} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">Enviar por WhatsApp</button>
+              <button type="button" onClick={() => window.print()} className="w-full border border-[#2A3547] text-[#EDE7D9] py-3 rounded-md text-sm">Imprimir o guardar PDF</button>
+            </div>
+          )}
+          {!puedeEnviar && (
+            <p className="text-[11px] text-[#8A93A3] text-center">Tu cuenta no tiene permiso para enviar cotizaciones. Pide a la inmobiliaria que lo active.</p>
+          )}
+        </div>
+      </div>
+
+      {datosCompletos && (
+        <div className="hidden print:block bg-white text-[#14212f] p-8" style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
+          <div className="flex items-center gap-3 border-b-2 border-[#C9A227] pb-3 mb-4">
+            <img src={logoEmblema} alt="" className="w-11 h-11 object-contain" />
+            <div>
+              <div className="text-xl font-bold">Sobre la Roca</div>
+              <div className="text-[9px] uppercase tracking-widest text-gray-500">Cotización de financiamiento</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
+            <div><b>Propiedad:</b> {propiedad.nombre}</div>
+            <div><b>Fecha:</b> {fmtDate(hoy)}</div>
+            <div><b>Cliente:</b> {cliente || "—"}</div>
+            <div><b>Sistema:</b> {esSaldos ? "Sobre saldos" : "Cuota nivelada"}</div>
+            <div><b>Precio:</b> {fmt(precioNum)}</div>
+            <div><b>Enganche:</b> {fmt(engancheNum)}</div>
+            <div><b>Tasa:</b> {fmtNum(tasaNum)}% anual</div>
+            <div><b>Plazo:</b> {meses} meses</div>
+          </div>
+          <div className="border border-[#C9A227] p-3 mb-4 flex justify-between items-end">
+            <div>
+              <div className="text-[9px] uppercase text-gray-500">{esSaldos ? "Primera cuota" : "Cuota mensual"}</div>
+              <div className="text-2xl">{fmt(cuota)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] uppercase text-gray-500">Monto a financiar</div>
+              <div className="text-2xl">{fmt(principal)}</div>
+            </div>
+          </div>
+          <div className="text-[9px] text-gray-500 leading-relaxed">
+            Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
+            Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AppInterno({ perfil, cerrarSesion }) {
@@ -1539,6 +1877,11 @@ const PERMISOS_DISPONIBLES = [
   ["ver_reportes", "Ver reportes e historial de moras"],
   ["crear_usuarios", "Crear otros usuarios"],
   ["gestionar_catalogo_ventas", "Administrar catálogo de ventas (sitio web)"],
+  ["ver_propiedades_asignadas", "Asesor: ver propiedades asignadas"],
+  ["ver_precio_lista", "Asesor: ver precio de lista"],
+  ["ver_precio_minimo", "Asesor: ver precio mínimo de negociación"],
+  ["cotizar", "Asesor: usar el cotizador"],
+  ["enviar_cotizacion", "Asesor: enviar cotización por WhatsApp/PDF"],
 ];
 
 function PantallaEquipo({ onVolver, esAdmin }) {
@@ -1547,6 +1890,8 @@ function PantallaEquipo({ onVolver, esAdmin }) {
   const [usuarios, setUsuarios] = useState([]);
   const [proyectos, setProyectos] = useState([]);
   const [propiedades, setPropiedades] = useState([]);
+  const [proyectosVenta, setProyectosVenta] = useState([]);
+  const [propiedadesVenta, setPropiedadesVenta] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   const cargar = async () => {
@@ -1555,10 +1900,16 @@ function PantallaEquipo({ onVolver, esAdmin }) {
     const { data: usuariosData } = await supabase.from("usuarios").select("*, roles(*)").order("created_at");
     const { data: proyectosData } = await supabase.from("proyectos").select("id, nombre").order("nombre");
     const { data: propiedadesData } = await supabase.from("propiedades").select("id, folio, direccion, proyecto_id").order("folio");
+    // Catálogo de venta: alcance aparte para asesores, ver nota en la migración
+    // 20260811000000_asesores_codigo_permisos.sql — no es lo mismo que la cartera de arriba.
+    const { data: proyectosVentaData } = await supabase.from("proyectos_venta").select("id, nombre").order("nombre");
+    const { data: propiedadesVentaData } = await supabase.from("propiedades_venta").select("id, nombre, proyecto_venta_id").order("nombre");
     setRoles(rolesData || []);
     setUsuarios(usuariosData || []);
     setProyectos(proyectosData || []);
     setPropiedades(propiedadesData || []);
+    setProyectosVenta(proyectosVentaData || []);
+    setPropiedadesVenta(propiedadesVentaData || []);
     setCargando(false);
   };
 
@@ -1583,7 +1934,14 @@ function PantallaEquipo({ onVolver, esAdmin }) {
       ) : tab === "usuarios" ? (
         <PestanaUsuarios usuarios={usuarios} roles={roles} onCreado={cargar} />
       ) : esAdmin ? (
-        <PestanaRoles roles={roles} proyectos={proyectos} propiedades={propiedades} onCreado={cargar} />
+        <PestanaRoles
+          roles={roles}
+          proyectos={proyectos}
+          propiedades={propiedades}
+          proyectosVenta={proyectosVenta}
+          propiedadesVenta={propiedadesVenta}
+          onCreado={cargar}
+        />
       ) : (
         <div className="text-sm text-[#8A93A3]">Solo el Administrador puede ver y editar roles.</div>
       )}
@@ -1593,6 +1951,35 @@ function PantallaEquipo({ onVolver, esAdmin }) {
 
 function PestanaUsuarios({ usuarios, roles, onCreado }) {
   const [creando, setCreando] = useState(false);
+  const [codigoGenerado, setCodigoGenerado] = useState(null); // { nombre, codigo } — se muestra una sola vez
+  const [ocupado, setOcupado] = useState(null); // id del usuario con una acción en curso
+
+  const cambiarActivo = async (u, activo) => {
+    setOcupado(u.id);
+    try {
+      await llamarGestionAsesores({ accion: "cambiar_activo", usuario_id: u.id, activo });
+      onCreado();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const regenerarCodigo = async (u) => {
+    if (!confirm(`¿Generar un código nuevo para ${u.nombre}? El código anterior deja de servir.`)) return;
+    setOcupado(u.id);
+    try {
+      const { codigo } = await llamarGestionAsesores({ accion: "regenerar_codigo", usuario_id: u.id });
+      setCodigoGenerado({ nombre: u.nombre, codigo });
+      onCreado();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
   return (
     <div>
       <button onClick={() => setCreando(true)} className="flex items-center gap-1.5 bg-[#C9A227] text-[#101826] px-3.5 py-2 rounded-md text-sm font-medium mb-4">
@@ -1600,22 +1987,69 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
       </button>
       <div className="space-y-2">
         {usuarios.length === 0 && <div className="text-sm text-[#8A93A3]">Sin usuarios registrados todavía.</div>}
-        {usuarios.map((u) => (
-          <div key={u.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center justify-between">
-            <div>
-              <div className="text-sm">{u.nombre}</div>
-              <div className="text-xs text-[#8A93A3]">{u.email}</div>
+        {usuarios.map((u) => {
+          const esAsesor = u.tipo === "asesor_interno" || u.tipo === "asesor_externo";
+          return (
+            <div key={u.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm flex items-center gap-1.5">
+                  {u.nombre}
+                  {u.activo === false && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 uppercase tracking-wide">Desactivado</span>}
+                </div>
+                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 8 dígitos" : "Asesor externo · código de 8 dígitos") : u.email}</div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
+                {esAsesor && (
+                  <>
+                    <button disabled={ocupado === u.id} onClick={() => regenerarCodigo(u)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Nuevo código</button>
+                    {u.activo === false ? (
+                      <button disabled={ocupado === u.id} onClick={() => cambiarActivo(u, true)} className="text-[10px] bg-[#C9A227] text-[#101826] px-2 py-1.5 rounded-md disabled:opacity-40">Reactivar</button>
+                    ) : (
+                      <button disabled={ocupado === u.id} onClick={() => cambiarActivo(u, false)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Desactivar</button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-            <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      {creando && <ModalNuevoUsuario roles={roles} onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
+      {creando && (
+        <ModalNuevoUsuario
+          roles={roles}
+          onCancelar={() => setCreando(false)}
+          onCreado={(resultado) => {
+            setCreando(false);
+            if (resultado?.codigo) setCodigoGenerado({ nombre: resultado.nombre, codigo: resultado.codigo });
+            onCreado();
+          }}
+        />
+      )}
+      {codigoGenerado && <ModalCodigoGenerado info={codigoGenerado} onCerrar={() => setCodigoGenerado(null)} />}
+    </div>
+  );
+}
+
+// El código de 8 dígitos solo se puede ver en este momento (justo después de
+// generarse) — la base no lo vuelve a mostrar en ninguna pantalla. Entrégalo
+// a la persona por un canal seguro y que lo memorice o lo guarde ella misma.
+function ModalCodigoGenerado({ info, onCerrar }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#C9A227] rounded-lg p-5 w-full max-w-sm space-y-3 text-center">
+        <KeyRound size={22} className="text-[#C9A227] mx-auto" />
+        <div className="font-serif text-lg">Código para {info.nombre}</div>
+        <div className="font-mono text-3xl tracking-[0.25em] text-[#C9A227] bg-[#0C121C] border border-[#2A3547] rounded-md py-3">{info.codigo}</div>
+        <p className="text-[11px] text-[#8A93A3]">Anótalo o compártelo ahora — no se vuelve a mostrar. Si se pierde, usa "Nuevo código" para generar otro.</p>
+        <button onClick={onCerrar} className="w-full bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md text-sm">Listo</button>
+      </div>
     </div>
   );
 }
 
 function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
+  const [tipo, setTipo] = useState("staff"); // 'staff' | 'asesor_interno' | 'asesor_externo'
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1623,12 +2057,20 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
+  const esAsesor = tipo !== "staff";
+  const listo = esAsesor ? (nombre && rolId) : (nombre && email && password && rolId);
+
   const crear = async () => {
     setError("");
     setGuardando(true);
     try {
-      await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });
-      onCreado();
+      if (esAsesor) {
+        const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, tipo, rol_id: rolId });
+        onCreado({ nombre, codigo });
+      } else {
+        await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });
+        onCreado({});
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1640,19 +2082,39 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
         <div className="font-serif text-lg">Nuevo usuario de equipo</div>
+
+        <div>
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Tipo</span>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[["staff", "Equipo"], ["asesor_externo", "Asesor ext."], ["asesor_interno", "Asesor int."]].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setTipo(v)} className={`text-[11px] py-2 rounded-md border ${tipo === v ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-        <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Campo label="Contraseña inicial" type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
+
+        {esAsesor ? (
+          <p className="text-[11px] text-[#8A93A3]">Se genera un código de 8 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta.</p>
+        ) : (
+          <>
+            <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Campo label="Contraseña inicial" type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </>
+        )}
+
         <label className="block">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Rol</span>
           <select value={rolId} onChange={(e) => setRolId(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm">
             {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
           </select>
+          {esAsesor && <p className="text-[11px] text-[#8A93A3] mt-1">El alcance (qué propiedades ve) se define en el rol, en la pestaña Roles — clona "Asesor externo"/"Asesor interno" y restringe a las propiedades que le tocan a esta persona.</p>}
         </label>
+
         {error && <div className="text-xs text-red-400">{error}</div>}
         <div className="flex gap-2">
           <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
-          <button onClick={crear} disabled={guardando || !nombre || !email || !password || !rolId} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+          <button onClick={crear} disabled={guardando || !listo} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
             {guardando ? "Creando..." : "Crear"}
           </button>
         </div>
@@ -1661,7 +2123,7 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
   );
 }
 
-function PestanaRoles({ roles, proyectos, propiedades, onCreado }) {
+function PestanaRoles({ roles, proyectos, propiedades, proyectosVenta, propiedadesVenta, onCreado }) {
   const [creando, setCreando] = useState(false);
   return (
     <div>
@@ -1669,9 +2131,22 @@ function PestanaRoles({ roles, proyectos, propiedades, onCreado }) {
         <Plus size={16} /> Nuevo rol
       </button>
       <div className="space-y-3">
-        {roles.map((r) => <TarjetaRol key={r.id} rol={r} proyectos={proyectos} propiedades={propiedades} onActualizado={onCreado} />)}
+        {roles.map((r) => (
+          <TarjetaRol
+            key={r.id} rol={r}
+            proyectos={proyectos} propiedades={propiedades}
+            proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
+            onActualizado={onCreado}
+          />
+        ))}
       </div>
-      {creando && <ModalNuevoRol proyectos={proyectos} propiedades={propiedades} onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }} />}
+      {creando && (
+        <ModalNuevoRol
+          proyectos={proyectos} propiedades={propiedades}
+          proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
+          onCancelar={() => setCreando(false)} onCreado={() => { setCreando(false); onCreado(); }}
+        />
+      )}
     </div>
   );
 }
@@ -1679,7 +2154,12 @@ function PestanaRoles({ roles, proyectos, propiedades, onCreado }) {
 // Checklist de proyectos/propiedades para restringir el alcance de un rol. Marcar un proyecto
 // entero cubre automáticamente todas sus propiedades; también se pueden marcar propiedades
 // sueltas de proyectos que no están completos.
-function SelectorAlcance({ proyectos, propiedades, restringido, setRestringido, proyectosSel, setProyectosSel, propiedadesSel, setPropiedadesSel }) {
+function SelectorAlcance({
+  proyectos, propiedades, restringido, setRestringido, proyectosSel, setProyectosSel, propiedadesSel, setPropiedadesSel,
+  titulo = "Restringir a proyectos/propiedades específicos (si no, ve todo)",
+  getEtiquetaPropiedad = (pr) => pr.folio || pr.direccion,
+  campoProyectoDePropiedad = "proyecto_id",
+}) {
   const toggleProyecto = (id) => {
     setProyectosSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -1690,7 +2170,7 @@ function SelectorAlcance({ proyectos, propiedades, restringido, setRestringido, 
     <div className="space-y-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
       <label className="flex items-center gap-2 text-xs cursor-pointer">
         <input type="checkbox" checked={restringido} onChange={(e) => setRestringido(e.target.checked)} />
-        Restringir a proyectos/propiedades específicos (si no, ve todo)
+        {titulo}
       </label>
       {restringido && (
         <div className="space-y-2 pt-1.5 border-t border-[#2A3547] max-h-56 overflow-y-auto">
@@ -1704,8 +2184,8 @@ function SelectorAlcance({ proyectos, propiedades, restringido, setRestringido, 
           <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] pt-1.5 border-t border-[#2A3547]">Propiedades sueltas</div>
           {propiedades.map((pr) => (
             <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} disabled={proyectosSel.includes(pr.proyecto_id)} />
-              {pr.folio || pr.direccion}
+              <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} disabled={proyectosSel.includes(pr[campoProyectoDePropiedad])} />
+              {getEtiquetaPropiedad(pr)}
             </label>
           ))}
         </div>
@@ -1714,34 +2194,50 @@ function SelectorAlcance({ proyectos, propiedades, restringido, setRestringido, 
   );
 }
 
-function TarjetaRol({ rol, proyectos, propiedades, onActualizado }) {
+function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVenta, onActualizado }) {
   const [editando, setEditando] = useState(false);
   const [permisos, setPermisos] = useState(rol.permisos || {});
   const [restringido, setRestringido] = useState(!!rol.ambito_restringido);
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
+  const [restringidoVenta, setRestringidoVenta] = useState(rol.ambito_restringido_venta !== false);
+  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
+  const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
+  const usaCatalogoVenta = !!(permisos.ver_propiedades_asignadas);
+
   const empezarEdicion = async () => {
-    const [{ data: rp }, { data: rpr }] = await Promise.all([
+    const [{ data: rp }, { data: rpr }, { data: rpv }, { data: rprv }] = await Promise.all([
       supabase.from("roles_proyectos").select("proyecto_id").eq("rol_id", rol.id),
       supabase.from("roles_propiedades").select("propiedad_id").eq("rol_id", rol.id),
+      supabase.from("roles_proyectos_venta").select("proyecto_venta_id").eq("rol_id", rol.id),
+      supabase.from("roles_propiedades_venta").select("propiedad_venta_id").eq("rol_id", rol.id),
     ]);
     setProyectosSel((rp || []).map((r) => r.proyecto_id));
     setPropiedadesSel((rpr || []).map((r) => r.propiedad_id));
+    setProyectosVentaSel((rpv || []).map((r) => r.proyecto_venta_id));
+    setPropiedadesVentaSel((rprv || []).map((r) => r.propiedad_venta_id));
     setPermisos(rol.permisos || {});
     setRestringido(!!rol.ambito_restringido);
+    setRestringidoVenta(rol.ambito_restringido_venta !== false);
     setEditando(true);
   };
 
   const guardar = async () => {
     setGuardando(true);
-    await supabase.from("roles").update({ permisos, ambito_restringido: restringido }).eq("id", rol.id);
+    await supabase.from("roles").update({ permisos, ambito_restringido: restringido, ambito_restringido_venta: restringidoVenta }).eq("id", rol.id);
     await supabase.from("roles_proyectos").delete().eq("rol_id", rol.id);
     await supabase.from("roles_propiedades").delete().eq("rol_id", rol.id);
     if (restringido) {
       if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: rol.id, proyecto_id })));
       if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: rol.id, propiedad_id })));
+    }
+    await supabase.from("roles_proyectos_venta").delete().eq("rol_id", rol.id);
+    await supabase.from("roles_propiedades_venta").delete().eq("rol_id", rol.id);
+    if (restringidoVenta) {
+      if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: rol.id, proyecto_venta_id })));
+      if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: rol.id, propiedad_venta_id })));
     }
     setGuardando(false);
     setEditando(false);
@@ -1767,7 +2263,10 @@ function TarjetaRol({ rol, proyectos, propiedades, onActualizado }) {
         {!editando && <button onClick={empezarEdicion} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md flex items-center gap-1"><Pencil size={12} /> Editar</button>}
       </div>
       {!editando && rol.ambito_restringido && (
-        <div className="text-[11px] text-[#C9A227] mb-2">Alcance restringido a proyectos/propiedades específicos.</div>
+        <div className="text-[11px] text-[#C9A227] mb-2">Alcance de cartera restringido a proyectos/propiedades específicos.</div>
+      )}
+      {!editando && usaCatalogoVenta && rol.ambito_restringido_venta !== false && (
+        <div className="text-[11px] text-[#C9A227] mb-2">Alcance de catálogo de venta restringido a propiedades específicas.</div>
       )}
       <div className="space-y-1.5">
         {PERMISOS_DISPONIBLES.map(([key, label]) => (
@@ -1778,13 +2277,30 @@ function TarjetaRol({ rol, proyectos, propiedades, onActualizado }) {
         ))}
       </div>
       {editando && (
-        <div className="mt-3">
-          <SelectorAlcance
-            proyectos={proyectos} propiedades={propiedades}
-            restringido={restringido} setRestringido={setRestringido}
-            proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
-            propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
-          />
+        <div className="mt-3 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Cartera (cobros, cuotas, clientes)</div>
+            <SelectorAlcance
+              proyectos={proyectos} propiedades={propiedades}
+              restringido={restringido} setRestringido={setRestringido}
+              proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
+              propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
+            />
+          </div>
+          {usaCatalogoVenta && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
+              <SelectorAlcance
+                proyectos={proyectosVenta} propiedades={propiedadesVenta}
+                restringido={restringidoVenta} setRestringido={setRestringidoVenta}
+                proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
+                propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
+                titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
+                getEtiquetaPropiedad={(pr) => pr.nombre}
+                campoProyectoDePropiedad="proyecto_venta_id"
+              />
+            </div>
+          )}
         </div>
       )}
       {editando && (
@@ -1799,20 +2315,35 @@ function TarjetaRol({ rol, proyectos, propiedades, onActualizado }) {
   );
 }
 
-function ModalNuevoRol({ proyectos, propiedades, onCancelar, onCreado }) {
+function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVenta, onCancelar, onCreado }) {
   const [nombre, setNombre] = useState("");
   const [permisos, setPermisos] = useState({});
   const [restringido, setRestringido] = useState(false);
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
+  const [restringidoVenta, setRestringidoVenta] = useState(true);
+  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
+  const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
+
+  const usaCatalogoVenta = !!permisos.ver_propiedades_asignadas;
 
   const crear = async () => {
     setGuardando(true);
-    const { data: nuevo, error } = await supabase.from("roles").insert({ nombre, permisos, es_administrador: false, ambito_restringido: restringido }).select().single();
-    if (!error && nuevo && restringido) {
-      if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: nuevo.id, proyecto_id })));
-      if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: nuevo.id, propiedad_id })));
+    const { data: nuevo, error } = await supabase
+      .from("roles")
+      .insert({ nombre, permisos, es_administrador: false, ambito_restringido: restringido, ambito_restringido_venta: restringidoVenta })
+      .select()
+      .single();
+    if (!error && nuevo) {
+      if (restringido) {
+        if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: nuevo.id, proyecto_id })));
+        if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: nuevo.id, propiedad_id })));
+      }
+      if (usaCatalogoVenta && restringidoVenta) {
+        if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: nuevo.id, proyecto_venta_id })));
+        if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: nuevo.id, propiedad_venta_id })));
+      }
     }
     setGuardando(false);
     onCreado();
@@ -1820,9 +2351,10 @@ function ModalNuevoRol({ proyectos, propiedades, onCancelar, onCreado }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
-      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3 max-h-[90vh] overflow-y-auto">
         <div className="font-serif text-lg">Nuevo rol</div>
         <Campo label="Nombre del rol" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <p className="text-[11px] text-[#8A93A3]">Para un asesor, lo más rápido es clonar los permisos de "Asesor externo" o "Asesor interno" y solo cambiar el alcance de abajo.</p>
         <div className="space-y-1.5">
           {PERMISOS_DISPONIBLES.map(([key, label]) => (
             <label key={key} className="flex items-center gap-2 text-xs cursor-pointer">
@@ -1831,12 +2363,29 @@ function ModalNuevoRol({ proyectos, propiedades, onCancelar, onCreado }) {
             </label>
           ))}
         </div>
-        <SelectorAlcance
-          proyectos={proyectos} propiedades={propiedades}
-          restringido={restringido} setRestringido={setRestringido}
-          proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
-          propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
-        />
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Cartera (cobros, cuotas, clientes)</div>
+          <SelectorAlcance
+            proyectos={proyectos} propiedades={propiedades}
+            restringido={restringido} setRestringido={setRestringido}
+            proyectosSel={proyectosSel} setProyectosSel={setProyectosSel}
+            propiedadesSel={propiedadesSel} setPropiedadesSel={setPropiedadesSel}
+          />
+        </div>
+        {usaCatalogoVenta && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
+            <SelectorAlcance
+              proyectos={proyectosVenta} propiedades={propiedadesVenta}
+              restringido={restringidoVenta} setRestringido={setRestringidoVenta}
+              proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
+              propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
+              titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
+              getEtiquetaPropiedad={(pr) => pr.nombre}
+              campoProyectoDePropiedad="proyecto_venta_id"
+            />
+          </div>
+        )}
         <div className="flex gap-2">
           <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
           <button onClick={crear} disabled={guardando || !nombre} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
@@ -2100,6 +2649,64 @@ function PantallaPropiedadesVenta({ proyectoId, onVolver, onAbrirPropiedad }) {
   );
 }
 
+// Precio de lista y precio mínimo de negociación, en propiedades_venta_condiciones
+// — deliberadamente separada de propiedades_venta, que tiene lectura pública
+// para el sitio web. Ver supabase/migrations/20260811000000_asesores_codigo_permisos.sql.
+// Solo la ve el equipo con permiso de administrar el catálogo; los asesores
+// la leen a través de su propia policy de RLS, no de esta pantalla.
+function CondicionesVentaPrivadas({ propiedadId }) {
+  const [cond, setCond] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [guardado, setGuardado] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setCargando(true);
+      const { data } = await supabase.from("propiedades_venta_condiciones").select("*").eq("propiedad_venta_id", propiedadId).maybeSingle();
+      setCond(data || { precio: "", precio_minimo: "", financiamiento_tasa_anual: "" });
+      setCargando(false);
+    })();
+  }, [propiedadId]);
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError("");
+    setGuardado(false);
+    const datos = {
+      propiedad_venta_id: propiedadId,
+      precio: cond.precio === "" || cond.precio == null ? null : Number(cond.precio),
+      precio_minimo: cond.precio_minimo === "" || cond.precio_minimo == null ? null : Number(cond.precio_minimo),
+      financiamiento_tasa_anual: cond.financiamiento_tasa_anual === "" || cond.financiamiento_tasa_anual == null ? null : Number(cond.financiamiento_tasa_anual),
+    };
+    const { error } = await supabase.from("propiedades_venta_condiciones").upsert(datos, { onConflict: "propiedad_venta_id" });
+    setGuardando(false);
+    if (error) { setError(error.message); return; }
+    setGuardado(true);
+  };
+
+  if (cargando || !cond) return null;
+
+  return (
+    <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1">Condiciones privadas de venta</span>
+      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público. Precarga el cotizador del asesor.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <CampoMoneda label="Precio de lista" value={cond.precio} onChange={(n) => setCond({ ...cond, precio: n })} />
+        <CampoMoneda label="Precio mínimo de negociación" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
+      </div>
+      <div className="mt-2">
+        <Campo label="Tasa anual sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
+      </div>
+      {error && <div className="text-xs text-red-400 mt-2">{error}</div>}
+      <button onClick={guardar} disabled={guardando} className="mt-3 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-3 py-2 rounded-md">
+        {guardando ? "Guardando..." : guardado ? "Guardado ✓" : "Guardar condiciones"}
+      </button>
+    </div>
+  );
+}
+
 function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
   const [p, setP] = useState(null);
   const [proyecto, setProyecto] = useState(null);
@@ -2274,6 +2881,8 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
             <Campo label="Longitud" value={p.google_maps_lng ?? ""} onChange={(e) => set("google_maps_lng")(e.target.value)} />
           </div>
         </div>
+
+        <CondicionesVentaPrivadas propiedadId={propiedadId} />
 
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Fotos</span>

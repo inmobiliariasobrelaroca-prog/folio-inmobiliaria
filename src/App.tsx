@@ -1221,7 +1221,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   }, []);
 
   if (seleccionada) {
-    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} puedeVerMinimo={puedeVerMinimo} onVolver={() => setSeleccionada(null)} />;
+    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} puedeVerMinimo={puedeVerMinimo} asesor={usuario} onVolver={() => setSeleccionada(null)} />;
   }
 
   return (
@@ -1310,7 +1310,9 @@ function limpiarNombreArchivo(txt) {
 // como cargo aparte (propiedad.aplica_luz / aplica_mantenimiento, los fija el
 // administrador), el encabezado de la cotización — en pantalla, PDF y
 // WhatsApp — muestra esos montos y un total mensual que los suma a la cuota.
-function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
+const LINK_SITIO_VENTAS = "https://sobrelaroca-ventas.vercel.app";
+
+function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -1380,7 +1382,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
     (tieneCargosAdicionales ? `\nTotal mensual: ${fmt(totalMensual)}` : "") +
     `\nPlazo: ${meses} meses` +
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
-    `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}`;
+    `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
+    `\n\nMás propiedades: ${LINK_SITIO_VENTAS}` +
+    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -1565,6 +1569,13 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, onVolver }) {
           <div className="text-[9px] text-gray-500 leading-relaxed">
             Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
             Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center">
+            <div className="text-[10px] text-gray-700">
+              <b>Tu asesor:</b> {asesor?.nombre || "—"}{asesor?.telefono ? ` · ${asesor.telefono}` : ""}
+            </div>
+            <div className="text-[10px] text-[#C9A227]">{LINK_SITIO_VENTAS.replace("https://", "")}</div>
           </div>
         </div>
       )}
@@ -2171,6 +2182,7 @@ function PantallaEquipo({ onVolver, esAdmin }) {
 function PestanaUsuarios({ usuarios, roles, onCreado }) {
   const [creando, setCreando] = useState(false);
   const [codigoGenerado, setCodigoGenerado] = useState(null); // { nombre, codigo } — se muestra una sola vez
+  const [editando, setEditando] = useState(null); // usuario que se está editando (nombre/teléfono)
   const [ocupado, setOcupado] = useState(null); // id del usuario con una acción en curso
 
   const cambiarActivo = async (u, activo) => {
@@ -2222,12 +2234,13 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
                   {u.nombre}
                   {u.activo === false && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 uppercase tracking-wide">Desactivado</span>}
                 </div>
-                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 4 dígitos" : "Asesor externo · código de 4 dígitos") : u.email}</div>
+                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 4 dígitos" : "Asesor externo · código de 4 dígitos") : u.email}{esAsesor && u.telefono ? ` · ${u.telefono}` : ""}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
                 {esAsesor && (
                   <>
+                    <button disabled={ocupado === u.id} onClick={() => setEditando(u)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Editar</button>
                     <button disabled={ocupado === u.id} onClick={() => regenerarCodigo(u)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Nuevo código</button>
                     {u.activo === false ? (
                       <button disabled={ocupado === u.id} onClick={() => cambiarActivo(u, true)} className="text-[10px] bg-[#C9A227] text-[#101826] px-2 py-1.5 rounded-md disabled:opacity-40">Reactivar</button>
@@ -2276,6 +2289,57 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
           }}
         />
       )}
+      {editando && (
+        <ModalEditarAsesor
+          usuario={editando}
+          onCancelar={() => setEditando(null)}
+          onGuardado={() => {
+            setEditando(null);
+            onCreado();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Edita nombre y teléfono de un asesor sin tocar su código de acceso. El
+// teléfono es lo que aparece en el pie de página de las cotizaciones que ese
+// asesor genere (ver CotizadorAsesor).
+function ModalEditarAsesor({ usuario, onCancelar, onGuardado }) {
+  const [nombre, setNombre] = useState(usuario.nombre || "");
+  const [telefono, setTelefono] = useState(usuario.telefono || "");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async () => {
+    if (!nombre.trim()) { setError("El nombre no puede quedar vacío."); return; }
+    setError("");
+    setGuardando(true);
+    try {
+      await llamarGestionAsesores({ accion: "editar_asesor", usuario_id: usuario.id, nombre: nombre.trim(), telefono: telefono.trim() || null });
+      onGuardado();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
+        <div className="font-serif text-lg">Editar {usuario.nombre}</div>
+        <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo label="Teléfono/celular (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="5555 5555" />
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        <div className="flex gap-2">
+          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2300,6 +2364,7 @@ function ModalCodigoGenerado({ info, onCerrar }) {
 function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
   const [tipo, setTipo] = useState("staff"); // 'staff' | 'asesor_interno' | 'asesor_externo'
   const [nombre, setNombre] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rolId, setRolId] = useState(roles[0]?.id || "");
@@ -2314,7 +2379,7 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
     setGuardando(true);
     try {
       if (esAsesor) {
-        const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, tipo, rol_id: rolId });
+        const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, telefono: telefono || null, tipo, rol_id: rolId });
         // Guarda el código de inmediato, antes que cualquier otra cosa — ver
         // el comentario junto a guardarCodigoPendiente más arriba en el
         // archivo: esto es lo que garantiza que se vea, sin depender de que
@@ -2350,7 +2415,10 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
 
         {esAsesor ? (
-          <p className="text-[11px] text-[#8A93A3]">Se genera un código de 4 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta.</p>
+          <>
+            <Campo label="Teléfono/celular (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="5555 5555" />
+            <p className="text-[11px] text-[#8A93A3]">Se genera un código de 4 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta. El teléfono aparece en el pie de página de las cotizaciones que este asesor genere.</p>
+          </>
         ) : (
           <>
             <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

@@ -4014,18 +4014,11 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {(() => {
+              {prop.tabla.length > 0 && (() => {
                 const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                if (!cuotaVigente) return null;
                 const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();
                 return (
-                  <>
-                    <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                    {diaVigente !== diaOriginal && (
-                      <div className="text-[11px] text-[#8A93A3] -mt-1">Cambió de día {diaOriginal} a día {diaVigente} a partir de la cuota #{cuotaVigente.numero} ({fmtDate(cuotaVigente.fecha)}).</div>
-                    )}
-                  </>
+                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
                 );
               })()}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
@@ -4847,18 +4840,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {(() => {
+              {prop.tabla.length > 0 && (() => {
                 const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                if (!cuotaVigente) return null;
                 const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                const diaOriginal = new Date(prop.tabla[0].fecha + "T00:00:00").getDate();
                 return (
-                  <>
-                    <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                    {diaVigente !== diaOriginal && (
-                      <div className="text-[11px] text-[#8A93A3] -mt-1">Cambió de día {diaOriginal} a día {diaVigente} a partir de la cuota #{cuotaVigente.numero} ({fmtDate(cuotaVigente.fecha)}).</div>
-                    )}
-                  </>
+                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
                 );
               })()}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/styles.css" />
+  <script src="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/_ds_bundle.js"></script>
+</helmet>
+<div style="height:100%;display:flex;flex-direction:column;background:var(--sr-bg);color:var(--sr-ink);font-family:var(--sr-fb);font-size:14px;overflow:hidden">
+
+  <div style="flex:1;overflow-y:auto;padding:var(--sr-top,14px) 16px 18px;display:flex;flex-direction:column;gap:14px">
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <img src="fotos/logo.png" alt="Sobre la Roca" style="width:26px;height:26px;object-fit:contain" />
+        <div>
+          <div style="font-family:var(--sr-fh);font-size:17px;line-height:1;letter-spacing:0.01em">Sobre la Roca</div>
+          <div style="font-size:8.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--sr-acc)">{{ subtitulo }}</div>
+        </div>
+      </div>
+      <div style="display:flex;border:1px solid var(--sr-line);border-radius:var(--sr-r)">
+        <button type="button" onClick="{{ verCliente }}" style="{{ estiloRolCliente }}">Cliente</button>
+        <button type="button" onClick="{{ verAdmin }}" style="{{ estiloRolAdmin }}">Equipo</button>
+      </div>
+    </div>
+
+    <sc-if value="{{ esInicio }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Proyectos en venta</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Encuentra tu casa</div>
+        </div>
+        <sc-for list="{{ proyectos }}" as="p" hint-placeholder-count="2">
+          <button type="button" onClick="{{ irPropiedad }}" style="width:100%;text-align:left;padding:0;background:none;color:inherit;font:inherit;border:1px solid var(--sr-line);border-radius:var(--sr-r);overflow:hidden;cursor:pointer;display:block">
+            <div style="height:104px;background:repeating-linear-gradient(135deg,var(--sr-ph) 0 8px,transparent 8px 16px);border-bottom:1px solid var(--sr-line);display:flex;align-items:flex-end;justify-content:space-between;padding:8px 10px">
+              <span style="font-family:ui-monospace,monospace;font-size:9px;color:var(--sr-mut)">foto del proyecto</span>
+              <span style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--sr-acc);color:var(--sr-acc);background:var(--sr-bg)">{{ p.estado }}</span>
+            </div>
+            <div style="padding:10px 12px 12px;display:flex;flex-direction:column;gap:3px">
+              <div style="font-family:var(--sr-fh);font-size:19px;line-height:1.1">{{ p.nombre }}</div>
+              <div style="font-size:12px;color:var(--sr-mut)">{{ p.ubicacion }}</div>
+              <div style="font-size:12px;color:var(--sr-mut)">{{ p.detalle }}</div>
+            </div>
+          </button>
+        </sc-for>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:12px 14px;display:flex;flex-direction:column;gap:4px">
+          <div style="font-family:var(--sr-fh);font-size:17px;color:var(--sr-acc)">Financiamiento propio</div>
+          <div style="font-size:12.5px;color:var(--sr-mut);line-height:1.5">Enganche flexible y hasta 25 años de plazo, sin depender de un banco.</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esPropiedad }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button type="button" onClick="{{ irInicio }}" style="align-self:flex-start;background:none;border:none;padding:0;font:inherit;font-size:12px;color:var(--sr-acc);cursor:pointer">← Proyectos</button>
+        <div style="height:170px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:repeating-linear-gradient(135deg,var(--sr-ph) 0 8px,transparent 8px 16px);display:flex;align-items:flex-end;padding:10px">
+          <span style="font-family:ui-monospace,monospace;font-size:9px;color:var(--sr-mut)">galería · 12 fotos</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">La Esperanza · Quetzaltenango</div>
+          <div style="font-family:var(--sr-fh);font-size:26px;line-height:1.05">Casa 2</div>
+          <div style="font-family:var(--sr-fh);font-size:22px;color:var(--sr-acc)">Q485,000.00</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--sr-line);border-radius:var(--sr-r)">
+          <div style="padding:10px 4px;text-align:center;border-right:1px solid var(--sr-line)"><div style="font-family:var(--sr-fh);font-size:21px;color:var(--sr-acc)">3</div><div style="font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">Hab</div></div>
+          <div style="padding:10px 4px;text-align:center;border-right:1px solid var(--sr-line)"><div style="font-family:var(--sr-fh);font-size:21px;color:var(--sr-acc)">2</div><div style="font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">Baños</div></div>
+          <div style="padding:10px 4px;text-align:center;border-right:1px solid var(--sr-line)"><div style="font-family:var(--sr-fh);font-size:21px;color:var(--sr-acc)">2</div><div style="font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">Niveles</div></div>
+          <div style="padding:10px 4px;text-align:center"><div style="font-family:var(--sr-fh);font-size:21px;color:var(--sr-acc)">1</div><div style="font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">Parqueo</div></div>
+        </div>
+        <div style="font-size:13px;line-height:1.6;color:var(--sr-mut)">Casa de dos niveles con acabados formales, cocina equipada y patio posterior. Escrituras en regla y entrega inmediata.</div>
+        <div style="border:1px solid var(--sr-acc);border-radius:var(--sr-r);padding:12px 14px;display:flex;flex-direction:column;gap:3px">
+          <div style="font-family:var(--sr-fh);font-size:16px;color:var(--sr-acc)">Financiamiento propio disponible</div>
+          <div style="font-size:12px;color:var(--sr-mut);line-height:1.5">Enganche desde Q75,000.00 · hasta 25 años · abonos a capital sin penalización.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" onClick="{{ irAsesor }}" style="flex:1;padding:13px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer">Escribir a un asesor</button>
+          <button type="button" style="padding:13px 16px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer">Mapa</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCuenta }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Estado de cuenta</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Casa 2 · La Esperanza</div>
+        </div>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end">
+            <div><div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Saldo pendiente</div><div style="font-family:var(--sr-fh);font-size:34px;line-height:1.05">Q312,400.00</div></div>
+            <div style="text-align:right"><div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Pagado</div><div style="font-family:var(--sr-fh);font-size:20px;color:var(--sr-acc)">36%</div></div>
+          </div>
+          <div style="height:6px;background:var(--sr-ph);border-radius:var(--sr-r)"><div style="width:36%;height:100%;background:var(--sr-acc);border-radius:var(--sr-r)"></div></div>
+          <div style="font-size:11.5px;color:var(--sr-mut)">Q172,600.00 de Q485,000.00 · 34 de 96 cuotas</div>
+        </div>
+        <div style="border:1px solid var(--sr-acc);border-radius:var(--sr-r);padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <div><div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Próxima cuota · vence 5 sep</div><div style="font-family:var(--sr-fh);font-size:26px">Q3,850.00</div></div>
+          <button type="button" style="padding:11px 14px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Pagar</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Tu asesor</div>
+          <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:10px 12px">
+            <img src="fotos/asesores/andrea.jpg" alt="Andrea" style="width:40px;height:40px;border-radius:50%;object-fit:cover" />
+            <div style="flex:1"><div style="font-family:var(--sr-fh);font-size:17px">Andrea</div><div style="font-size:11.5px;color:var(--sr-mut)">Asesora asignada</div></div>
+            <button type="button" onClick="{{ irAsesor }}" style="padding:8px 12px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:12px;cursor:pointer">Escribir</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esPagos }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Historial</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Mis pagos</div>
+        </div>
+        <sc-for list="{{ pagos }}" as="g" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--sr-line)">
+            <div>
+              <div style="font-family:var(--sr-fh);font-size:18px">{{ g.monto }}</div>
+              <div style="font-size:11.5px;color:var(--sr-mut)">{{ g.fecha }} · {{ g.metodo }}</div>
+            </div>
+            <div style="text-align:right;display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+              <span style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--sr-acc);color:var(--sr-acc)">{{ g.tipo }}</span>
+              <span style="font-size:10.5px;color:var(--sr-mut);font-family:ui-monospace,monospace">{{ g.recibo }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <button type="button" style="padding:12px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer">Descargar estado de cuenta</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esAsesor }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Contacto</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">¿Con quién quieres hablar?</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <sc-for list="{{ asesores }}" as="a" hint-placeholder-count="4">
+            <button type="button" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;cursor:pointer">
+              <img src="{{ a.foto }}" alt="{{ a.nombre }}" style="width:52px;height:52px;border-radius:50%;object-fit:cover" />
+              <span style="font-family:var(--sr-fh);font-size:16px">{{ a.nombre }}</span>
+              <span style="font-size:11px;color:var(--sr-mut)">WhatsApp</span>
+            </button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:14px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">¿Qué quieres preguntar?</div>
+          <label style="display:flex;align-items:center;gap:9px;font-size:13px"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--sr-acc)" /> ¿Cuál es el precio?</label>
+          <label style="display:flex;align-items:center;gap:9px;font-size:13px"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--sr-acc)" /> ¿Trabajan financiamiento propio?</label>
+          <label style="display:flex;align-items:center;gap:9px;font-size:13px"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--sr-acc)" /> Quisiera agendar una visita</label>
+          <button type="button" style="margin-top:4px;padding:12px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer">Continuar a WhatsApp</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCodigo }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center;padding-top:24px">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Acceso interno</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Código de acceso</div>
+          <div style="font-size:12.5px;color:var(--sr-mut);line-height:1.5">{{ mensajeCodigo }}</div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <sc-for list="{{ puntos }}" as="p" hint-placeholder-count="4">
+            <div style="{{ p.estilo }}"></div>
+          </sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:260px">
+          <sc-for list="{{ teclasCodigo }}" as="t" hint-placeholder-count="12">
+            <button type="button" onClick="{{ t.pulsar }}" style="padding:14px 0;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font-family:var(--sr-fh);font-size:22px;cursor:pointer">{{ t.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCotizaciones }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">{{ resumenCotizaciones }}</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">{{ tituloCotizaciones }}</div>
+        </div>
+        <sc-for list="{{ cotizaciones }}" as="c" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--sr-line)">
+            <div>
+              <div style="font-size:14px">{{ c.cliente }}</div>
+              <div style="font-size:11px;color:var(--sr-mut)">{{ c.detalle }}</div>
+            </div>
+            <div style="text-align:right;display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+              <div style="font-family:var(--sr-fh);font-size:17px">{{ c.cuota }}</div>
+              <span style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--sr-acc);color:var(--sr-acc)">{{ c.tipo }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <button type="button" onClick="{{ irCotizador }}" style="padding:13px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:14px;font-weight:600;cursor:pointer">Nueva cotización</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esSinPermiso }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center;padding-top:60px">
+        <div style="width:44px;height:44px;border:1px solid var(--sr-acc);border-radius:var(--sr-r);display:flex;align-items:center;justify-content:center;font-family:var(--sr-fh);font-size:24px;color:var(--sr-acc)">·</div>
+        <div style="font-family:var(--sr-fh);font-size:24px;line-height:1.1">Sección de administradores</div>
+        <div style="font-size:12.5px;color:var(--sr-mut);line-height:1.5;max-width:250px">Tu código es de vendedor: puedes cotizar y consultar propiedades. La cobranza, la cartera y los reportes los maneja un administrador.</div>
+        <button type="button" onClick="{{ irCotizador }}" style="margin-top:4px;padding:12px 18px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer">Ir al cotizador</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esEquipo }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Administración</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Equipo</div>
+        </div>
+        <sc-for list="{{ equipo }}" as="m" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:7px;border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:11px 12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="flex:1">
+                <div style="font-size:14px">{{ m.nombre }}</div>
+                <div style="font-size:11px;color:var(--sr-mut)">{{ m.detalle }}</div>
+              </div>
+              <button type="button" onClick="{{ m.alternar }}" style="{{ m.estiloRol }}">{{ m.rol }}</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--sr-line);padding-top:7px">
+              <span style="font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--sr-mut)">Alcance</span>
+              <span style="font-size:11.5px;color:var(--sr-ink)">{{ m.alcance }}</span>
+              <sc-if value="{{ puedeEditarAlcance }}" hint-placeholder-val="{{ false }}">
+                <button type="button" onClick="{{ m.cambiarAlcance }}" style="margin-left:auto;padding:4px 9px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:var(--sr-acc);font:inherit;font-size:11px;cursor:pointer">Cambiar</button>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ puedeEditarAlcance }}" hint-placeholder-val="{{ false }}">
+          <button type="button" style="padding:12px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer">Agregar integrante</button>
+        </sc-if>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Qué puede cada rol</div>
+          <div style="font-size:12px;color:var(--sr-mut);line-height:1.5">El <strong style="color:var(--sr-ink)">vendedor</strong> cotiza, consulta propiedades y ve sus cotizaciones. El <strong style="color:var(--sr-ink)">administrador</strong> cobra y ve cartera y reportes, limitado a los proyectos de su alcance. El <strong style="color:var(--sr-ink)">super administrador</strong> ve todo y define quién entra y con qué alcance.</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCotizador }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="Cotizador" cot="{{ cot }}" setCot="{{ setCot }}" registrarCotizacion="{{ registrarCotizacion }}" hint-size="100%,620px"></dc-import>
+    </sc-if>
+
+    <sc-if value="{{ esPanel }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Agosto 2026</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Cobranza del mes</div>
+        </div>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Cobrado</div>
+          <div style="font-family:var(--sr-fh);font-size:38px;line-height:1">Q184,300.00</div>
+          <div style="height:6px;background:var(--sr-ph);border-radius:var(--sr-r)"><div style="width:88%;height:100%;background:var(--sr-acc);border-radius:var(--sr-r)"></div></div>
+          <div style="font-size:11.5px;color:var(--sr-mut)">88% de la meta · Q210,000.00</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:12px"><div style="font-family:var(--sr-fh);font-size:24px">32/41</div><div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">Cuotas cobradas</div></div>
+          <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:12px"><div style="font-family:var(--sr-fh);font-size:24px">Q23,100.00</div><div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sr-mut)">En mora · 4 clientes</div></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" onClick="{{ irCobrar }}" style="flex:1;padding:15px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:15px;font-weight:600;cursor:pointer">Registrar un pago</button>
+          <button type="button" onClick="{{ irReportes }}" style="padding:15px 16px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:14px;cursor:pointer">Reportes</button>
+        </div>
+        <button type="button" onClick="{{ irCotizaciones }}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer">
+          <span style="font-size:13.5px;white-space:nowrap">Cotizaciones del equipo</span>
+          <span style="font-size:12.5px;color:var(--sr-acc);white-space:nowrap">{{ conteoCotizaciones }} →</span>
+        </button>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Últimos movimientos</div>
+          <sc-for list="{{ movimientos }}" as="m" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--sr-line)">
+              <div><div style="font-size:13.5px">{{ m.cliente }}</div><div style="font-size:11px;color:var(--sr-mut)">{{ m.hora }} · {{ m.metodo }}</div></div>
+              <div style="font-family:var(--sr-fh);font-size:17px">{{ m.monto }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCobrar }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Nuevo pago</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Registrar</div>
+        </div>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:14px;display:flex;flex-direction:column;gap:4px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Monto</div>
+          <div style="font-family:var(--sr-fh);font-size:44px;line-height:1;color:var(--sr-acc)">{{ montoTexto }}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Cliente</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:11px 12px">
+            <div><div style="font-size:14px">María Xiloj</div><div style="font-size:11px;color:var(--sr-mut)">Casa 2 · La Esperanza · cuota Q3,850.00</div></div>
+            <span style="font-size:12px;color:var(--sr-acc)">Cambiar</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Método</div>
+          <div style="display:flex;gap:6px">
+            <sc-for list="{{ metodos }}" as="m" hint-placeholder-count="3">
+              <button type="button" onClick="{{ m.elegir }}" style="{{ m.estilo }}">{{ m.nombre }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <sc-for list="{{ teclas }}" as="t" hint-placeholder-count="12">
+            <button type="button" onClick="{{ t.pulsar }}" style="padding:13px 0;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font-family:var(--sr-fh);font-size:22px;cursor:pointer">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <button type="button" onClick="{{ registrar }}" style="padding:15px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font:inherit;font-size:15px;font-weight:600;cursor:pointer">{{ textoRegistrar }}</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCartera }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">{{ resumenCartera }}</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Cartera</div>
+        </div>
+        <sc-for list="{{ cartera }}" as="c" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--sr-line)">
+            <div>
+              <div style="font-size:14px">{{ c.nombre }}</div>
+              <div style="font-size:11px;color:var(--sr-mut)">{{ c.casa }} · saldo {{ c.saldo }}</div>
+            </div>
+            <span style="{{ c.estiloEstado }}">{{ c.estado }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esReportes }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Últimos 6 meses</div>
+          <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Reportes</div>
+        </div>
+        <div style="border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Ingresos mensuales</div>
+          <div style="display:flex;align-items:flex-end;gap:8px;height:110px">
+            <sc-for list="{{ barras }}" as="b" hint-placeholder-count="6">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end">
+                <div style="{{ b.estilo }}"></div>
+                <div style="font-size:9.5px;color:var(--sr-mut)">{{ b.mes }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Por proyecto</div>
+          <sc-for list="{{ porProyecto }}" as="p" hint-placeholder-count="2">
+            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--sr-line)">
+              <div><div style="font-size:14px">{{ p.nombre }}</div><div style="font-size:11px;color:var(--sr-mut)">{{ p.detalle }}</div></div>
+              <div style="font-family:var(--sr-fh);font-size:18px">{{ p.total }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <button type="button" style="padding:12px;border:1px solid var(--sr-line);border-radius:var(--sr-r);background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer">Exportar a Excel</button>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <div style="{{ estiloTabs }}">
+    <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+      <button type="button" onClick="{{ t.ir }}" style="{{ t.estilo }}">{{ t.label }}</button>
+    </sc-for>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:402,&quot;height&quot;:760},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;inicio&quot;,&quot;options&quot;:[&quot;inicio&quot;,&quot;propiedad&quot;,&quot;cuenta&quot;,&quot;pagos&quot;,&quot;asesor&quot;,&quot;panel&quot;,&quot;cobrar&quot;,&quot;cartera&quot;,&quot;reportes&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;nav&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(id: string) =&gt; void&quot;}}">
+class Component extends DCLogic {
+  state = { monto: '', metodo: 'Efectivo', hecho: false, codigo: '', errorCodigo: false };
+
+  tab(id, label, activo) {
+    return {
+      label, ir: () => this.props.nav && this.props.nav(id),
+      estilo: 'padding:12px 1px 14px;background:none;border:none;border-top:2px solid ' +
+        (activo ? 'var(--sr-acc)' : 'transparent') +
+        ';color:' + (activo ? 'var(--sr-acc)' : 'var(--sr-mut)') +
+        ';font-family:var(--sr-fh);font-size:13.5px;letter-spacing:0.02em;white-space:nowrap;cursor:pointer'
+    };
+  }
+
+  q(n) { return 'Q' + Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  renderVals() {
+    const s = this.props.screen || 'inicio';
+    const interno = ['panel', 'cobrar', 'cartera', 'reportes', 'cotizador', 'codigo', 'equipo', 'cotizaciones'].indexOf(s) >= 0;
+    const rol = this.props.rol || 'vendedor';
+    const esSuper = rol === 'super';
+    const esAdmin = rol === 'admin' || esSuper;
+    const soloAdmin = ['panel', 'cobrar', 'cartera', 'reportes', 'equipo'];
+    const bloqueado = this.props.desbloqueado && !esAdmin && soloAdmin.indexOf(s) >= 0;
+    const alcance = esSuper ? 'Todos los proyectos' : 'La Esperanza';
+    const yo = this.props.usuario || 'Andrea Sac';
+    const visibles = (this.props.cotizaciones || []).filter((c) =>
+      esSuper ? true : (esAdmin ? c.proyecto === alcance : c.vendedor === yo));
+    const nav = (id) => this.props.nav && this.props.nav(id);
+    const chip = (solido) => 'font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--sr-acc);' +
+      (solido ? 'background:var(--sr-acc);color:var(--sr-accInk);font-weight:600' : 'color:var(--sr-acc)');
+    const rolBtn = (activo) => 'padding:5px 10px;border:none;background:' + (activo ? 'var(--sr-acc)' : 'transparent') +
+      ';color:' + (activo ? 'var(--sr-accInk)' : 'var(--sr-mut)') + ';font-family:var(--sr-fh);font-size:12.5px;letter-spacing:0.04em;cursor:pointer';
+
+    const teclas = ['1','2','3','4','5','6','7','8','9','00','0','⌫'].map((k) => ({
+      label: k,
+      pulsar: () => this.setState((st) => ({
+        hecho: false,
+        monto: k === '⌫' ? st.monto.slice(0, -1) : (st.monto + k).slice(0, 7)
+      }))
+    }));
+
+    const montoNum = Number(this.state.monto || 0);
+
+    return {
+      subtitulo: interno ? (esSuper ? 'Super administrador' : (esAdmin ? 'Administrador · ' + alcance : 'Vendedor')) : 'Constructora Inmobiliaria',
+      esInicio: s === 'inicio', esPropiedad: s === 'propiedad', esCuenta: s === 'cuenta',
+      esPagos: s === 'pagos', esAsesor: s === 'asesor', esPanel: s === 'panel' && !bloqueado,
+      esCobrar: s === 'cobrar' && !bloqueado, esCartera: s === 'cartera' && !bloqueado,
+      esReportes: s === 'reportes' && !bloqueado,
+      esCodigo: s === 'codigo', esCotizador: s === 'cotizador',
+      esEquipo: s === 'equipo' && !bloqueado, esSinPermiso: bloqueado,
+      esCotizaciones: s === 'cotizaciones',
+      irCotizador: () => nav('cotizador'),
+      irCotizaciones: () => nav('cotizaciones'),
+      puedeEditarAlcance: esSuper,
+
+      cotizaciones: visibles.map((c) => ({
+        cliente: c.cliente,
+        detalle: (esAdmin ? c.vendedor + ' · ' : '') + c.propiedad + (c.whatsapp ? ' · ' + c.whatsapp : '') + ' · ' + c.precio,
+        cuota: c.cuota, tipo: c.tipo
+      })),
+      tituloCotizaciones: esAdmin ? 'Cotizaciones' : 'Mis cotizaciones',
+      conteoCotizaciones: visibles.length,
+      resumenCotizaciones: visibles.length
+        ? (esSuper ? visibles.length + ' de todos los proyectos'
+           : (esAdmin ? visibles.length + ' · ' + alcance
+              : visibles.length + (visibles.length === 1 ? ' enviada' : ' enviadas')))
+        : (esAdmin ? 'Sin cotizaciones en tu alcance' : 'Aún no has enviado ninguna'),
+      cot: this.props.cot, setCot: this.props.setCot,
+      registrarCotizacion: this.props.registrarCotizacion,
+
+      verCliente: () => nav('inicio'),
+      verAdmin: () => nav(this.props.desbloqueado ? 'panel' : 'codigo'),
+      estiloRolCliente: rolBtn(!interno), estiloRolAdmin: rolBtn(interno),
+      irInicio: () => nav('inicio'), irPropiedad: () => nav('propiedad'),
+      irAsesor: () => nav('asesor'), irCobrar: () => nav('cobrar'), irReportes: () => nav('reportes'),
+
+      mensajeCodigo: this.state.errorCodigo
+        ? 'Código incorrecto. Intenta de nuevo.'
+        : 'Cada integrante tiene su código. Pruebas: 2468 vendedor · 1357 administrador · 1308 super administrador.',
+      puntos: [0, 1, 2, 3].map((k) => ({
+        estilo: 'width:13px;height:13px;border:1px solid var(--sr-acc);border-radius:var(--sr-r);background:' +
+          (this.state.codigo.length > k ? 'var(--sr-acc)' : 'transparent')
+      })),
+      teclasCodigo: ['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k) => ({
+        label: k,
+        pulsar: () => {
+          if (!k) return;
+          this.setState((st) => {
+            const c = k === '⌫' ? st.codigo.slice(0, -1) : (st.codigo + k).slice(0, 4);
+            if (c.length === 4) {
+              const roles = { '2468': 'vendedor', '1357': 'admin', '1308': 'super' };
+              if (roles[c]) {
+                if (this.props.abrirEquipo) this.props.abrirEquipo(roles[c]);
+                return { codigo: '', errorCodigo: false };
+              }
+              return { codigo: '', errorCodigo: true };
+            }
+            return { codigo: c, errorCodigo: false };
+          });
+        }
+      })),
+
+      equipo: [
+        { nombre: 'Juan Carlos', detalle: 'Código 1308', rol: 'Super administrador', alcances: ['Todos los proyectos'] },
+        { nombre: 'Gustavo Molina', detalle: 'Código 1357', rol: 'Administrador', alcances: ['La Esperanza', 'Las Luces', 'La Esperanza · casas 1 a 4'] },
+        { nombre: 'Andrea Sac', detalle: 'Código 2468', rol: 'Vendedor', alcances: ['La Esperanza', 'Todos los proyectos'] },
+        { nombre: 'Dayan Pérez', detalle: 'Código 3691', rol: 'Vendedor', alcances: ['Las Luces', 'Las Luces · casas 5 a 12'] }
+      ].map((m, k) => Object.assign({}, m, {
+        alcance: m.alcances[((this.state.alcanceFlip || {})[k] || 0) % m.alcances.length],
+        cambiarAlcance: () => this.setState((st) => ({
+          alcanceFlip: Object.assign({}, st.alcanceFlip, { [k]: (((st.alcanceFlip || {})[k] || 0) + 1) })
+        })),
+        alternar: () => { if (esSuper && m.rol !== 'Super administrador') this.setState((st) => ({ equipoFlip: Object.assign({}, st.equipoFlip, { [k]: !(st.equipoFlip || {})[k] }) })); },
+        rol: (this.state.equipoFlip || {})[k] && m.rol !== 'Super administrador' ? (m.rol === 'Vendedor' ? 'Administrador' : 'Vendedor') : m.rol,
+        estiloRol: 'padding:6px 10px;border:1px solid var(--sr-acc);border-radius:var(--sr-r);font:inherit;font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap;cursor:' + (esSuper ? 'pointer' : 'default') + ';' +
+          ((((this.state.equipoFlip || {})[k] && m.rol !== 'Super administrador' ? (m.rol === 'Vendedor' ? 'Administrador' : 'Vendedor') : m.rol) !== 'Vendedor')
+            ? 'background:var(--sr-acc);color:var(--sr-accInk);font-weight:600'
+            : 'background:none;color:var(--sr-acc)')
+      })),
+
+      estiloTabs: 'display:grid;grid-template-columns:repeat(' + (interno ? (esAdmin ? 5 : 4) : 4) +
+        ',1fr);border-top:1px solid var(--sr-line);background:var(--sr-bg);padding-bottom:var(--sr-bot,0px)',
+
+      tabs: interno
+        ? (esAdmin
+          ? [this.tab('panel', 'Panel', s === 'panel'), this.tab('cotizador', 'Cotizar', s === 'cotizador'),
+             this.tab('cobrar', 'Cobrar', s === 'cobrar'), this.tab('cartera', 'Cartera', s === 'cartera' || s === 'reportes'),
+             this.tab('equipo', 'Equipo', s === 'equipo')]
+          : [this.tab('inicio', 'Propiedades', false), this.tab('cotizador', 'Cotizar', s === 'cotizador'),
+             this.tab('cotizaciones', 'Enviadas', s === 'cotizaciones'), this.tab('asesor', 'Asesores', false)])
+        : [this.tab('inicio', 'Inicio', s === 'inicio' || s === 'propiedad'), this.tab('cuenta', 'Mi casa', s === 'cuenta'),
+           this.tab('pagos', 'Pagos', s === 'pagos'), this.tab('asesor', 'Asesor', s === 'asesor')],
+
+      proyectos: [
+        { nombre: 'La Esperanza', ubicacion: 'Quetzaltenango', detalle: '8 propiedades · 3 disponibles', estado: 'Disponible' },
+        { nombre: 'Las Luces', ubicacion: 'Retalhuleu', detalle: '12 propiedades · 5 disponibles', estado: 'En construcción' }
+      ],
+
+      pagos: [
+        { monto: 'Q3,850.00', fecha: '05 ago 2026', metodo: 'Depósito BI', tipo: 'Cuota', recibo: 'REC-1042' },
+        { monto: 'Q10,000.00', fecha: '12 jul 2026', metodo: 'Transferencia', tipo: 'Abono capital', recibo: 'REC-1021' },
+        { monto: 'Q3,850.00', fecha: '05 jul 2026', metodo: 'Efectivo', tipo: 'Cuota', recibo: 'REC-1018' },
+        { monto: 'Q3,850.00', fecha: '05 jun 2026', metodo: 'Efectivo', tipo: 'Cuota', recibo: 'REC-0994' }
+      ],
+
+      asesores: [
+        { nombre: 'Andrea', foto: 'fotos/asesores/andrea.jpg' },
+        { nombre: 'Gustavo', foto: 'fotos/asesores/gustavo.jpg' },
+        { nombre: 'Dayan', foto: 'fotos/asesores/dayan.jpg' },
+        { nombre: 'Carlos', foto: 'fotos/logo.png' }
+      ],
+
+      movimientos: [
+        { cliente: 'María Xiloj', hora: 'Hoy 10:42', metodo: 'Efectivo', monto: 'Q3,850.00' },
+        { cliente: 'Luis Ramírez', hora: 'Hoy 09:15', metodo: 'Depósito', monto: 'Q4,200.00' },
+        { cliente: 'Familia Pérez', hora: 'Ayer 16:30', metodo: 'Transferencia', monto: 'Q3,500.00' }
+      ],
+
+      montoTexto: this.q(Number(this.state.monto || 0)),
+      teclas,
+      metodos: ['Efectivo', 'Depósito', 'Transferencia'].map((n) => ({
+        nombre: n,
+        elegir: () => this.setState({ metodo: n }),
+        estilo: 'flex:1;padding:10px 4px;border:1px solid ' + (this.state.metodo === n ? 'var(--sr-acc)' : 'var(--sr-line)') +
+          ';border-radius:var(--sr-r);background:' + (this.state.metodo === n ? 'var(--sr-acc)' : 'none') +
+          ';color:' + (this.state.metodo === n ? 'var(--sr-accInk)' : 'inherit') + ';font:inherit;font-size:12px;cursor:pointer'
+      })),
+      textoRegistrar: this.state.hecho ? '✓ Pago registrado · recibo enviado' : (montoNum > 0 ? 'Registrar ' + this.q(montoNum) : 'Registrar pago'),
+      registrar: () => { if (montoNum > 0) this.setState({ hecho: true, monto: '' }); },
+
+      resumenCartera: esSuper ? '41 contratos activos' : '26 contratos · ' + alcance,
+
+      cartera: [
+        { nombre: 'María Xiloj', casa: 'Casa 2 · La Esperanza', saldo: 'Q312,400.00', estado: 'Al día' },
+        { nombre: 'Luis Ramírez', casa: 'Casa 5 · La Esperanza', saldo: 'Q198,000.00', estado: 'Al día' },
+        { nombre: 'Familia Pérez', casa: 'Casa 1 · Las Luces', saldo: 'Q402,900.00', estado: 'Mora 12 d' },
+        { nombre: 'Ana Mejía', casa: 'Casa 7 · Las Luces', saldo: 'Q88,300.00', estado: 'Al día' },
+        { nombre: 'Byron Cifuentes', casa: 'Casa 3 · La Esperanza', saldo: 'Q265,700.00', estado: 'Mora 3 d' }
+      ].filter((c) => esSuper || c.casa.indexOf(alcance) >= 0)
+       .map((c) => Object.assign({}, c, {
+         estiloEstado: chip(c.estado.indexOf('Mora') === 0)
+       })),
+
+      barras: [['Mar', 52], ['Abr', 61], ['May', 58], ['Jun', 74], ['Jul', 80], ['Ago', 88]].map((b) => ({
+        mes: b[0],
+        estilo: 'width:100%;height:' + b[1] + '%;background:var(--sr-acc);opacity:' + (b[0] === 'Ago' ? 1 : 0.45)
+      })),
+
+      porProyecto: [
+        { nombre: 'La Esperanza', detalle: '26 contratos', total: 'Q118,400.00' },
+        { nombre: 'Las Luces', detalle: '15 contratos', total: 'Q65,900.00' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

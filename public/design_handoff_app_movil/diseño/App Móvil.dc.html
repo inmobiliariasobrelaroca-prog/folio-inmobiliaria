@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas" />
+  <link rel="stylesheet" href="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/styles.css" />
+  <script src="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/_ds_bundle.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600&family=Barlow:wght@300;400;500;600&family=Cormorant+Garamond:wght@400;500;600&family=Work+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { margin: 0; background: var(--color-surface); font-family: var(--font-body); }
+    a { color: var(--color-accent-700); }
+    a:hover { color: var(--color-accent-800); }
+    button:focus-visible { outline: 2px solid var(--sr-acc); outline-offset: 2px; }
+  </style>
+</helmet>
+
+<section style="padding:56px 48px 80px;display:flex;flex-direction:column;gap:36px">
+
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:760px">
+    <div style="font-size:11px;letter-spacing:0.24em;text-transform:uppercase;color:var(--color-accent-700);font-family:var(--font-body)">Sobre la Roca móvil</div>
+    <h1 style="font-family:var(--font-heading);font-weight:600;font-size:44px;line-height:1.02;margin:0;color:var(--color-text)">La web de ventas y pagos, como app</h1>
+    <p style="margin:0;font-size:15px;line-height:1.6;color:var(--color-neutral-700);text-wrap:pretty">El prototipo en iOS y Android. Los teléfonos están vivos y sincronizados: toca las pestañas, cambia entre <strong>Cliente</strong> y <strong>Equipo</strong> (código 2468 vendedor, 1357 administrador, 1308 super administrador), cotiza y registra un pago con el teclado numérico.</p>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:56px;align-items:flex-start">
+
+    <div id="1b" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:var(--font-heading);font-size:13px;letter-spacing:0.1em;padding:3px 9px;background:#101826;color:#C9A227">1b</span>
+        <span style="font-family:var(--font-heading);font-size:22px;color:var(--color-text)">Marca · azul noche y oro</span>
+      </div>
+      <p style="margin:0;max-width:420px;font-size:13.5px;line-height:1.55;color:var(--color-neutral-700)">La identidad que ya usa el sitio: azul noche, oro y Cormorant Garamond, traducida a pantallas de teléfono. Continuidad total con la web que tus clientes ya conocen.</p>
+      <div style="display:flex;gap:28px;--sr-bg:#101826;--sr-ink:#EDE7D9;--sr-mut:#8892a3;--sr-acc:#C9A227;--sr-accInk:#0a0f18;--sr-line:#2a3547;--sr-ph:#1c2534;--sr-alert:#c99178;--sr-r:2px;--sr-fh:'Cormorant Garamond',serif;--sr-fb:'Work Sans',sans-serif">
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center;--sr-top:52px">
+          <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ ancho }}" height="{{ alto }}" dark="{{ oscuro }}" hint-size="402px,800px">
+            <dc-import name="Pantalla" screen="{{ screen }}" nav="{{ nav }}" desbloqueado="{{ desbloqueado }}" rol="{{ rol }}" abrirEquipo="{{ abrirEquipo }}" cotizaciones="{{ cotizaciones }}" registrarCotizacion="{{ registrarCotizacion }}" usuario="{{ usuario }}" cot="{{ cot }}" setCot="{{ setCot }}" style="height:100%" hint-size="100%,100%"></dc-import>
+          </x-import>
+          <span style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--color-neutral-600)">iOS</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center;--sr-bot:22px">
+          <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" width="{{ ancho }}" height="{{ alto }}" dark="{{ oscuro }}" hint-size="402px,800px">
+            <dc-import name="Pantalla" screen="{{ screen }}" nav="{{ nav }}" desbloqueado="{{ desbloqueado }}" rol="{{ rol }}" abrirEquipo="{{ abrirEquipo }}" cotizaciones="{{ cotizaciones }}" registrarCotizacion="{{ registrarCotizacion }}" usuario="{{ usuario }}" cot="{{ cot }}" setCot="{{ setCot }}" style="height:100%" hint-size="100%,100%"></dc-import>
+          </x-import>
+          <span style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--color-neutral-600)">Android</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:8px;border-top:1px solid var(--color-neutral-300)">
+    <span style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--color-neutral-600);margin-right:6px">Ir a pantalla</span>
+    <button type="button" onClick="{{ alternarRol }}" style="{{ estiloRol }}">{{ etiquetaRol }}</button>
+    <sc-for list="{{ atajos }}" as="a" hint-placeholder-count="9">
+      <button type="button" onClick="{{ a.ir }}" style="{{ a.estilo }}">{{ a.label }}</button>
+    </sc-for>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  state = {
+    screen: 'inicio', desbloqueado: false, rol: 'vendedor',
+    cotizaciones: [
+      { cliente: 'María Xiloj', whatsapp: '5544 7788', propiedad: 'Casa 2 · La Esperanza', proyecto: 'La Esperanza', vendedor: 'Andrea Sac', precio: 'Q485,000.00', cuota: 'Q4,318.22', tipo: 'Nivelada' },
+      { cliente: 'Byron Cifuentes', whatsapp: '4412 9930', propiedad: 'Casa 3 · La Esperanza', proyecto: 'La Esperanza', vendedor: 'Dayan Pérez', precio: 'Q520,000.00', cuota: 'Q4,905.61', tipo: 'Sobre saldos' },
+      { cliente: 'Familia Pérez', whatsapp: '3390 1245', propiedad: 'Casa 1 · Las Luces', proyecto: 'Las Luces', vendedor: 'Dayan Pérez', precio: 'Q612,000.00', cuota: 'Q5,742.10', tipo: 'Nivelada' }
+    ],
+    cot: {
+      precio: '485,000.00', enganche: '75,000.00', tasa: '12.00', anios: '25', tipo: 'nivelada',
+      diasGracia: '3', moraDiaria: '100.00', luz: '0.00'
+    }
+  };
+
+  renderVals() {
+    const ir = (id) => this.setState({ screen: id });
+    const lista = [
+      ['inicio', 'Inicio'], ['propiedad', 'Propiedad'], ['cuenta', 'Mi casa'], ['pagos', 'Pagos'],
+      ['asesor', 'Asesor'], ['codigo', 'Código'], ['panel', 'Panel'], ['cotizador', 'Cotizar'],
+      ['cotizaciones', 'Enviadas'], ['cobrar', 'Cobrar'], ['cartera', 'Cartera'], ['reportes', 'Reportes'], ['equipo', 'Equipo']
+    ];
+    return {
+      screen: this.state.screen,
+      nav: ir,
+      desbloqueado: this.state.desbloqueado,
+      rol: this.state.rol,
+      abrirEquipo: (rol) => this.setState({
+        desbloqueado: true, rol: rol || 'vendedor',
+        screen: (rol === 'admin' || rol === 'super') ? 'panel' : 'cotizador'
+      }),
+      cotizaciones: this.state.cotizaciones,
+      usuario: { vendedor: 'Andrea Sac', admin: 'Gustavo Molina', super: 'Juan Carlos' }[this.state.rol],
+      registrarCotizacion: (c) => this.setState((st) => ({
+        cotizaciones: [Object.assign({
+          proyecto: 'La Esperanza',
+          vendedor: { vendedor: 'Andrea Sac', admin: 'Gustavo Molina', super: 'Juan Carlos' }[st.rol]
+        }, c)].concat(st.cotizaciones)
+      })),
+      cot: this.state.cot,
+      setCot: (patch) => this.setState((st) => ({ cot: Object.assign({}, st.cot, patch) })),
+      ancho: 380,
+      alto: 780,
+      oscuro: true,
+      etiquetaRol: 'Sesión: ' + ({ vendedor: 'vendedor', admin: 'administrador', super: 'super administrador' }[this.state.rol]),
+      alternarRol: () => this.setState((st) => ({
+        rol: { vendedor: 'admin', admin: 'super', super: 'vendedor' }[st.rol], desbloqueado: true
+      })),
+      estiloRol: 'padding:6px 12px;border:1px solid var(--color-accent-700);border-radius:0;font-family:var(--font-body);font-size:12.5px;cursor:pointer;margin-right:6px;' +
+        (this.state.rol !== 'vendedor'
+          ? 'background:var(--color-accent-700);color:var(--color-neutral-100)'
+          : 'background:transparent;color:var(--color-accent-700)'),
+      atajos: lista.map((x) => ({
+        label: x[1],
+        ir: () => ir(x[0]),
+        estilo: 'padding:6px 12px;border:1px solid ' + (this.state.screen === x[0] ? 'var(--color-accent-700)' : 'var(--color-neutral-300)') +
+          ';background:' + (this.state.screen === x[0] ? 'var(--color-accent-700)' : 'transparent') +
+          ';color:' + (this.state.screen === x[0] ? 'var(--color-neutral-100)' : 'var(--color-neutral-700)') +
+          ';font-family:var(--font-body);font-size:12.5px;cursor:pointer'
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

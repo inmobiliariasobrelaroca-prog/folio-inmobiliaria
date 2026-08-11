@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/_ds_bundle.js"></script>
+  <script src="./doc-page.js"></script>
+  <style>
+    doc-page:not(:defined) { visibility: hidden; }
+    a { color: var(--color-accent-700); }
+    a:hover { color: #2c455d; }
+  </style>
+</helmet>
+
+<doc-page margin="0.7in">
+
+  <div slot="header" style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--color-neutral-300);font-family:var(--font-body)">
+    <div style="display:flex;align-items:center;gap:9px">
+      <img src="fotos/logo.png" alt="Sobre la Roca" style="width:26px;height:26px;object-fit:contain" />
+      <div>
+        <div style="font-family:var(--font-heading);font-size:16px;line-height:1;color:var(--color-text)">Sobre la Roca</div>
+        <div style="font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-accent-700)">Constructora Inmobiliaria</div>
+      </div>
+    </div>
+    <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Cotización de financiamiento</div>
+  </div>
+
+  <div slot="footer" style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--color-neutral-300);font-family:var(--font-body);font-size:9.5px;color:var(--color-neutral-600)">
+    <span>Sobre la Roca · Quetzaltenango, Guatemala</span>
+    <span>{{ pieValidez }}</span>
+  </div>
+
+  <div style="font-family:var(--font-body);color:var(--color-text);display:flex;flex-direction:column;gap:22px">
+
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:10px;letter-spacing:0.24em;text-transform:uppercase;color:var(--color-accent-700)">{{ proyecto }}</div>
+      <h1 style="font-family:var(--font-heading);font-weight:600;font-size:40px;line-height:1.02;margin:0">{{ propiedad }}</h1>
+      <div style="font-size:13px;color:var(--color-neutral-700)">Plan de pago con financiamiento propio · {{ tipoTexto }} · {{ plazoTexto }}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--color-neutral-300)">
+      <div style="padding:14px 12px;border-right:1px solid var(--color-neutral-300)">
+        <div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Precio de venta</div>
+        <div style="font-family:var(--font-heading);font-size:26px;line-height:1.1">{{ precioTexto }}</div>
+      </div>
+      <div style="padding:14px 12px;border-right:1px solid var(--color-neutral-300)">
+        <div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Enganche {{ engPctTexto }}</div>
+        <div style="font-family:var(--font-heading);font-size:26px;line-height:1.1">{{ engancheTexto }}</div>
+      </div>
+      <div style="padding:14px 12px;border-right:1px solid var(--color-neutral-300)">
+        <div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">A financiar</div>
+        <div style="font-family:var(--font-heading);font-size:26px;line-height:1.1">{{ financiadoTexto }}</div>
+      </div>
+      <div style="padding:14px 12px;background:var(--color-accent-700);color:var(--color-neutral-100)">
+        <div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;opacity:0.75">{{ etiquetaCuota }}</div>
+        <div style="font-family:var(--font-heading);font-size:26px;line-height:1.1">{{ cuotaTexto }}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px">
+      <div><div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Tasa anual</div><div style="font-size:15px">{{ tasaTexto }}</div></div>
+      <div><div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Plazo</div><div style="font-size:15px">{{ plazoDetalle }}</div></div>
+      <div><div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Asesor</div><div style="font-size:15px">{{ vendedor }}</div></div>
+      <div><div style="font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600)">Preparada para</div><div style="font-size:15px">{{ clienteTexto }}</div></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
+        <h2 style="font-family:var(--font-heading);font-weight:600;font-size:24px;margin:0">Plan de pago · primeros 24 meses</h2>
+        <span style="font-size:11px;color:var(--color-neutral-600)">{{ notaPlazo }}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+        <thead>
+          <tr style="background:var(--color-neutral-200)">
+            <th style="text-align:left;padding:7px 8px;font-family:var(--font-heading);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--color-neutral-300)">Mes</th>
+            <th style="text-align:right;padding:7px 8px;font-family:var(--font-heading);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--color-neutral-300)">Cuota</th>
+            <th style="text-align:right;padding:7px 8px;font-family:var(--font-heading);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--color-neutral-300)">Interés</th>
+            <th style="text-align:right;padding:7px 8px;font-family:var(--font-heading);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--color-neutral-300)">Capital</th>
+            <th style="text-align:right;padding:7px 8px;font-family:var(--font-heading);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--color-neutral-300)">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ filas }}" as="f" hint-placeholder-count="24">
+            <tr>
+              <td style="padding:6px 8px;border-bottom:1px solid var(--color-neutral-200)">{{ f.mes }}</td>
+              <td style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--color-neutral-200)">{{ f.cuota }}</td>
+              <td style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--color-neutral-200);color:var(--color-neutral-700)">{{ f.interes }}</td>
+              <td style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--color-neutral-200);color:var(--color-neutral-700)">{{ f.capital }}</td>
+              <td style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--color-neutral-200)">{{ f.saldo }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:24px;break-inside:avoid">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <h2 style="font-family:var(--font-heading);font-weight:600;font-size:20px;margin:0">Condiciones</h2>
+        <ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.65;color:var(--color-neutral-700)">
+          <li>Financiamiento directo con Sobre la Roca.</li>
+          <li>{{ condicionMora }}</li>
+          <li>Abonos a capital en cualquier momento, sin penalización: acortan el plazo del crédito.</li>
+          <li>El enganche puede pagarse en cuotas antes de la firma de escritura.</li>
+          <li>Cotización informativa; sujeta a disponibilidad de la propiedad y a verificación de ingresos.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+</doc-page>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  q(n) { return 'Q' + Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  pct(n) { return Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'; }
+
+  datos() {
+    const base = { propiedad: 'Casa 2 · La Esperanza', proyecto: 'La Esperanza, Quetzaltenango',
+      precio: 485000, enganche: 75000, tasa: 12, anios: 25, tipo: 'nivelada', vendedor: 'Andrea Sac' };
+    try {
+      const raw = localStorage.getItem('sr_cotizacion');
+      if (raw) return Object.assign(base, JSON.parse(raw));
+    } catch (e) {}
+    return base;
+  }
+
+  renderVals() {
+    const d = this.datos();
+    const P = Math.max(0, d.precio - d.enganche);
+    const n = Math.max(1, Math.round(d.anios * 12));
+    const i = d.tasa / 100 / 12;
+    const nivelada = d.tipo !== 'saldos';
+    const capitalFijo = P / n;
+    const cuotaFija = i > 0 ? (P * i) / (1 - Math.pow(1 + i, -n)) : P / n;
+    const efectiva = (Math.pow(1 + i, 12) - 1) * 100;
+
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const hoy = new Date();
+    const filas = [];
+    let saldo = P, totalPlan = 0, pagado24 = 0, saldo24 = P;
+    for (let m = 1; m <= n; m++) {
+      const interes = saldo * i;
+      const cuota = nivelada ? cuotaFija : capitalFijo + interes;
+      const capital = cuota - interes;
+      saldo = Math.max(0, saldo - capital);
+      totalPlan += cuota;
+      if (m <= 24) {
+        pagado24 += cuota;
+        saldo24 = saldo;
+        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + m, 1);
+        filas.push({
+          mes: String(m).padStart(2, '0') + ' · ' + meses[fecha.getMonth()] + ' ' + String(fecha.getFullYear()).slice(2),
+          cuota: this.q(cuota), interes: this.q(interes), capital: this.q(capital), saldo: this.q(saldo)
+        });
+      }
+    }
+
+    const validez = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 15);
+
+    return {
+      propiedad: d.propiedad,
+      proyecto: d.proyecto,
+      vendedor: d.vendedor,
+      clienteTexto: d.cliente ? (d.cliente + (d.whatsapp ? ' · ' + d.whatsapp : '')) : '—',
+      tipoTexto: nivelada ? 'cuota nivelada' : 'sobre saldos (decreciente)',
+      condicionMora: 'Día de pago fijo cada mes, con ' + (d.diasGracia == null ? 3 : d.diasGracia) +
+        ' días de gracia; pasada esa fecha se aplica mora de ' + this.q(d.moraDiaria == null ? 100 : d.moraDiaria) + ' por día.' +
+        (Number(d.luz) > 0 ? ' Luz mensual de ' + this.q(d.luz) + ', aparte de la cuota.' : ''),
+      plazoTexto: d.anios + ' años',
+      plazoDetalle: n + ' meses (' + d.anios + ' años)',
+      tasaTexto: this.pct(d.tasa),
+      precioTexto: this.q(d.precio),
+      engancheTexto: this.q(d.enganche),
+      engPctTexto: this.pct((d.enganche / Math.max(1, d.precio)) * 100),
+      financiadoTexto: this.q(P),
+      etiquetaCuota: nivelada ? 'Cuota mensual' : 'Primera cuota',
+      cuotaTexto: this.q(nivelada ? cuotaFija : capitalFijo + P * i),
+      notaPlazo: n > 24 ? 'El plan continúa hasta el mes ' + n : 'Plan completo',
+      filas,
+      interesesTexto: this.q(totalPlan - P),
+      totalTexto: this.q(totalPlan + d.enganche),
+      pagado24: this.q(pagado24),
+      saldo24: this.q(saldo24),
+      pieValidez: 'Cotización válida hasta el ' + validez.getDate() + ' ' + meses[validez.getMonth()] + ' ' + validez.getFullYear()
+    };
+  }
+}
+</script>
+</body>
+</html>

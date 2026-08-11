@@ -3,8 +3,6 @@ import './movil.css';
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
@@ -941,7 +939,7 @@ function Login({ onIngreso }) {
     onIngreso(data.session);
   };
 
-  // Equipo por código (asesores internos/externos, 4 dígitos). La validación
+  // Equipo por código (asesores internos/externos, 8 dígitos). La validación
   // del código y el límite de intentos viven en la Edge Function
   // validar-codigo-acceso, no aquí — este handler solo completa el login una
   // vez que el servidor confirma que el código es válido y está activo.
@@ -952,12 +950,7 @@ function Login({ onIngreso }) {
     try {
       const codigoLimpio = codigoAsesor.trim();
       const { email: emailAsesor } = await llamarFuncionPublica("validar-codigo-acceso", { codigo: codigoLimpio });
-      // La contraseña real de la cuenta NO es el código tal cual: Supabase Auth
-      // exige mínimo 6 caracteres y el código de asesor es de 4 dígitos. Se usa
-      // el mismo relleno fijo que aplica gestionar-asesores al crear/regenerar
-      // la cuenta (ver passwordDesdeCodigoAsesor allá) — el asesor solo necesita
-      // memorizar el código de 4 dígitos, este relleno es invisible para él.
-      const { data, error } = await supabase.auth.signInWithPassword({ email: emailAsesor, password: `slr-${codigoLimpio}` });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: emailAsesor, password: codigoLimpio });
       if (error) { setError("Código incorrecto."); return; }
       onIngreso(data.session);
     } catch (err) {
@@ -1013,13 +1006,13 @@ function Login({ onIngreso }) {
           <form onSubmit={ingresarAsesor} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu código de asesor</span>
-              <input type="text" inputMode="numeric" maxLength={4} placeholder="Ej. 4821" required value={codigoAsesor} onChange={(e) => setCodigoAsesor(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
+              <input type="text" inputMode="numeric" maxLength={8} placeholder="Ej. 48213907" required value={codigoAsesor} onChange={(e) => setCodigoAsesor(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
             </label>
             {error && <div className="text-xs text-red-400">{error}</div>}
-            <button type="submit" disabled={cargando || codigoAsesor.length !== 4} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
+            <button type="submit" disabled={cargando || codigoAsesor.length !== 8} className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2.5 rounded-md">
               {cargando ? "Entrando..." : "Iniciar sesión"}
             </button>
-            <p className="text-[11px] text-[#8A93A3] text-center">Código de 4 dígitos que te dio la inmobiliaria.</p>
+            <p className="text-[11px] text-[#8A93A3] text-center">Código de 8 dígitos que te dio la inmobiliaria.</p>
           </form>
         )}
       </div>
@@ -1223,7 +1216,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   }, []);
 
   if (seleccionada) {
-    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} puedeVerMinimo={puedeVerMinimo} asesor={usuario} onVolver={() => setSeleccionada(null)} />;
+    return <CotizadorAsesor propiedad={seleccionada} puedeEnviar={puedeEnviar} onVolver={() => setSeleccionada(null)} />;
   }
 
   return (
@@ -1260,7 +1253,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                 {p.fotoPortada ? <img src={p.fotoPortada} alt={p.nombre} className="w-full h-full object-cover" /> : <Building2 size={28} className="text-[#3a4864]" />}
               </div>
               <div className="p-3">
-                <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
+                <div className="text-sm font-medium">{p.nombre}</div>
                 <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
                 {puedeVerLista && p.precio != null && (
                   <div className="text-[#C9A227] font-serif text-lg">{fmt(p.precio)}</div>
@@ -1269,12 +1262,6 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                   <div className="text-[11px] text-[#8A93A3]">Mínimo: {fmt(p.condiciones.precio_minimo)}</div>
                 )}
                 {p.precio == null && <div className="text-[11px] text-[#8A93A3]">Precio pendiente de cargar</div>}
-                {(p.aplica_luz || p.aplica_mantenimiento) && (
-                  <div className="flex gap-1 mt-1">
-                    {p.aplica_luz && <span className="text-[9px] bg-[#0C121C] border border-[#2A3547] rounded-full px-1.5 py-0.5 text-[#8A93A3]">+ Luz</span>}
-                    {p.aplica_mantenimiento && <span className="text-[9px] bg-[#0C121C] border border-[#2A3547] rounded-full px-1.5 py-0.5 text-[#8A93A3]">+ Mantenimiento</span>}
-                  </div>
-                )}
               </div>
             </button>
           ))}
@@ -1284,189 +1271,11 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   );
 }
 
-// Nombre sugerido del PDF que arma el navegador al "Imprimir → Guardar como
-// PDF" (usa document.title). Sin acentos/espacios/símbolos raros para que se
-// vea bien como nombre de archivo en cualquier sistema operativo.
-function limpiarNombreArchivo(txt) {
-  const sinAcentos = String(txt || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  return sinAcentos.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "cotizacion";
-}
-
-// El logo es decorativo en el PDF — si por lo que sea no se puede leer (sin
-// conexión, bloqueo de red, etc.) el PDF se genera igual, solo sin el logo.
-async function cargarImagenDataUrl(url) {
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return await new Promise((resolve, reject) => {
-      const lector = new FileReader();
-      lector.onload = () => resolve(lector.result);
-      lector.onerror = () => reject(new Error("No se pudo leer la imagen"));
-      lector.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-}
-
-// Arma el PDF real de la cotización con jsPDF + jspdf-autotable — no depende
-// del diálogo "Imprimir" del navegador (que a veces agrega su propio
-// encabezado/pie con la URL de la página, ver conversación con Carlos). Con
-// esto el asesor obtiene un archivo .pdf de verdad, que se puede adjuntar en
-// WhatsApp. El pie de página (asesor + link de ventas) se repite en cada
-// hoja, vía el hook didDrawPage de autoTable.
-async function construirPdfCotizacion(d) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const xIzq = 14;
-  const xDer = 196;
-  const anchoUtil = xDer - xIzq;
-
-  const logoDataUrl = await cargarImagenDataUrl(logoEmblema);
-
-  const dibujarPiePagina = () => {
-    const alto = doc.internal.pageSize.getHeight();
-    doc.setDrawColor(210, 210, 210);
-    doc.setLineWidth(0.2);
-    doc.line(xIzq, alto - 14, xDer, alto - 14);
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(110, 110, 110);
-    doc.text(`Tu asesor: ${d.asesorNombre}${d.asesorTelefono ? ` · ${d.asesorTelefono}` : ""}`, xIzq, alto - 9);
-    doc.setTextColor(201, 162, 39);
-    doc.text(d.linkVentas, xDer, alto - 9, { align: "right" });
-  };
-
-  let y = 16;
-  if (logoDataUrl) {
-    try { doc.addImage(logoDataUrl, "PNG", xIzq, 10, 12, 12); } catch {}
-  }
-  const xTitulo = logoDataUrl ? xIzq + 15 : xIzq;
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(15);
-  doc.setTextColor(16, 24, 38);
-  doc.text("Sobre la Roca", xTitulo, y);
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(130, 130, 130);
-  doc.text("COTIZACIÓN DE FINANCIAMIENTO", xTitulo, y + 4.5);
-
-  doc.setDrawColor(201, 162, 39);
-  doc.setLineWidth(0.6);
-  doc.line(xIzq, 24, xDer, 24);
-
-  y = 31;
-  const filaInfo = (izqLbl, izqVal, derLbl, derVal) => {
-    doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
-    doc.text(izqLbl, xIzq, y);
-    doc.text(derLbl, xIzq + anchoUtil / 2, y);
-    doc.setFont(undefined, "normal"); doc.setTextColor(20, 20, 20);
-    doc.text(izqVal, xIzq + 22, y);
-    doc.text(derVal, xIzq + anchoUtil / 2 + 22, y);
-    y += 6;
-  };
-  filaInfo("Propiedad:", d.propiedadNombre, "Fecha:", d.fecha);
-  filaInfo("Cliente:", d.cliente || "—", "Sistema:", d.sistemaTexto);
-  filaInfo("Precio:", d.precioTexto, "Enganche:", d.engancheTexto);
-  filaInfo("Tasa:", d.tasaTexto, "Plazo:", d.plazoTexto);
-
-  y += 2;
-  doc.setDrawColor(201, 162, 39);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(xIzq, y, anchoUtil, 16, 1, 1);
-  doc.setFont(undefined, "normal"); doc.setFontSize(7); doc.setTextColor(130, 130, 130);
-  doc.text(d.cuotaEtiqueta, xIzq + 4, y + 6);
-  doc.text("MONTO A FINANCIAR", xDer - 4, y + 6, { align: "right" });
-  doc.setFont(undefined, "bold"); doc.setFontSize(13); doc.setTextColor(16, 24, 38);
-  doc.text(d.cuotaTexto, xIzq + 4, y + 13);
-  doc.text(d.montoFinanciarTexto, xDer - 4, y + 13, { align: "right" });
-  y += 20;
-
-  if (d.tieneCargosAdicionales) {
-    const altoCaja = d.aplicaLuz && d.aplicaMantenimiento ? 22 : 18;
-    doc.setDrawColor(16, 24, 38);
-    doc.setLineWidth(0.5);
-    doc.rect(xIzq, y, anchoUtil, altoCaja);
-    let yCargo = y + 5;
-    doc.setFont(undefined, "normal"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-    if (d.aplicaLuz) { doc.text(`Luz mensual: ${d.luzTexto}`, xIzq + 4, yCargo); yCargo += 5; }
-    if (d.aplicaMantenimiento) { doc.text(`Mantenimiento mensual: ${d.mantenimientoTexto}`, xIzq + 4, yCargo); yCargo += 5; }
-    doc.setDrawColor(210, 210, 210);
-    doc.line(xIzq + 3, y + altoCaja - 6, xDer - 3, y + altoCaja - 6);
-    doc.setFont(undefined, "bold"); doc.setFontSize(9);
-    doc.text(`TOTAL MENSUAL (${d.componentesTotalMensual.toUpperCase()})`, xIzq + 4, y + altoCaja - 1.5);
-    doc.text(d.totalMensualTexto, xDer - 4, y + altoCaja - 1.5, { align: "right" });
-    y += altoCaja + 6;
-  }
-
-  doc.setFont(undefined, "bold"); doc.setFontSize(10); doc.setTextColor(16, 24, 38);
-  doc.text(`Tabla de cuotas${d.notaTablaParcial ? ` (${d.notaTablaParcial})` : ""}`, xIzq, y);
-  y += 3;
-
-  autoTable(doc, {
-    startY: y,
-    head: [["#", "Fecha", "Capital", "Interés", "Cuota", "Saldo"]],
-    body: d.filasTabla,
-    theme: "striped",
-    styles: { fontSize: 7.5, cellPadding: 1.3, textColor: [30, 30, 30] },
-    headStyles: { fillColor: [16, 24, 38], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" },
-    },
-    margin: { left: xIzq, right: 14, bottom: 20 },
-    didDrawPage: dibujarPiePagina,
-  });
-
-  const alturaPagina = doc.internal.pageSize.getHeight();
-  let yFinal = (doc.lastAutoTable?.finalY || y) + 6;
-  let nuevaPagina = false;
-  if (yFinal > alturaPagina - 28) { doc.addPage(); yFinal = 20; nuevaPagina = true; }
-
-  doc.setFont(undefined, "normal"); doc.setFontSize(7.5); doc.setTextColor(110, 110, 110);
-  doc.text(doc.splitTextToSize(d.disclaimerTexto, anchoUtil), xIzq, yFinal);
-  if (nuevaPagina) dibujarPiePagina();
-
-  return doc;
-}
-
 // Cotizador integrado del asesor: mismo cálculo y formato que public/cotizador.html
 // (esa página sigue siendo la referencia), pero precargado desde la propiedad
 // elegida y sin campos de mora/luz editables — el catálogo de venta no tiene
 // esos datos por propiedad, así que se usa el default de la inmobiliaria.
-//
-// Reglas de rango pedidas por Carlos (2026-08-12): precio y tasa tienen
-// mínimo Y máximo (los fija el administrador en "Condiciones privadas de
-// venta"); el enganche solo tiene mínimo (financiamiento_enganche_desde); los
-// años de crédito quedan libres, sin rango, a propósito. Fuera de rango no se
-// deja enviar ni imprimir. El precio mínimo/máximo solo se le muestra en
-// números al asesor que ya tiene permiso de ver el precio mínimo de
-// negociación (puedeVerMinimo) — a los demás se les avisa sin revelar la
-// cifra, igual que ya se hacía en la lista de propiedades.
-//
-// (2026-08-13) La vista previa en pantalla no desglosa intereses, pero la
-// tabla de cuotas que se imprime/guarda como PDF sí muestra capital e interés
-// por cuota (pedido explícito). Si la propiedad tiene luz y/o mantenimiento
-// como cargo aparte (propiedad.aplica_luz / aplica_mantenimiento, los fija el
-// administrador), el encabezado de la cotización — en pantalla, PDF y
-// WhatsApp — muestra esos montos y un total mensual que los suma a la cuota.
-const LINK_SITIO_VENTAS = "https://sobrelaroca-ventas.vercel.app";
-
-// sobrelaroca-ventas (index.html) usa ruteo por hash con dos rutas
-// equivalentes a la misma ficha de propiedad:
-//   #/propiedad/<uuid>   — siempre funciona, es propiedades_venta.id
-//   #/casa/<codigo>      — más corta y legible (ej. #/casa/4), busca por
-//                          propiedades_venta.codigo; agregada 2026-08-15
-//                          específicamente para que el link que se manda
-//                          por WhatsApp se vea más corto/bonito que el uuid.
-// Si la propiedad no tiene código asignado, cae al link largo con el uuid
-// (siempre funciona, solo no se ve tan corto).
-function linkPropiedadVenta(propiedad) {
-  const codigo = propiedad.codigo ? String(propiedad.codigo).trim() : "";
-  return codigo ? `${LINK_SITIO_VENTAS}/#/casa/${encodeURIComponent(codigo)}` : `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
-}
-
-function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {
+function CotizadorAsesor({ propiedad, puedeEnviar, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -1475,14 +1284,6 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [tasaAnual, setTasaAnual] = useState(cond.financiamiento_tasa_anual ?? "");
   const [anios, setAnios] = useState(propiedad.financiamiento_plazo_max_anios ?? "");
   const [sistema, setSistema] = useState("nivelada");
-  const [generandoPdf, setGenerandoPdf] = useState(false);
-  const [errorPdf, setErrorPdf] = useState("");
-
-  const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
-  const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
-  const engancheMin = propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null;
-  const tasaMin = cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null;
-  const tasaMax = cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null;
 
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
@@ -1490,40 +1291,14 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const meses = Math.max(1, Math.round((Number(anios) || 0) * 12));
   const principal = Math.max(0, precioNum - engancheNum);
 
-  const precioFueraDeRango = precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
-  const engancheFueraDeRango = engancheMin != null && engancheNum < engancheMin;
-  const tasaFueraDeRango = tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
-  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
-
-  const precioHint = (precioMin != null || precioMax != null)
-    ? (puedeVerMinimo
-        ? `Permitido: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
-        : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
-    : null;
-  const engancheHint = engancheMin != null ? `Mínimo: ${fmt(engancheMin)}` : null;
-  const tasaHint = (tasaMin != null || tasaMax != null)
-    ? `Permitido: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
-    : null;
-
   const esSaldos = sistema === "saldos";
   const cuota = anios ? (esSaldos ? principal / meses + principal * (tasaNum / 100 / 12) : pagoMensual(principal, tasaNum, meses)) : 0;
-
-  // Cargos mensuales aparte de la cuota de crédito (luz, mantenimiento) — los
-  // fija el administrador por propiedad. El gran total es lo que el cliente
-  // realmente paga cada mes, no solo la cuota del crédito.
-  const aplicaLuz = !!propiedad.aplica_luz;
-  const aplicaMantenimiento = !!propiedad.aplica_mantenimiento;
-  const montoLuz = aplicaLuz ? Number(propiedad.monto_luz_mensual) || 0 : 0;
-  const montoMantenimiento = aplicaMantenimiento ? Number(propiedad.monto_mantenimiento_mensual) || 0 : 0;
-  const tieneCargosAdicionales = aplicaLuz || aplicaMantenimiento;
-  const totalMensual = cuota + montoLuz + montoMantenimiento;
-  // Solo menciona los cargos que de verdad aplican a ESTA propiedad — si no
-  // cobra mantenimiento (como Casa 4 de La Esperanza), la etiqueta no debe
-  // decir "+ mantenimiento" aunque el total en sí ya no lo incluya.
-  const componentesTotalMensual = ["cuota", aplicaLuz && "luz", aplicaMantenimiento && "mantenimiento"].filter(Boolean).join(" + ");
+  const totalPagado = esSaldos
+    ? principal + principal * (tasaNum / 100 / 12) * ((meses + 1) / 2)
+    : cuota * meses;
+  const intereses = Math.max(0, totalPagado - principal);
 
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
-  const listoParaEnviar = datosCompletos && !fueraDeRango;
 
   const telLimpio = whatsapp.replace(/\D/g, "");
   const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
@@ -1533,99 +1308,12 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     `\nPrecio: ${fmt(precioNum)}` +
     `\nEnganche: ${fmt(engancheNum)}` +
     `\n${esSaldos ? "Primera cuota" : "Cuota mensual"}: ${fmt(cuota)}` +
-    (aplicaLuz ? `\nLuz mensual: ${fmt(montoLuz)}` : "") +
-    (aplicaMantenimiento ? `\nMantenimiento mensual: ${fmt(montoMantenimiento)}` : "") +
-    (tieneCargosAdicionales ? `\nTotal mensual: ${fmt(totalMensual)}` : "") +
     `\nPlazo: ${meses} meses` +
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
-    `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
-    `\n\nAquí puedes ver tu propiedad: ${linkPropiedadVenta(propiedad)}` +
-    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "");
+    `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}`;
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
   const hoy = new Date().toISOString().slice(0, 10);
-
-  // El nombre de archivo que sugiere "Imprimir → Guardar como PDF" lo toma el
-  // navegador de document.title. Se restaura el título original al salir de
-  // esta pantalla, para no dejarlo pegado en el resto de la app.
-  useEffect(() => {
-    const tituloOriginal = document.title;
-    if (datosCompletos) {
-      const idPropiedad = propiedad.codigo || propiedad.nombre;
-      const sufijoCliente = cliente ? `-${limpiarNombreArchivo(cliente)}` : "";
-      document.title = `Cotizacion-${limpiarNombreArchivo(idPropiedad)}${sufijoCliente}`;
-    }
-    return () => { document.title = tituloOriginal; };
-  }, [datosCompletos, propiedad.codigo, propiedad.nombre, cliente]);
-
-  // Tabla de cuotas para la impresión/PDF: al menos 2 años (24 meses), o el
-  // plazo completo si es más corto que eso. Sí incluye capital e interés por
-  // cuota (pedido explícito) — la vista previa en pantalla, antes de
-  // imprimir, se mantiene simple y no repite ese desglose.
-  const mesesTabla = Math.min(meses, 24);
-  const tabla = datosCompletos
-    ? generarTabla({ precio: precioNum, enganche: engancheNum, tasaAnual: tasaNum, plazoAnios: Number(anios) || 0, fechaInicio: hoy, sistemaAmortizacion: sistema }).slice(0, mesesTabla)
-    : [];
-
-  const nombreArchivoPdf = () => {
-    const idPropiedad = propiedad.codigo || propiedad.nombre;
-    const sufijoCliente = cliente ? `-${limpiarNombreArchivo(cliente)}` : "";
-    return `Cotizacion-${limpiarNombreArchivo(idPropiedad)}${sufijoCliente}.pdf`;
-  };
-
-  // Junta todo lo que necesita construirPdfCotizacion, ya formateado — así esa
-  // función solo dibuja, sin tener que conocer el estado de este componente.
-  const armarDatosPdf = () => ({
-    propiedadNombre: propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
-    fecha: fmtDate(hoy),
-    cliente,
-    sistemaTexto: esSaldos ? "Sobre saldos" : "Cuota nivelada",
-    precioTexto: fmt(precioNum),
-    engancheTexto: fmt(engancheNum),
-    tasaTexto: `${fmtNum(tasaNum)}% anual`,
-    plazoTexto: `${meses} meses`,
-    cuotaEtiqueta: esSaldos ? "PRIMERA CUOTA" : "CUOTA MENSUAL",
-    cuotaTexto: fmt(cuota),
-    montoFinanciarTexto: fmt(principal),
-    tieneCargosAdicionales,
-    aplicaLuz,
-    aplicaMantenimiento,
-    luzTexto: fmt(montoLuz),
-    mantenimientoTexto: fmt(montoMantenimiento),
-    componentesTotalMensual,
-    totalMensualTexto: fmt(totalMensual),
-    notaTablaParcial: meses > mesesTabla ? `primeros ${mesesTabla} meses de ${meses}` : "",
-    filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
-    disclaimerTexto:
-      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.` +
-      (meses > mesesTabla ? ` La tabla completa tiene ${meses} cuotas — arriba se muestra una muestra de los primeros ${mesesTabla} meses; pide la tabla completa a la inmobiliaria.` : ""),
-    asesorNombre: asesor?.nombre || "—",
-    asesorTelefono: asesor?.telefono || "",
-    linkVentas: LINK_SITIO_VENTAS.replace("https://", ""),
-  });
-
-  const descargarPdf = async () => {
-    setErrorPdf("");
-    setGenerandoPdf(true);
-    try {
-      const doc = await construirPdfCotizacion(armarDatosPdf());
-      doc.save(nombreArchivoPdf());
-    } catch (e) {
-      setErrorPdf("No se pudo generar el PDF: " + e.message);
-    } finally {
-      setGenerandoPdf(false);
-    }
-  };
-
-  // Vuelta a lo básico (pedido explícito de Carlos, 2026-08-15): "Enviar por
-  // WhatsApp" solo abre el chat con el mensaje de texto de siempre — nada de
-  // PDF adjunto ni panel de compartir. El texto ya trae toda la información
-  // de la propiedad y ahora también el link directo a esa casa en el sitio
-  // de ventas (ver linkPropiedadVenta). "Descargar PDF" se deja aparte, como
-  // botón independiente, por si alguna vez se necesita a mano.
-  const enviarPorWhatsApp = () => {
-    window.open(urlWhatsapp, "_blank", "noopener");
-  };
 
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
@@ -1634,7 +1322,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
           <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
           <div>
             <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Cotizador</div>
-            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}{propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}</div>
+            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}</div>
           </div>
         </div>
 
@@ -1644,14 +1332,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             <Campo label="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5555 5555" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
-            <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} hint={engancheHint} invalid={engancheFueraDeRango} />
+            <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} />
+            <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={tasaAnual} onChange={(e) => setTasaAnual(e.target.value)} />
-              {tasaHint && <p className={`text-[10px] mt-1 ${tasaFueraDeRango ? "text-red-400" : "text-[#6b7280]"}`}>{tasaHint}</p>}
-            </div>
+            <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={tasaAnual} onChange={(e) => setTasaAnual(e.target.value)} />
             <Campo label="Años de crédito" type="number" min="1" step="1" value={anios} onChange={(e) => setAnios(e.target.value)} />
           </div>
 
@@ -1664,7 +1349,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
           </div>
 
           {datosCompletos && (
-            <div className={`border rounded-lg p-4 space-y-3 ${fueraDeRango ? "border-red-500" : "border-[#C9A227]"}`}>
+            <div className="border border-[#C9A227] rounded-lg p-4 space-y-3">
               <div className="flex justify-between items-end">
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{esSaldos ? "Primera cuota" : "Cuota mensual"}</div>
@@ -1678,39 +1363,20 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <div className="border-t border-[#2A3547] pt-3 space-y-1.5 text-xs">
                 <div className="flex justify-between"><span>Precio de venta</span><span className="font-mono">{fmt(precioNum)}</span></div>
                 <div className="flex justify-between"><span>− Enganche</span><span className="font-mono">{fmt(engancheNum)}</span></div>
-                <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
+                <div className="flex justify-between"><span>= Monto a financiar</span><span className="font-mono">{fmt(principal)}</span></div>
+                <div className="flex justify-between"><span>+ Intereses del plan</span><span className="font-mono">{fmt(intereses)}</span></div>
+                <div className="flex justify-between font-medium border-t border-[#2A3547] pt-1.5"><span>= Total a pagar</span><span className="font-mono">{fmt(principal + intereses)}</span></div>
               </div>
-              {tieneCargosAdicionales && (
-                <div className="border-t border-[#2A3547] pt-3 space-y-1.5 text-xs">
-                  {aplicaLuz && <div className="flex justify-between"><span>Luz mensual</span><span className="font-mono">{fmt(montoLuz)}</span></div>}
-                  {aplicaMantenimiento && <div className="flex justify-between"><span>Mantenimiento mensual</span><span className="font-mono">{fmt(montoMantenimiento)}</span></div>}
-                  <div className="flex justify-between font-medium text-[#C9A227] border-t border-[#2A3547] pt-1.5"><span>= Total mensual</span><span className="font-mono">{fmt(totalMensual)}</span></div>
-                </div>
-              )}
               <div className="text-[11px] text-[#8A93A3]">
                 Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
               </div>
-              {fueraDeRango && (
-                <div className="text-[11px] text-red-400 border-t border-red-900 pt-2">
-                  Hay valores fuera del rango permitido para esta propiedad — ajústalos arriba para poder enviar o imprimir.
-                </div>
-              )}
             </div>
           )}
 
-          {puedeEnviar && listoParaEnviar && (
+          {puedeEnviar && datosCompletos && (
             <div className="space-y-2">
-              <button type="button" onClick={enviarPorWhatsApp} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">
-                Enviar por WhatsApp
-              </button>
-              <button type="button" disabled={generandoPdf} onClick={descargarPdf} className="w-full border border-[#2A3547] text-[#EDE7D9] disabled:opacity-40 py-3 rounded-md text-sm">
-                {generandoPdf ? "Preparando PDF..." : "Descargar PDF"}
-              </button>
-              <button type="button" onClick={() => window.print()} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
-              {errorPdf && <div className="text-[11px] text-red-400 text-center">{errorPdf}</div>}
-              <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
-                "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre, con toda la información de la propiedad y el link para ver esa casa en el sitio de ventas. "Descargar PDF" genera aparte un PDF con la tabla de pagos completa, por si lo necesitas adjuntar a mano. Si usas "Imprimir directamente", recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
-              </p>
+              <button type="button" onClick={() => window.open(urlWhatsapp, "_blank", "noopener")} className="w-full bg-[#C9A227] text-[#101826] font-medium py-3 rounded-md text-sm">Enviar por WhatsApp</button>
+              <button type="button" onClick={() => window.print()} className="w-full border border-[#2A3547] text-[#EDE7D9] py-3 rounded-md text-sm">Imprimir o guardar PDF</button>
             </div>
           )}
           {!puedeEnviar && (
@@ -1729,7 +1395,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
-            <div><b>Propiedad:</b> {propiedad.nombre}{propiedad.codigo ? ` (#${propiedad.codigo})` : ""}</div>
+            <div><b>Propiedad:</b> {propiedad.nombre}</div>
             <div><b>Fecha:</b> {fmtDate(hoy)}</div>
             <div><b>Cliente:</b> {cliente || "—"}</div>
             <div><b>Sistema:</b> {esSaldos ? "Sobre saldos" : "Cuota nivelada"}</div>
@@ -1748,132 +1414,12 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <div className="text-2xl">{fmt(principal)}</div>
             </div>
           </div>
-
-          {tieneCargosAdicionales && (
-            <div className="border-2 border-[#101826] p-3 mb-4">
-              <div className="grid grid-cols-2 gap-2 text-[11px] mb-2">
-                {aplicaLuz && <div><b>Luz mensual:</b> {fmt(montoLuz)}</div>}
-                {aplicaMantenimiento && <div><b>Mantenimiento mensual:</b> {fmt(montoMantenimiento)}</div>}
-              </div>
-              <div className="flex justify-between items-end border-t border-gray-300 pt-2">
-                <div className="text-[10px] uppercase font-bold text-gray-600">Total mensual ({componentesTotalMensual})</div>
-                <div className="text-xl font-bold">{fmt(totalMensual)}</div>
-              </div>
-            </div>
-          )}
-
-          <div className="text-sm font-bold mb-2">Tabla de cuotas{meses > mesesTabla ? ` (primeros ${mesesTabla} meses de ${meses})` : ""}</div>
-          <table className="w-full text-[9px] border-collapse mb-3">
-            <thead>
-              <tr className="bg-[#101826] text-white">
-                <th className="p-1 text-left">#</th>
-                <th className="p-1 text-left">Fecha</th>
-                <th className="p-1 text-right">Capital</th>
-                <th className="p-1 text-right">Interés</th>
-                <th className="p-1 text-right">Cuota</th>
-                <th className="p-1 text-right">Saldo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tabla.map((f, i) => (
-                <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
-                  <td className="p-1">{f.numero}</td>
-                  <td className="p-1">{fmtDate(f.fecha)}</td>
-                  <td className="p-1 text-right">{fmt(f.capital)}</td>
-                  <td className="p-1 text-right">{fmt(f.interes)}</td>
-                  <td className="p-1 text-right">{fmt(f.pago)}</td>
-                  <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {meses > mesesTabla && (
-            <div className="text-[9px] text-gray-500 mb-3">La tabla completa tiene {meses} cuotas — esta es una muestra de los primeros {mesesTabla} meses. Pide la tabla completa a la inmobiliaria.</div>
-          )}
-
           <div className="text-[9px] text-gray-500 leading-relaxed">
             Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
             Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
           </div>
-
-          <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center">
-            <div className="text-[10px] text-gray-700">
-              <b>Tu asesor:</b> {asesor?.nombre || "—"}{asesor?.telefono ? ` · ${asesor.telefono}` : ""}
-            </div>
-            <div className="text-[10px] text-[#C9A227]">{LINK_SITIO_VENTAS.replace("https://", "")}</div>
-          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------- Código de acceso recién generado: aviso a prueba de recargas ----------
-//
-// El modal "bonito" de PestanaUsuarios (ModalCodigoGenerado) depende de que React
-// llegue a pintar un nuevo estado en memoria — y en la práctica eso se estaba
-// perdiendo (con o sin alert() de por medio) sin que quede ningún error en
-// consola, probablemente por alguna recarga/remontaje que se lleva el estado por
-// delante antes de que se alcance a ver. En vez de seguir cazando esa causa
-// exacta, esto guarda el código en localStorage EN EL MOMENTO en que llega del
-// servidor — sobrevive cualquier recarga completa de la página — y lo muestra
-// desde un componente montado siempre arriba del todo de AppInterno (no dentro
-// de la pantalla de Equipo, que sí se desmonta al refrescar la lista). No se
-// borra hasta que la persona confirme "Ya lo anoté".
-const CLAVE_CODIGO_PENDIENTE = "slr_codigo_pendiente";
-const EVENTO_CODIGO_PENDIENTE = "slr:codigo-pendiente";
-
-function guardarCodigoPendiente(nombre, codigo) {
-  try {
-    localStorage.setItem(CLAVE_CODIGO_PENDIENTE, JSON.stringify({ nombre, codigo }));
-  } catch {}
-  // Para que un AvisoCodigoPendiente ya montado en esta misma pestaña se entere
-  // sin necesitar una recarga (el evento "storage" del navegador solo avisa a
-  // OTRAS pestañas, nunca a la que hizo el cambio).
-  window.dispatchEvent(new Event(EVENTO_CODIGO_PENDIENTE));
-}
-
-function leerCodigoPendiente() {
-  try {
-    const crudo = localStorage.getItem(CLAVE_CODIGO_PENDIENTE);
-    return crudo ? JSON.parse(crudo) : null;
-  } catch {
-    return null;
-  }
-}
-
-function AvisoCodigoPendiente() {
-  const [info, setInfo] = useState(leerCodigoPendiente);
-
-  useEffect(() => {
-    const actualizar = () => setInfo(leerCodigoPendiente());
-    window.addEventListener(EVENTO_CODIGO_PENDIENTE, actualizar);
-    // Además revisa cada vez que la pestaña vuelve a estar visible — cubre el
-    // caso de una recarga completa de la página mientras este componente ya
-    // estaba montado.
-    document.addEventListener("visibilitychange", actualizar);
-    return () => {
-      window.removeEventListener(EVENTO_CODIGO_PENDIENTE, actualizar);
-      document.removeEventListener("visibilitychange", actualizar);
-    };
-  }, []);
-
-  if (!info) return null;
-
-  const cerrar = () => {
-    try { localStorage.removeItem(CLAVE_CODIGO_PENDIENTE); } catch {}
-    setInfo(null);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-6">
-      <div className="bg-[#161F2E] border border-[#C9A227] rounded-lg p-5 w-full max-w-sm space-y-3 text-center">
-        <KeyRound size={22} className="text-[#C9A227] mx-auto" />
-        <div className="font-serif text-lg">Código para {info.nombre}</div>
-        <div className="font-mono text-3xl tracking-[0.25em] text-[#C9A227] bg-[#0C121C] border border-[#2A3547] rounded-md py-3">{info.codigo}</div>
-        <p className="text-[11px] text-[#8A93A3]">Anótalo o compártelo ahora — no se vuelve a mostrar. Si se pierde, usa "Nuevo código" para generar otro.</p>
-        <button onClick={cerrar} className="w-full bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md text-sm">Ya lo anoté</button>
-      </div>
     </div>
   );
 }
@@ -2164,7 +1710,6 @@ function AppInterno({ perfil, cerrarSesion }) {
 
   return (
     <>
-      <AvisoCodigoPendiente />
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
         <TopBar
           modo={modo}
@@ -2407,7 +1952,6 @@ function PantallaEquipo({ onVolver, esAdmin }) {
 function PestanaUsuarios({ usuarios, roles, onCreado }) {
   const [creando, setCreando] = useState(false);
   const [codigoGenerado, setCodigoGenerado] = useState(null); // { nombre, codigo } — se muestra una sola vez
-  const [editando, setEditando] = useState(null); // usuario que se está editando (nombre/teléfono)
   const [ocupado, setOcupado] = useState(null); // id del usuario con una acción en curso
 
   const cambiarActivo = async (u, activo) => {
@@ -2427,10 +1971,11 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
     setOcupado(u.id);
     try {
       const { codigo } = await llamarGestionAsesores({ accion: "regenerar_codigo", usuario_id: u.id });
-      // Guarda el código de inmediato — ver el comentario junto a
-      // guardarCodigoPendiente más arriba en el archivo: esto es lo que
-      // garantiza que se vea, sin importar qué pase después.
-      guardarCodigoPendiente(u.nombre, codigo);
+      // alert() nativo primero — ver el comentario igual de arriba, en
+      // ModalNuevoUsuario.crear(): garantiza que el código se vea sin
+      // depender de que React alcance a re-renderizar antes de que algo
+      // (una recarga, un remount) se lleve el estado por delante.
+      alert(`Nuevo código de acceso para ${u.nombre}:\n\n${codigo}\n\nAnótalo o compártelo ahora — no se vuelve a mostrar.`);
       setCodigoGenerado({ nombre: u.nombre, codigo });
       // No llamamos onCreado() (refresca la lista) aquí todavía — ver el
       // comentario en ModalCodigoGenerado más abajo: refrescar ahora
@@ -2459,13 +2004,12 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
                   {u.nombre}
                   {u.activo === false && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 uppercase tracking-wide">Desactivado</span>}
                 </div>
-                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 4 dígitos" : "Asesor externo · código de 4 dígitos") : u.email}{esAsesor && u.telefono ? ` · ${u.telefono}` : ""}</div>
+                <div className="text-xs text-[#8A93A3] truncate">{esAsesor ? (u.tipo === "asesor_interno" ? "Asesor interno · código de 8 dígitos" : "Asesor externo · código de 8 dígitos") : u.email}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] px-2 py-1 rounded-full border border-[#3a4864] text-[#8A93A3] uppercase tracking-wide">{u.roles?.nombre}</span>
                 {esAsesor && (
                   <>
-                    <button disabled={ocupado === u.id} onClick={() => setEditando(u)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Editar</button>
                     <button disabled={ocupado === u.id} onClick={() => regenerarCodigo(u)} className="text-[10px] bg-[#2A3547] px-2 py-1.5 rounded-md disabled:opacity-40">Nuevo código</button>
                     {u.activo === false ? (
                       <button disabled={ocupado === u.id} onClick={() => cambiarActivo(u, true)} className="text-[10px] bg-[#C9A227] text-[#101826] px-2 py-1.5 rounded-md disabled:opacity-40">Reactivar</button>
@@ -2514,80 +2058,11 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
           }}
         />
       )}
-      {editando && (
-        <ModalEditarAsesor
-          usuario={editando}
-          roles={roles}
-          onCancelar={() => setEditando(null)}
-          onGuardado={() => {
-            setEditando(null);
-            onCreado();
-          }}
-        />
-      )}
     </div>
   );
 }
 
-// Edita nombre, teléfono y rol de un asesor sin tocar su código de acceso.
-// El teléfono es lo que aparece en el pie de página de las cotizaciones que
-// ese asesor genere (ver CotizadorAsesor). El rol es lo que decide qué
-// propiedades ve (ver_propiedades_asignadas + el alcance configurado en
-// Equipo → Roles) — antes de 2026-08-15 esta pantalla no dejaba cambiarlo
-// una vez creada la cuenta, y era fácil terminar con un asesor real en el
-// rol genérico "Asesor externo" en vez del rol pensado para él.
-function ModalEditarAsesor({ usuario, roles, onCancelar, onGuardado }) {
-  const [nombre, setNombre] = useState(usuario.nombre || "");
-  const [telefono, setTelefono] = useState(usuario.telefono || "");
-  const [rolId, setRolId] = useState(usuario.rol_id || roles[0]?.id || "");
-  const [error, setError] = useState("");
-  const [guardando, setGuardando] = useState(false);
-
-  // Solo tiene sentido ofrecer roles de asesor aquí (no "Administrador") —
-  // esta pantalla es para editar asesores, no para volver administrador a
-  // alguien por accidente.
-  const rolesAsesor = roles.filter((r) => !r.es_administrador);
-
-  const guardar = async () => {
-    if (!nombre.trim()) { setError("El nombre no puede quedar vacío."); return; }
-    setError("");
-    setGuardando(true);
-    try {
-      await llamarGestionAsesores({ accion: "editar_asesor", usuario_id: usuario.id, nombre: nombre.trim(), telefono: telefono.trim() || null, rol_id: rolId });
-      onGuardado();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
-      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm space-y-3">
-        <div className="font-serif text-lg">Editar {usuario.nombre}</div>
-        <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-        <Campo label="Teléfono/celular (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="5555 5555" />
-        <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Rol</span>
-          <select value={rolId} onChange={(e) => setRolId(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm">
-            {rolesAsesor.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-          </select>
-          <p className="text-[11px] text-[#8A93A3] mt-1">El alcance (qué propiedades ve) se define en el rol, en la pestaña Roles.</p>
-        </label>
-        {error && <div className="text-xs text-red-400">{error}</div>}
-        <div className="flex gap-2">
-          <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
-          <button onClick={guardar} disabled={guardando} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
-            {guardando ? "Guardando..." : "Guardar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// El código de 4 dígitos solo se puede ver en este momento (justo después de
+// El código de 8 dígitos solo se puede ver en este momento (justo después de
 // generarse) — la base no lo vuelve a mostrar en ninguna pantalla. Entrégalo
 // a la persona por un canal seguro y que lo memorice o lo guarde ella misma.
 function ModalCodigoGenerado({ info, onCerrar }) {
@@ -2607,7 +2082,6 @@ function ModalCodigoGenerado({ info, onCerrar }) {
 function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
   const [tipo, setTipo] = useState("staff"); // 'staff' | 'asesor_interno' | 'asesor_externo'
   const [nombre, setNombre] = useState("");
-  const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rolId, setRolId] = useState(roles[0]?.id || "");
@@ -2622,13 +2096,14 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
     setGuardando(true);
     try {
       if (esAsesor) {
-        const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, telefono: telefono || null, tipo, rol_id: rolId });
-        // Guarda el código de inmediato, antes que cualquier otra cosa — ver
-        // el comentario junto a guardarCodigoPendiente más arriba en el
-        // archivo: esto es lo que garantiza que se vea, sin depender de que
-        // React alcance a re-renderizar antes de que algo (una recarga, un
-        // remount) se lleve el estado por delante.
-        guardarCodigoPendiente(nombre, codigo);
+        const { codigo } = await llamarGestionAsesores({ accion: "crear_asesor", nombre, tipo, rol_id: rolId });
+        // alert() nativo ANTES que cualquier otra cosa: es sincrónico y se
+        // pinta de inmediato, sin depender de que React vuelva a renderizar
+        // — así el código nunca se pierde, ni siquiera si algo (una recarga
+        // por bfcache, por ejemplo) se lleva por delante el estado justo
+        // después de esto. El modal bonito de abajo sigue existiendo como
+        // respaldo, pero este alert es el que garantiza que sí se vea.
+        alert(`Código de acceso para ${nombre}:\n\n${codigo}\n\nAnótalo o compártelo ahora — no se vuelve a mostrar. Si se pierde, usa "Nuevo código" en la lista de usuarios para generar otro.`);
         onCreado({ nombre, codigo });
       } else {
         await llamarGestionUsuarios({ accion: "crear_staff", nombre, email, password, rol_id: rolId });
@@ -2658,10 +2133,7 @@ function ModalNuevoUsuario({ roles, onCancelar, onCreado }) {
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
 
         {esAsesor ? (
-          <>
-            <Campo label="Teléfono/celular (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="5555 5555" />
-            <p className="text-[11px] text-[#8A93A3]">Se genera un código de 4 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta. El teléfono aparece en el pie de página de las cotizaciones que este asesor genere.</p>
-          </>
+          <p className="text-[11px] text-[#8A93A3]">Se genera un código de 8 dígitos en el servidor. Lo verás una sola vez al terminar de crear la cuenta.</p>
         ) : (
           <>
             <Campo label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -2720,15 +2192,6 @@ function PestanaRoles({ roles, proyectos, propiedades, proyectosVenta, propiedad
 // Checklist de proyectos/propiedades para restringir el alcance de un rol. Marcar un proyecto
 // entero cubre automáticamente todas sus propiedades; también se pueden marcar propiedades
 // sueltas de proyectos que no están completos.
-//
-// (2026-08-15) Este componente se usa SOLO para "Cartera" (cobros/cuotas/
-// clientes) — es la función original de roles/alcance, previa a los
-// asesores de paso6, y se deja igual hasta que se confirme si también hay
-// que quitarle el atajo de "proyecto completo". Para "Catálogo de venta"
-// (lo que ve el asesor en el cotizador) se usa SelectorAlcanceVenta, más
-// abajo, que ya NO tiene esa opción — pedido explícito de Carlos: un asesor
-// externo asignado a un proyecto no debe ver automáticamente todas sus
-// casas, solo las que se le asignen una por una.
 function SelectorAlcance({
   proyectos, propiedades, restringido, setRestringido, proyectosSel, setProyectosSel, propiedadesSel, setPropiedadesSel,
   titulo = "Restringir a proyectos/propiedades específicos (si no, ve todo)",
@@ -2769,59 +2232,6 @@ function SelectorAlcance({
   );
 }
 
-// Alcance del catálogo de venta (lo que ve el asesor en el cotizador).
-// Distinto de SelectorAlcance de arriba a propósito: aquí NO existe la
-// opción de marcar un proyecto completo — el proyecto solo se muestra como
-// encabezado para agrupar y encontrar más fácil sus casas en la lista, pero
-// el acceso real siempre es casa por casa (propiedadesSel /
-// roles_propiedades_venta). Así, asignar a un asesor externo al proyecto
-// "La Esperanza" ya no le da automáticamente sus 3 casas — el admin marca
-// exactamente cuáles.
-function SelectorAlcanceVenta({ proyectosVenta, propiedadesVenta, restringido, setRestringido, propiedadesSel, setPropiedadesSel }) {
-  const toggleProp = (id) => {
-    setPropiedadesSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-  const grupos = proyectosVenta
-    .map((p) => ({ proyecto: p, props: propiedadesVenta.filter((pr) => pr.proyecto_venta_id === p.id) }))
-    .filter((g) => g.props.length);
-  const sueltas = propiedadesVenta.filter((pr) => !proyectosVenta.some((p) => p.id === pr.proyecto_venta_id));
-
-  return (
-    <div className="space-y-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
-      <label className="flex items-center gap-2 text-xs cursor-pointer">
-        <input type="checkbox" checked={restringido} onChange={(e) => setRestringido(e.target.checked)} />
-        Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)
-      </label>
-      {restringido && (
-        <div className="space-y-2.5 pt-1.5 border-t border-[#2A3547] max-h-64 overflow-y-auto">
-          {grupos.map((g) => (
-            <div key={g.proyecto.id}>
-              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">{g.proyecto.nombre}</div>
-              {g.props.map((pr) => (
-                <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer pl-1">
-                  <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} />
-                  {pr.nombre}
-                </label>
-              ))}
-            </div>
-          ))}
-          {sueltas.length > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Sin proyecto</div>
-              {sueltas.map((pr) => (
-                <label key={pr.id} className="flex items-center gap-2 text-xs cursor-pointer pl-1">
-                  <input type="checkbox" checked={propiedadesSel.includes(pr.id)} onChange={() => toggleProp(pr.id)} />
-                  {pr.nombre}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVenta, onActualizado }) {
   const [editando, setEditando] = useState(false);
   const [permisos, setPermisos] = useState(rol.permisos || {});
@@ -2829,19 +2239,22 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
   const [restringidoVenta, setRestringidoVenta] = useState(rol.ambito_restringido_venta !== false);
+  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
   const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
   const usaCatalogoVenta = !!(permisos.ver_propiedades_asignadas);
 
   const empezarEdicion = async () => {
-    const [{ data: rp }, { data: rpr }, { data: rprv }] = await Promise.all([
+    const [{ data: rp }, { data: rpr }, { data: rpv }, { data: rprv }] = await Promise.all([
       supabase.from("roles_proyectos").select("proyecto_id").eq("rol_id", rol.id),
       supabase.from("roles_propiedades").select("propiedad_id").eq("rol_id", rol.id),
+      supabase.from("roles_proyectos_venta").select("proyecto_venta_id").eq("rol_id", rol.id),
       supabase.from("roles_propiedades_venta").select("propiedad_venta_id").eq("rol_id", rol.id),
     ]);
     setProyectosSel((rp || []).map((r) => r.proyecto_id));
     setPropiedadesSel((rpr || []).map((r) => r.propiedad_id));
+    setProyectosVentaSel((rpv || []).map((r) => r.proyecto_venta_id));
     setPropiedadesVentaSel((rprv || []).map((r) => r.propiedad_venta_id));
     setPermisos(rol.permisos || {});
     setRestringido(!!rol.ambito_restringido);
@@ -2858,11 +2271,11 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
       if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: rol.id, proyecto_id })));
       if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: rol.id, propiedad_id })));
     }
-    // Catálogo de venta: ya no existe "proyecto completo" (ver SelectorAlcanceVenta) — solo
-    // roles_propiedades_venta, casa por casa.
+    await supabase.from("roles_proyectos_venta").delete().eq("rol_id", rol.id);
     await supabase.from("roles_propiedades_venta").delete().eq("rol_id", rol.id);
-    if (restringidoVenta && propiedadesVentaSel.length) {
-      await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: rol.id, propiedad_venta_id })));
+    if (restringidoVenta) {
+      if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: rol.id, proyecto_venta_id })));
+      if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: rol.id, propiedad_venta_id })));
     }
     setGuardando(false);
     setEditando(false);
@@ -2915,10 +2328,14 @@ function TarjetaRol({ rol, proyectos, propiedades, proyectosVenta, propiedadesVe
           {usaCatalogoVenta && (
             <div>
               <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
-              <SelectorAlcanceVenta
-                proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
+              <SelectorAlcance
+                proyectos={proyectosVenta} propiedades={propiedadesVenta}
                 restringido={restringidoVenta} setRestringido={setRestringidoVenta}
+                proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
                 propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
+                titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
+                getEtiquetaPropiedad={(pr) => pr.nombre}
+                campoProyectoDePropiedad="proyecto_venta_id"
               />
             </div>
           )}
@@ -2943,6 +2360,7 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
   const [proyectosSel, setProyectosSel] = useState([]);
   const [propiedadesSel, setPropiedadesSel] = useState([]);
   const [restringidoVenta, setRestringidoVenta] = useState(true);
+  const [proyectosVentaSel, setProyectosVentaSel] = useState([]);
   const [propiedadesVentaSel, setPropiedadesVentaSel] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
@@ -2960,9 +2378,9 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
         if (proyectosSel.length) await supabase.from("roles_proyectos").insert(proyectosSel.map((proyecto_id) => ({ rol_id: nuevo.id, proyecto_id })));
         if (propiedadesSel.length) await supabase.from("roles_propiedades").insert(propiedadesSel.map((propiedad_id) => ({ rol_id: nuevo.id, propiedad_id })));
       }
-      // Catálogo de venta: casa por casa nada más (ver SelectorAlcanceVenta) — sin "proyecto completo".
-      if (usaCatalogoVenta && restringidoVenta && propiedadesVentaSel.length) {
-        await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: nuevo.id, propiedad_venta_id })));
+      if (usaCatalogoVenta && restringidoVenta) {
+        if (proyectosVentaSel.length) await supabase.from("roles_proyectos_venta").insert(proyectosVentaSel.map((proyecto_venta_id) => ({ rol_id: nuevo.id, proyecto_venta_id })));
+        if (propiedadesVentaSel.length) await supabase.from("roles_propiedades_venta").insert(propiedadesVentaSel.map((propiedad_venta_id) => ({ rol_id: nuevo.id, propiedad_venta_id })));
       }
     }
     setGuardando(false);
@@ -2995,10 +2413,14 @@ function ModalNuevoRol({ proyectos, propiedades, proyectosVenta, propiedadesVent
         {usaCatalogoVenta && (
           <div>
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">Catálogo de venta (lo que ve el asesor)</div>
-            <SelectorAlcanceVenta
-              proyectosVenta={proyectosVenta} propiedadesVenta={propiedadesVenta}
+            <SelectorAlcance
+              proyectos={proyectosVenta} propiedades={propiedadesVenta}
               restringido={restringidoVenta} setRestringido={setRestringidoVenta}
+              proyectosSel={proyectosVentaSel} setProyectosSel={setProyectosVentaSel}
               propiedadesSel={propiedadesVentaSel} setPropiedadesSel={setPropiedadesVentaSel}
+              titulo="Restringir a propiedades del catálogo específicas (si no, ve todo el catálogo)"
+              getEtiquetaPropiedad={(pr) => pr.nombre}
+              campoProyectoDePropiedad="proyecto_venta_id"
             />
           </div>
         )}
@@ -3283,12 +2705,10 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     (async () => {
       setCargando(true);
       const { data } = await supabase.from("propiedades_venta_condiciones").select("*").eq("propiedad_venta_id", propiedadId).maybeSingle();
-      setCond(data || { precio_minimo: "", precio_maximo: "", financiamiento_tasa_anual: "", tasa_interes_minima: "", tasa_interes_maxima: "" });
+      setCond(data || { precio_minimo: "", financiamiento_tasa_anual: "" });
       setCargando(false);
     })();
   }, [propiedadId]);
-
-  const aNumeroONull = (v) => (v === "" || v == null ? null : Number(v));
 
   const guardar = async () => {
     setGuardando(true);
@@ -3296,22 +2716,9 @@ function CondicionesVentaPrivadas({ propiedadId }) {
     setGuardado(false);
     const datos = {
       propiedad_venta_id: propiedadId,
-      precio_minimo: aNumeroONull(cond.precio_minimo),
-      precio_maximo: aNumeroONull(cond.precio_maximo),
-      financiamiento_tasa_anual: aNumeroONull(cond.financiamiento_tasa_anual),
-      tasa_interes_minima: aNumeroONull(cond.tasa_interes_minima),
-      tasa_interes_maxima: aNumeroONull(cond.tasa_interes_maxima),
+      precio_minimo: cond.precio_minimo === "" || cond.precio_minimo == null ? null : Number(cond.precio_minimo),
+      financiamiento_tasa_anual: cond.financiamiento_tasa_anual === "" || cond.financiamiento_tasa_anual == null ? null : Number(cond.financiamiento_tasa_anual),
     };
-    if (datos.precio_minimo != null && datos.precio_maximo != null && datos.precio_minimo > datos.precio_maximo) {
-      setGuardando(false);
-      setError("El precio mínimo no puede ser mayor que el máximo.");
-      return;
-    }
-    if (datos.tasa_interes_minima != null && datos.tasa_interes_maxima != null && datos.tasa_interes_minima > datos.tasa_interes_maxima) {
-      setGuardando(false);
-      setError("La tasa mínima no puede ser mayor que la máxima.");
-      return;
-    }
     const { error } = await supabase.from("propiedades_venta_condiciones").upsert(datos, { onConflict: "propiedad_venta_id" });
     setGuardando(false);
     if (error) { setError(error.message); return; }
@@ -3323,16 +2730,10 @@ function CondicionesVentaPrivadas({ propiedadId }) {
   return (
     <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
       <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1">Condiciones privadas de venta</span>
-      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público, ni siquiera si "Mostrar precio" está apagado arriba. Estos rangos son los que el cotizador del asesor no lo deja pasar.</p>
+      <p className="text-[11px] text-[#6b7280] mb-2.5">Solo las ve el equipo y los asesores autorizados — nunca el sitio web público, ni siquiera si "Mostrar precio" está apagado arriba. Precarga el cotizador del asesor.</p>
       <div className="grid grid-cols-2 gap-2">
-        <CampoMoneda label="Precio mínimo" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
-        <CampoMoneda label="Precio máximo" value={cond.precio_maximo} onChange={(n) => setCond({ ...cond, precio_maximo: n })} />
-      </div>
-      <p className="text-[11px] text-[#6b7280] mt-2.5 mb-1.5">El enganche mínimo se carga arriba, en "Enganche desde" — el cotizador no deja poner menos que eso. Los años de crédito quedan libres, sin rango.</p>
-      <div className="grid grid-cols-3 gap-2">
-        <Campo label="Tasa sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
-        <Campo label="Tasa mínima %" type="number" min="0" step="0.01" value={cond.tasa_interes_minima ?? ""} onChange={(e) => setCond({ ...cond, tasa_interes_minima: e.target.value })} />
-        <Campo label="Tasa máxima %" type="number" min="0" step="0.01" value={cond.tasa_interes_maxima ?? ""} onChange={(e) => setCond({ ...cond, tasa_interes_maxima: e.target.value })} />
+        <CampoMoneda label="Precio mínimo de negociación" value={cond.precio_minimo} onChange={(n) => setCond({ ...cond, precio_minimo: n })} />
+        <Campo label="Tasa anual sugerida %" type="number" min="0" step="0.01" value={cond.financiamiento_tasa_anual ?? ""} onChange={(e) => setCond({ ...cond, financiamiento_tasa_anual: e.target.value })} />
       </div>
       {error && <div className="text-xs text-red-400 mt-2">{error}</div>}
       <button onClick={guardar} disabled={guardando} className="mt-3 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-3 py-2 rounded-md">
@@ -3381,7 +2782,6 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
     setError("");
     const datos = {
       nombre: p.nombre,
-      codigo: p.codigo?.trim() || null,
       descripcion: p.descripcion,
       caracteristicas: p.caracteristicas || [],
       habitaciones: p.habitaciones === "" || p.habitaciones == null ? null : Number(p.habitaciones),
@@ -3394,10 +2794,6 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
       financiamiento_propio: !!p.financiamiento_propio,
       financiamiento_enganche_desde: p.financiamiento_propio ? Number(p.financiamiento_enganche_desde) || null : null,
       financiamiento_plazo_max_anios: p.financiamiento_propio ? Number(p.financiamiento_plazo_max_anios) || null : null,
-      aplica_luz: !!p.aplica_luz,
-      monto_luz_mensual: p.aplica_luz ? Number(p.monto_luz_mensual) || null : null,
-      aplica_mantenimiento: !!p.aplica_mantenimiento,
-      monto_mantenimiento_mensual: p.aplica_mantenimiento ? Number(p.monto_mantenimiento_mensual) || null : null,
       google_maps_url: p.google_maps_url || null,
       google_maps_lat: p.google_maps_lat === "" || p.google_maps_lat == null ? null : Number(p.google_maps_lat),
       google_maps_lng: p.google_maps_lng === "" || p.google_maps_lng == null ? null : Number(p.google_maps_lng),
@@ -3467,12 +2863,7 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
       </div>
 
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-2">
-          <div className="col-span-2">
-            <Campo label="Nombre" value={p.nombre || ""} onChange={(e) => set("nombre")(e.target.value)} />
-          </div>
-          <Campo label="Código (No. de casa)" value={p.codigo || ""} onChange={(e) => set("codigo")(e.target.value)} placeholder="Ej. CASA-14" />
-        </div>
+        <Campo label="Nombre" value={p.nombre || ""} onChange={(e) => set("nombre")(e.target.value)} />
         <label className="block">
           <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Descripción</span>
           <textarea value={p.descripcion || ""} onChange={(e) => set("descripcion")(e.target.value)} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm min-h-[90px]" />
@@ -3527,29 +2918,6 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
             <div className="grid grid-cols-2 gap-2 mt-3">
               <Campo label="Enganche desde (Q)" type="number" min="0" value={p.financiamiento_enganche_desde ?? ""} onChange={(e) => set("financiamiento_enganche_desde")(e.target.value)} />
               <Campo label="Plazo máx. (años)" type="number" min="0" value={p.financiamiento_plazo_max_anios ?? ""} onChange={(e) => set("financiamiento_plazo_max_anios")(e.target.value)} />
-            </div>
-          )}
-        </div>
-
-        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2.5">Cargos mensuales adicionales</span>
-          <p className="text-[11px] text-[#6b7280] mb-2.5">Si el comprador paga luz y/o mantenimiento aparte de la cuota de crédito, el cotizador del asesor los suma a un total mensual junto con la cuota.</p>
-          <label className="flex items-center justify-between cursor-pointer">
-            <span className="text-sm">El comprador paga luz</span>
-            <input type="checkbox" checked={!!p.aplica_luz} onChange={(e) => set("aplica_luz")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
-          </label>
-          {p.aplica_luz && (
-            <div className="mt-2">
-              <CampoMoneda label="Monto mensual de luz" value={p.monto_luz_mensual ?? ""} onChange={(n) => set("monto_luz_mensual")(n)} />
-            </div>
-          )}
-          <label className="flex items-center justify-between cursor-pointer mt-3">
-            <span className="text-sm">El comprador paga mantenimiento</span>
-            <input type="checkbox" checked={!!p.aplica_mantenimiento} onChange={(e) => set("aplica_mantenimiento")(e.target.checked)} className="w-4 h-4 accent-[#C9A227]" />
-          </label>
-          {p.aplica_mantenimiento && (
-            <div className="mt-2">
-              <CampoMoneda label="Monto mensual de mantenimiento" value={p.monto_mantenimiento_mensual ?? ""} onChange={(n) => set("monto_mantenimiento_mensual")(n)} />
             </div>
           )}
         </div>
@@ -4253,7 +3621,7 @@ function Campo({ label, ...props }) {
 
 // Campo de dinero: muestra el número con comas de miles mientras el usuario escribe,
 // para que no se confunda si está poniendo cientos, miles o millones.
-function CampoMoneda({ label, value, onChange, placeholder, disabled, hint, invalid }) {
+function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
   const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT", { maximumFractionDigits: 2 }) : "";
   const [texto, setTexto] = useState(formatear(value));
 
@@ -4284,10 +3652,9 @@ function CampoMoneda({ label, value, onChange, placeholder, disabled, hint, inva
           onChange={manejarCambio}
           placeholder={placeholder}
           disabled={disabled}
-          className={`w-full bg-[#161F2E] border ${invalid ? "border-red-500" : "border-[#2A3547]"} rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227] disabled:opacity-40`}
+          className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227] disabled:opacity-40"
         />
       </div>
-      {hint && <p className={`text-[10px] mt-1 ${invalid ? "text-red-400" : "text-[#6b7280]"}`}>{hint}</p>}
     </label>
   );
 }
@@ -5307,13 +4674,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla.length > 0 && (() => {
-                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                return (
-                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                );
-              })()}
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
@@ -6133,13 +5496,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla.length > 0 && (() => {
-                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                return (
-                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                );
-              })()}
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <>

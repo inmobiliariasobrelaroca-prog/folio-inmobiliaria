@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/styles.css" />
+  <script src="_ds/industry-1a0323af-d3cc-4c49-b004-b29541abe99c/_ds_bundle.js"></script>
+</helmet>
+<div style="display:flex;flex-direction:column;gap:12px">
+
+  <div style="display:flex;flex-direction:column;gap:2px">
+    <div style="font-size:9.5px;letter-spacing:0.22em;text-transform:uppercase;color:var(--sr-acc)">Solo vendedores</div>
+    <div style="font-family:var(--sr-fh);font-size:27px;line-height:1.05">Cotizador</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Cliente</label>
+      <input type="text" value="{{ cliente }}" onInput="{{ setCliente }}" placeholder="Nombre completo" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fb);font-size:14px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">WhatsApp</label>
+      <input type="tel" value="{{ whatsapp }}" onInput="{{ setWhatsapp }}" placeholder="5555 5555" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fb);font-size:14px;outline:none" />
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Propiedad</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;border:1px solid var(--sr-line);border-radius:var(--sr-r);padding:11px 12px">
+      <div><div style="font-size:14px">{{ propiedad }}</div><div style="font-size:11px;color:var(--sr-mut)">Precio de lista {{ precioLista }}</div></div>
+      <span style="font-size:12px;color:var(--sr-acc)">Cambiar</span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Precio de venta Q</label>
+      <input type="text" inputMode="decimal" value="{{ precio }}" onInput="{{ setPrecio }}" onBlur="{{ blurPrecio }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Enganche Q</label>
+      <input type="text" inputMode="decimal" value="{{ enganche }}" onInput="{{ setEnganche }}" onBlur="{{ blurEnganche }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Tasa anual %</label>
+      <input type="text" inputMode="decimal" value="{{ tasa }}" onInput="{{ setTasa }}" onBlur="{{ blurTasa }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Años de crédito</label>
+      <input type="text" inputMode="decimal" value="{{ anios }}" onInput="{{ setAnios }}" onBlur="{{ blurAnios }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Días de gracia</label>
+      <input type="text" inputMode="decimal" value="{{ diasGracia }}" onInput="{{ setDiasGracia }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Mora Q por día</label>
+      <input type="text" inputMode="decimal" value="{{ moraDiaria }}" onInput="{{ setMoraDiaria }}" onBlur="{{ blurMoraDiaria }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;grid-column:1 / -1">
+      <label style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Luz mensual Q · 0 si no aplica</label>
+      <input type="text" inputMode="decimal" value="{{ luz }}" onInput="{{ setLuz }}" onBlur="{{ blurLuz }}" style="width:100%;background:none;border:1px solid var(--sr-line);border-radius:var(--sr-r);color:var(--sr-ink);padding:10px 11px;font-family:var(--sr-fh);font-size:19px;outline:none" />
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Sistema de amortización</div>
+    <div style="display:flex;gap:6px">
+      <sc-for list="{{ tipos }}" as="t" hint-placeholder-count="2">
+        <button type="button" onClick="{{ t.elegir }}" style="{{ t.estilo }}">{{ t.nombre }}</button>
+      </sc-for>
+    </div>
+    <div style="font-size:11px;color:var(--sr-mut);line-height:1.45">{{ explicacion }}</div>
+  </div>
+
+  <div style="border:1px solid var(--sr-acc);border-radius:var(--sr-r);padding:14px;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div>
+        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">{{ etiquetaCuota }}</div>
+        <div style="font-family:var(--sr-fh);font-size:36px;line-height:1;color:var(--sr-acc)">{{ cuotaTexto }}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sr-mut)">Plazo</div>
+        <div style="font-family:var(--sr-fh);font-size:20px">{{ plazoTexto }}</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--sr-line);padding-top:9px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--sr-mut)">Precio de venta</span><span>{{ precioTexto }}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--sr-mut)">− Enganche {{ engPctTexto }}</span><span>{{ engancheTexto }}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding-bottom:5px;border-bottom:1px solid var(--sr-line)"><span style="color:var(--sr-mut)">= Monto a financiar</span><span>{{ financiado }}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--sr-mut)">+ Intereses del plan</span><span>{{ intereses }}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;font-weight:600"><span>= Total a pagar</span><span>{{ total }}</span></div>
+      <div style="font-size:10.5px;color:var(--sr-mut);line-height:1.4">Precio de venta + intereses del plan. Incluye el enganche.</div>
+    </div>
+  </div>
+
+  <a href="Cotizacion.dc.html" target="_blank" rel="noopener" onClick="{{ generar }}" style="display:block;width:100%;text-align:center;padding:15px;border:none;border-radius:var(--sr-r);background:var(--sr-acc);color:var(--sr-accInk);font-family:var(--sr-fb);font-size:15px;font-weight:600;text-decoration:none;cursor:pointer">Generar cotización PDF</a>
+
+  <div style="font-size:11px;color:var(--sr-mut);line-height:1.45;text-align:center">La cotización que recibe el cliente detalla los primeros 24 meses, aunque el plazo sea mayor.</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:380,&quot;height&quot;:700}}">
+class Component extends DCLogic {
+  state = { precio: 485000, enganche: 75000, tasa: 12, anios: 25, tipo: 'nivelada' };
+
+  datos() { return this.props.cot || this.state; }
+  n(v) { return Number(String(v == null ? '' : v).replace(/,/g, '')) || 0; }
+  fmt(v, dec) { return this.n(v).toLocaleString('es-GT', { minimumFractionDigits: dec, maximumFractionDigits: dec }); }
+  guardar(patch) {
+    if (this.props.setCot) this.props.setCot(patch);
+    else this.setState(patch);
+  }
+
+  q(n) { return 'Q' + Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  pct(n) { return Number(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'; }
+
+  calculo() {
+    const s = this.datos();
+    const P = Math.max(0, this.n(s.precio) - this.n(s.enganche));
+    const n = Math.max(1, Math.round(this.n(s.anios) * 12));
+    const i = this.n(s.tasa) / 100 / 12;
+    if (s.tipo === 'nivelada') {
+      const cuota = i > 0 ? (P * i) / (1 - Math.pow(1 + i, -n)) : P / n;
+      return { P, n, i, cuota, primera: cuota, ultima: cuota, total: cuota * n };
+    }
+    const capital = P / n;
+    const primera = capital + P * i;
+    const ultima = capital + capital * i;
+    const total = capital * n + P * i * (n + 1) / 2;
+    return { P, n, i, cuota: primera, primera, ultima, total, capital };
+  }
+
+  renderVals() {
+    const s = this.datos();
+    const c = this.calculo();
+    const num = (fn) => (e) => this.guardar({ [fn]: e.target.value });
+    const blur = (fn, dec) => (e) => this.guardar({ [fn]: this.fmt(e.target.value, dec) });
+    const seg = (activo) => 'flex:1;padding:11px 4px;border:1px solid ' + (activo ? 'var(--sr-acc)' : 'var(--sr-line)') +
+      ';border-radius:var(--sr-r);background:' + (activo ? 'var(--sr-acc)' : 'none') +
+      ';color:' + (activo ? 'var(--sr-accInk)' : 'inherit') + ';font-family:var(--sr-fb);font-size:12.5px;cursor:pointer';
+
+    return {
+      propiedad: 'Casa 2 · La Esperanza',
+      precioLista: this.q(485000),
+      precio: s.precio, enganche: s.enganche, tasa: s.tasa, anios: s.anios,
+      setPrecio: num('precio'), setEnganche: num('enganche'), setTasa: num('tasa'), setAnios: num('anios'),
+      blurPrecio: blur('precio', 2), blurEnganche: blur('enganche', 2), blurTasa: blur('tasa', 2), blurAnios: blur('anios', 0),
+
+      cliente: s.cliente || '',
+      setCliente: (e) => this.guardar({ cliente: e.target.value }),
+      whatsapp: s.whatsapp || '',
+      setWhatsapp: (e) => this.guardar({ whatsapp: e.target.value }),
+
+      diasGracia: s.diasGracia == null ? '3' : s.diasGracia,
+      setDiasGracia: (e) => this.guardar({ diasGracia: e.target.value }),
+      moraDiaria: s.moraDiaria == null ? '100.00' : s.moraDiaria,
+      setMoraDiaria: (e) => this.guardar({ moraDiaria: e.target.value }),
+      blurMoraDiaria: (e) => this.guardar({ moraDiaria: this.fmt(e.target.value, 2) }),
+      luz: s.luz == null ? '0.00' : s.luz,
+      setLuz: (e) => this.guardar({ luz: e.target.value }),
+      blurLuz: (e) => this.guardar({ luz: this.fmt(e.target.value, 2) }),
+
+      tipos: [['nivelada', 'Cuota nivelada'], ['saldos', 'Sobre saldos (decreciente)']].map((t) => ({
+        nombre: t[1],
+        elegir: () => this.guardar({ tipo: t[0] }),
+        estilo: seg(s.tipo === t[0])
+      })),
+      explicacion: s.tipo === 'nivelada'
+        ? 'Tasa ' + this.pct(this.n(s.tasa)) + ' anual. La misma cuota todos los meses.'
+        : 'Capital fijo más interés sobre el saldo: la cuota baja cada mes.',
+
+      etiquetaCuota: s.tipo === 'nivelada' ? 'Cuota mensual' : 'Primera cuota',
+      cuotaTexto: this.q(c.primera),
+      plazoTexto: c.n + ' meses',
+      financiado: this.q(c.P),
+      precioTexto: this.q(this.n(s.precio)),
+      engancheTexto: this.q(this.n(s.enganche)),
+      engPctTexto: this.pct((this.n(s.enganche) / Math.max(1, this.n(s.precio))) * 100),
+      intereses: this.q(c.total - c.P),
+      total: this.q(c.total + this.n(s.enganche)),
+
+      generar: () => {
+        try {
+          localStorage.setItem('sr_cotizacion', JSON.stringify({
+            propiedad: 'Casa 2 · La Esperanza', proyecto: 'La Esperanza, Quetzaltenango',
+            cliente: s.cliente || '', whatsapp: s.whatsapp || '',
+            precio: this.n(s.precio), enganche: this.n(s.enganche), tasa: this.n(s.tasa),
+            anios: this.n(s.anios), tipo: s.tipo, vendedor: 'Andrea Sac', fecha: new Date().toISOString(),
+            diasGracia: this.n(s.diasGracia == null ? 3 : s.diasGracia),
+            moraDiaria: this.n(s.moraDiaria == null ? 100 : s.moraDiaria),
+            luz: this.n(s.luz)
+          }));
+        } catch (e) {}
+        if (this.props.registrarCotizacion) {
+          this.props.registrarCotizacion({
+            cliente: s.cliente || 'Sin nombre', whatsapp: s.whatsapp || '',
+            propiedad: 'Casa 2 · La Esperanza',
+            cuota: this.q(c.primera), precio: this.q(this.n(s.precio)),
+            tipo: s.tipo === 'saldos' ? 'Sobre saldos' : 'Nivelada'
+          });
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

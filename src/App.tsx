@@ -2517,6 +2517,7 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
       {editando && (
         <ModalEditarAsesor
           usuario={editando}
+          roles={roles}
           onCancelar={() => setEditando(null)}
           onGuardado={() => {
             setEditando(null);
@@ -2528,21 +2529,31 @@ function PestanaUsuarios({ usuarios, roles, onCreado }) {
   );
 }
 
-// Edita nombre y teléfono de un asesor sin tocar su código de acceso. El
-// teléfono es lo que aparece en el pie de página de las cotizaciones que ese
-// asesor genere (ver CotizadorAsesor).
-function ModalEditarAsesor({ usuario, onCancelar, onGuardado }) {
+// Edita nombre, teléfono y rol de un asesor sin tocar su código de acceso.
+// El teléfono es lo que aparece en el pie de página de las cotizaciones que
+// ese asesor genere (ver CotizadorAsesor). El rol es lo que decide qué
+// propiedades ve (ver_propiedades_asignadas + el alcance configurado en
+// Equipo → Roles) — antes de 2026-08-15 esta pantalla no dejaba cambiarlo
+// una vez creada la cuenta, y era fácil terminar con un asesor real en el
+// rol genérico "Asesor externo" en vez del rol pensado para él.
+function ModalEditarAsesor({ usuario, roles, onCancelar, onGuardado }) {
   const [nombre, setNombre] = useState(usuario.nombre || "");
   const [telefono, setTelefono] = useState(usuario.telefono || "");
+  const [rolId, setRolId] = useState(usuario.rol_id || roles[0]?.id || "");
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+
+  // Solo tiene sentido ofrecer roles de asesor aquí (no "Administrador") —
+  // esta pantalla es para editar asesores, no para volver administrador a
+  // alguien por accidente.
+  const rolesAsesor = roles.filter((r) => !r.es_administrador);
 
   const guardar = async () => {
     if (!nombre.trim()) { setError("El nombre no puede quedar vacío."); return; }
     setError("");
     setGuardando(true);
     try {
-      await llamarGestionAsesores({ accion: "editar_asesor", usuario_id: usuario.id, nombre: nombre.trim(), telefono: telefono.trim() || null });
+      await llamarGestionAsesores({ accion: "editar_asesor", usuario_id: usuario.id, nombre: nombre.trim(), telefono: telefono.trim() || null, rol_id: rolId });
       onGuardado();
     } catch (e) {
       setError(e.message);
@@ -2557,6 +2568,13 @@ function ModalEditarAsesor({ usuario, onCancelar, onGuardado }) {
         <div className="font-serif text-lg">Editar {usuario.nombre}</div>
         <Campo label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
         <Campo label="Teléfono/celular (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="5555 5555" />
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Rol</span>
+          <select value={rolId} onChange={(e) => setRolId(e.target.value)} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm">
+            {rolesAsesor.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          </select>
+          <p className="text-[11px] text-[#8A93A3] mt-1">El alcance (qué propiedades ve) se define en el rol, en la pestaña Roles.</p>
+        </label>
         {error && <div className="text-xs text-red-400">{error}</div>}
         <div className="flex gap-2">
           <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>

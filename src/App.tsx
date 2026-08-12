@@ -400,6 +400,8 @@ function VistaImprimible({ prop, proyecto, hoy }) {
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
     ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
+    ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
+    ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
     ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)],
     ["Saldo actual", fmt(saldoActual)],
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
@@ -4244,7 +4246,12 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
           <Campo label="Tasa anual %" type="number" min="0" step="0.01" value={f.tasaAnual} onChange={set("tasaAnual")} />
           <Campo label="Plazo (años)" type="number" min="0" step="1" value={f.plazoAnios} onChange={set("plazoAnios")} />
         </div>
-        <Campo label="Fecha de inicio" type="date" value={f.fechaInicio} onChange={set("fechaInicio")} />
+        <Campo label="Fecha de inicio (entrega de llaves / firma)" type="date" value={f.fechaInicio} onChange={set("fechaInicio")} />
+        {f.fechaInicio && (
+          <p className="text-[11px] text-[#8A93A3] -mt-2">
+            Todos los clientes pagan mes vencido: con esta fecha, el primer pago cae el {fmtDate(addMonths(f.fechaInicio, 1))}, un mes después de la entrega — no el mismo día.
+          </p>
+        )}
 
         <div className="border-t border-[#2A3547] pt-4">
           <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">Mora del crédito</div>
@@ -5463,7 +5470,11 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
               )}
-              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicioIntereses || prop.fechaInicio)} />
+              <Fila2 label="Fecha de adquisición / entrega de llaves" value={fmtDate(prop.fechaInicio)} />
+              {prop.fechaInicioIntereses && prop.fechaInicioIntereses !== prop.fechaInicio && (
+                <Fila2 label="Fecha de inicio de intereses" value={fmtDate(prop.fechaInicioIntereses)} />
+              )}
+              {prop.tabla[0] && <Fila2 label="Primer pago (mes vencido)" value={fmtDate(prop.tabla[0].fecha)} />}
             </div>
           </div>
         </div>
@@ -6332,7 +6343,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                   <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
                 </>
               )}
-              <Fila2 label="Fecha de inicio" value={fmtDate(prop.fechaInicioIntereses || prop.fechaInicio)} />
+              <Fila2 label="Fecha de adquisición / entrega de llaves" value={fmtDate(prop.fechaInicio)} />
+              {prop.fechaInicioIntereses && prop.fechaInicioIntereses !== prop.fechaInicio && (
+                <Fila2 label="Fecha de inicio de intereses" value={fmtDate(prop.fechaInicioIntereses)} />
+              )}
+              {prop.tabla[0] && <Fila2 label="Primer pago (mes vencido)" value={fmtDate(prop.tabla[0].fecha)} />}
             </div>
           </div>
         </div>

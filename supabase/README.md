@@ -121,3 +121,36 @@ un JWT de usuario real y hay que desplegarla con `--no-verify-jwt`.
   login de "Inmobiliaria".
 - **Barra de pestañas y flujos móviles reales (Paso 3B)** — no es parte de
   esta especificación (paso 6); sigue pendiente por separado.
+
+## Actualización 2026-08-16: el asesor interno ya no tiene restricciones de catálogo/cotizador
+
+Pedido de Carlos: a diferencia del asesor externo (que sigue exactamente
+igual que antes), el asesor interno ahora:
+
+1. **Ve todo el catálogo de venta**, sin importar el alcance
+   (`ambito_restringido_venta`) ni lo que esté marcado en
+   `roles_propiedades_venta` / `roles_proyectos_venta` para su rol. Aplicado
+   con la migración `asesores_internos_sin_restriccion_alcance` (ejecutada
+   directo contra producción vía Supabase MCP, no queda como archivo `.sql`
+   en este repo — si prefieres tenerla versionada, dime y la agrego): agrega
+   `or u.tipo = 'asesor_interno'` a las policies
+   `asesores_leen_propiedades_venta_en_su_alcance` (tabla `propiedades_venta`)
+   y `equipo_y_asesores_leen_condiciones_en_su_alcance` (tabla
+   `propiedades_venta_condiciones`). El resto de cada policy no cambió — un
+   asesor interno sigue necesitando el permiso `ver_propiedades_asignadas`
+   (o `ver_precio_lista`/`ver_precio_minimo` para condiciones) en su rol para
+   ver algo; solo se le quita el filtro de alcance.
+2. **Puede cotizar cualquier precio, tasa o enganche**, sin el bloqueo de
+   "fuera de rango" que sigue aplicando al asesor externo. Cambio en
+   `src/App.tsx`, componente `CotizadorAsesor`: `precioFueraDeRango`,
+   `engancheFueraDeRango` y `tasaFueraDeRango` ahora son `false` siempre que
+   `asesor.tipo === "asesor_interno"` (variable `sinRestriccionDeRango`). El
+   precio mínimo/máximo y la tasa mínima/máxima de
+   `propiedades_venta_condiciones` se le siguen mostrando como referencia
+   ("Sugerido" en vez de "Permitido"), pero ya no le impiden enviar ni
+   imprimir la cotización.
+
+Nota: al momento de este cambio no había ningún usuario con
+`tipo = 'asesor_interno'` creado todavía (los 5 asesores reales existentes
+son todos `asesor_externo`) — esto deja el sistema listo para cuando Carlos
+cree el primer asesor interno desde Equipo → Usuarios → "Asesor int.".

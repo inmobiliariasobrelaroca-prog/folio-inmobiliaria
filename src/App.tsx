@@ -1490,19 +1490,26 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const meses = Math.max(1, Math.round((Number(anios) || 0) * 12));
   const principal = Math.max(0, precioNum - engancheNum);
 
-  const precioFueraDeRango = precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
-  const engancheFueraDeRango = engancheMin != null && engancheNum < engancheMin;
-  const tasaFueraDeRango = tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
+  // El asesor interno no tiene restricción de rango: puede cotizar cualquier
+  // precio, tasa o monto (pedido de Carlos, 2026-08-16). El asesor externo
+  // sigue exactamente igual que antes, limitado a precio_minimo/precio_maximo/
+  // tasa_interes_minima/tasa_interes_maxima definidos en las condiciones
+  // privadas de la propiedad.
+  const sinRestriccionDeRango = asesor?.tipo === "asesor_interno";
+
+  const precioFueraDeRango = !sinRestriccionDeRango && precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
+  const engancheFueraDeRango = !sinRestriccionDeRango && engancheMin != null && engancheNum < engancheMin;
+  const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
   const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
 
   const precioHint = (precioMin != null || precioMax != null)
     ? (puedeVerMinimo
-        ? `Permitido: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
+        ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
         : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
     : null;
-  const engancheHint = engancheMin != null ? `Mínimo: ${fmt(engancheMin)}` : null;
+  const engancheHint = engancheMin != null ? `${sinRestriccionDeRango ? "Sugerido" : "Mínimo"}: ${fmt(engancheMin)}` : null;
   const tasaHint = (tasaMin != null || tasaMax != null)
-    ? `Permitido: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
+    ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
     : null;
 
   const esSaldos = sistema === "saldos";

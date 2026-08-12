@@ -4658,6 +4658,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
   const [galeriaAmpliada, setGaleriaAmpliada] = useState(null); // { imagenes: [...], indice: 0 }
   const [explicandoPago, setExplicandoPago] = useState(null);
   const [subiendoReciboIdx, setSubiendoReciboIdx] = useState(null);
+  const [montoReciboIdx, setMontoReciboIdx] = useState(null); // idx que está capturando el monto de un recibo histórico, antes de elegir el archivo
+  const [montoReciboValor, setMontoReciboValor] = useState("");
   const [pidiendoPin, setPidiendoPin] = useState(null); // null | 'condiciones' | idx (número, para condonar)
   const [condicionesDesbloqueadas, setCondicionesDesbloqueadas] = useState(false);
   const [condForm, setCondForm] = useState(null);
@@ -4777,11 +4779,22 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
     setMotivoRechazo("");
   };
 
+  // Recibos ya documentados de una cuota pagada (los que trajo la carga inicial vía
+  // comprobantesHistorial, más los que se suben en esta misma sesión). Los rechazados no
+  // cuentan como "documentado".
+  const listaRecibosHistoricos = (f) => (f.comprobantesHistorial && f.comprobantesHistorial.length ? f.comprobantesHistorial : (f.comprobante ? [f.comprobante] : []));
+  const totalDocumentado = (f) => listaRecibosHistoricos(f).filter((c) => c.estado !== "rechazado").reduce((s, c) => s + (Number(c.montoDepositado) || 0), 0);
+
   // Adjuntar el recibo/foto de un pago que ya se marcó como pagado (por ejemplo, historial
-  // que se registró directo sin pasar por el flujo normal del cliente).
-  const subirReciboHistorico = async (idx, file) => {
+  // que se registró directo sin pasar por el flujo normal del cliente). `montoIngresado` es
+  // lo que esa boleta específica depositó — un pago puede documentarse con más de un recibo
+  // (ej. dos boletas del mismo mes), así que se compara contra lo que falta por documentar,
+  // no contra el total de la cuota.
+  const subirReciboHistorico = async (idx, file, montoIngresado) => {
     const fila = prop.tabla[idx];
     if (!fila.id) { alert("Esta cuota todavía no tiene un identificador guardado; refresca la página e intenta de nuevo."); return; }
+    const monto = Number(montoIngresado);
+    if (!monto || monto <= 0) { alert("Ingresa el monto depositado en este recibo."); return; }
     setSubiendoReciboIdx(idx);
     try {
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
@@ -4789,32 +4802,45 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
       const { error: errUpload } = await supabase.storage.from("comprobantes").upload(path, file, { upsert: true });
       if (errUpload) throw errUpload;
 
-      const montoPago = fila.montoPagadoAcumulado || fila.pago;
-      const { error: errInsert } = await supabase.from("comprobantes").insert({
+      const totalPago = fila.montoPagadoAcumulado || fila.pago;
+      const yaDocumentado = totalDocumentado(fila);
+      const montoRequerido = Math.max(0, totalPago - yaDocumentado);
+      const excedente = monto > montoRequerido + 0.01 ? monto - montoRequerido : 0;
+      const faltante = monto < montoRequerido - 0.01 ? montoRequerido - monto : 0;
+      const resultado = excedente > 0 ? "excedente" : faltante > 0 ? "parcial" : "completo";
+
+      const { error: errInsert, data: filaInsertada } = await supabase.from("comprobantes").insert({
         cuota_id: fila.id,
         imagen_url: path,
-        monto_depositado: montoPago,
+        monto_depositado: monto,
         mora_al_subir: 0,
-        monto_requerido: montoPago,
-        excedente: 0,
-        faltante: 0,
-        resultado: "completo",
+        monto_requerido: montoRequerido,
+        excedente,
+        faltante,
+        resultado,
         estado: "aprobado",
-      });
+      }).select().single();
       if (errInsert) throw errInsert;
 
       const base64 = await fileToBase64(file);
+      const nuevoRecibo = {
+        id: filaInsertada?.id,
+        imagen: base64,
+        fecha: new Date().toISOString(),
+        estado: "aprobado",
+        montoDepositado: monto,
+        resultado,
+        excedente,
+        faltante,
+      };
       actualizar((p) => {
         const f = p.tabla[idx];
-        f.comprobante = {
-          imagen: base64,
-          fecha: new Date().toISOString(),
-          estado: "aprobado",
-          montoDepositado: montoPago,
-          resultado: "completo",
-        };
+        f.comprobantesHistorial = [...listaRecibosHistoricos(f), nuevoRecibo];
+        f.comprobante = nuevoRecibo;
         return p;
       });
+      setMontoReciboIdx(null);
+      setMontoReciboValor("");
     } catch (e) {
       alert("No se pudo subir el recibo: " + e.message);
     } finally {
@@ -5132,20 +5158,52 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
           </div>
         )}
 
-        {est === "pagado" && puede("aprobar_rechazar_pagos") && (
+        {est === "pagado" && puede("aprobar_rechazar_pagos") && totalDocumentado(f) < (f.montoPagadoAcumulado || f.pago) - 0.01 && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             {/* Antes este botón solo aparecía si la cuota todavía no tenía NINGÚN recibo
                 (!f.comprobante) — eso bloqueaba adjuntar un segundo recibo cuando un pago
-                se hizo en varios depósitos (ej. dos boletas del mismo mes). La vista de
-                abajo (est === "pagado" && f.comprobante) ya sabía mostrar varios recibos
-                vía comprobantesHistorial; solo faltaba poder seguir subiendo más. Ahora el
-                botón se queda visible siempre que la cuota esté pagada, y cambia de texto
-                si ya hay al menos un recibo adjunto. */}
-            <label className="flex items-center justify-center gap-1.5 text-[11px] text-[#8A93A3] border border-dashed border-[#2A3547] rounded-md py-2 cursor-pointer hover:border-[#C9A227]/50">
-              <Upload size={12} />
-              {subiendoReciboIdx === idx ? "Subiendo..." : f.comprobante ? "Adjuntar otro recibo de este pago" : "Adjuntar recibo de este pago"}
-              <input type="file" accept="image/*" className="hidden" disabled={subiendoReciboIdx === idx} onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0])} />
-            </label>
+                se hizo en varios depósitos (ej. dos boletas del mismo mes). Se quitó esa
+                restricción, pero eso lo dejaba visible para siempre incluso cuando ya
+                estaba completamente documentado. Ahora se pide el monto de cada boleta
+                (para poder comparar lo documentado contra lo que debía la cuota) y el
+                botón se oculta en cuanto la suma de recibos ya cubre el pago. */}
+            {montoReciboIdx === idx ? (
+              <div className="space-y-2">
+                <div className="text-[11px] text-[#8A93A3]">¿Cuánto se depositó en este recibo?</div>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    autoFocus
+                    value={montoReciboValor}
+                    onChange={(e) => setMontoReciboValor(e.target.value)}
+                    placeholder="Monto depositado"
+                    className="flex-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#C9A227]"
+                  />
+                  <button onClick={() => { setMontoReciboIdx(null); setMontoReciboValor(""); }} className="text-xs bg-[#2A3547] px-2.5 py-1.5 rounded-md">Cancelar</button>
+                </div>
+                {Number(montoReciboValor) > 0 && (
+                  <label className="flex items-center justify-center gap-1.5 text-[11px] text-[#101826] bg-[#C9A227] font-medium rounded-md py-2 cursor-pointer">
+                    <Upload size={12} />
+                    {subiendoReciboIdx === idx ? "Subiendo..." : "Elegir archivo del recibo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={subiendoReciboIdx === idx}
+                      onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0], Number(montoReciboValor))}
+                    />
+                  </label>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => { setMontoReciboIdx(idx); setMontoReciboValor(""); }}
+                className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[#8A93A3] border border-dashed border-[#2A3547] rounded-md py-2 hover:border-[#C9A227]/50"
+              >
+                <Upload size={12} />
+                {f.comprobante ? "Adjuntar otro recibo de este pago" : "Adjuntar recibo de este pago"}
+              </button>
+            )}
           </div>
         )}
       </div>

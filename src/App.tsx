@@ -1490,19 +1490,26 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const meses = Math.max(1, Math.round((Number(anios) || 0) * 12));
   const principal = Math.max(0, precioNum - engancheNum);
 
-  const precioFueraDeRango = precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
-  const engancheFueraDeRango = engancheMin != null && engancheNum < engancheMin;
-  const tasaFueraDeRango = tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
+  // El asesor interno no tiene restricción de rango: puede cotizar cualquier
+  // precio, tasa o monto (pedido de Carlos, 2026-08-16). El asesor externo
+  // sigue exactamente igual que antes, limitado a precio_minimo/precio_maximo/
+  // tasa_interes_minima/tasa_interes_maxima definidos en las condiciones
+  // privadas de la propiedad.
+  const sinRestriccionDeRango = asesor?.tipo === "asesor_interno";
+
+  const precioFueraDeRango = !sinRestriccionDeRango && precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
+  const engancheFueraDeRango = !sinRestriccionDeRango && engancheMin != null && engancheNum < engancheMin;
+  const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
   const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
 
   const precioHint = (precioMin != null || precioMax != null)
     ? (puedeVerMinimo
-        ? `Permitido: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
+        ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
         : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
     : null;
-  const engancheHint = engancheMin != null ? `Mínimo: ${fmt(engancheMin)}` : null;
+  const engancheHint = engancheMin != null ? `${sinRestriccionDeRango ? "Sugerido" : "Mínimo"}: ${fmt(engancheMin)}` : null;
   const tasaHint = (tasaMin != null || tasaMax != null)
-    ? `Permitido: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
+    ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${tasaMin != null ? `${fmtNum(tasaMin)}%` : "sin mínimo"} — ${tasaMax != null ? `${fmtNum(tasaMax)}%` : "sin máximo"}`
     : null;
 
   const esSaldos = sistema === "saldos";
@@ -5125,11 +5132,18 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
           </div>
         )}
 
-        {est === "pagado" && !f.comprobante && puede("aprobar_rechazar_pagos") && (
+        {est === "pagado" && puede("aprobar_rechazar_pagos") && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
+            {/* Antes este botón solo aparecía si la cuota todavía no tenía NINGÚN recibo
+                (!f.comprobante) — eso bloqueaba adjuntar un segundo recibo cuando un pago
+                se hizo en varios depósitos (ej. dos boletas del mismo mes). La vista de
+                abajo (est === "pagado" && f.comprobante) ya sabía mostrar varios recibos
+                vía comprobantesHistorial; solo faltaba poder seguir subiendo más. Ahora el
+                botón se queda visible siempre que la cuota esté pagada, y cambia de texto
+                si ya hay al menos un recibo adjunto. */}
             <label className="flex items-center justify-center gap-1.5 text-[11px] text-[#8A93A3] border border-dashed border-[#2A3547] rounded-md py-2 cursor-pointer hover:border-[#C9A227]/50">
               <Upload size={12} />
-              {subiendoReciboIdx === idx ? "Subiendo..." : "Adjuntar recibo de este pago"}
+              {subiendoReciboIdx === idx ? "Subiendo..." : f.comprobante ? "Adjuntar otro recibo de este pago" : "Adjuntar recibo de este pago"}
               <input type="file" accept="image/*" className="hidden" disabled={subiendoReciboIdx === idx} onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0])} />
             </label>
           </div>
@@ -5307,13 +5321,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla.length > 0 && (() => {
-                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                return (
-                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                );
-              })()}
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <Fila2 label="Mora luz" value={`${prop.diasGraciaLuz} días de gracia · ${fmt(prop.moraDiariaLuz)}/día después`} />
@@ -6133,13 +6143,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
-              {prop.tabla.length > 0 && (() => {
-                const cuotaVigente = prop.tabla[prop.tabla.length - 1]; // la última cuota siempre refleja la regla de día de pago vigente actualmente
-                const diaVigente = new Date(cuotaVigente.fecha + "T00:00:00").getDate();
-                return (
-                  <Fila2 label="Día de pago mensual" value={`Día ${diaVigente} de cada mes · límite sin mora: día ${new Date(addDays(cuotaVigente.fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
-                );
-              })()}
+              {prop.tabla[0] && (
+                <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
+              )}
               <Fila2 label="Mora crédito" value={`${prop.diasGracia} días de gracia · ${fmt(prop.moraDiaria)}/día después`} />
               {prop.aplicaLuz && (
                 <>

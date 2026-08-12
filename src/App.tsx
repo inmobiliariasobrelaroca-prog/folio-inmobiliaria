@@ -5132,11 +5132,18 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
           </div>
         )}
 
-        {est === "pagado" && !f.comprobante && puede("aprobar_rechazar_pagos") && (
+        {est === "pagado" && puede("aprobar_rechazar_pagos") && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
+            {/* Antes este botón solo aparecía si la cuota todavía no tenía NINGÚN recibo
+                (!f.comprobante) — eso bloqueaba adjuntar un segundo recibo cuando un pago
+                se hizo en varios depósitos (ej. dos boletas del mismo mes). La vista de
+                abajo (est === "pagado" && f.comprobante) ya sabía mostrar varios recibos
+                vía comprobantesHistorial; solo faltaba poder seguir subiendo más. Ahora el
+                botón se queda visible siempre que la cuota esté pagada, y cambia de texto
+                si ya hay al menos un recibo adjunto. */}
             <label className="flex items-center justify-center gap-1.5 text-[11px] text-[#8A93A3] border border-dashed border-[#2A3547] rounded-md py-2 cursor-pointer hover:border-[#C9A227]/50">
               <Upload size={12} />
-              {subiendoReciboIdx === idx ? "Subiendo..." : "Adjuntar recibo de este pago"}
+              {subiendoReciboIdx === idx ? "Subiendo..." : f.comprobante ? "Adjuntar otro recibo de este pago" : "Adjuntar recibo de este pago"}
               <input type="file" accept="image/*" className="hidden" disabled={subiendoReciboIdx === idx} onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0])} />
             </label>
           </div>

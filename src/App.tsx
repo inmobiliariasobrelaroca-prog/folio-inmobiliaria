@@ -537,6 +537,13 @@ function propiedadDesdeFila(row) {
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     saldoAFavor: Number(row.saldo_a_favor || 0),
     clienteUserId: row.cliente_user_id,
+    codigoClienteReferencia: row.codigo_cliente_referencia || "",
+    registroFincaDocumento: row.registro_finca_documento || "",
+    registroFolioDocumento: row.registro_folio_documento || "",
+    registroLibroDocumento: row.registro_libro_documento || "",
+    registroFincaReal: row.registro_finca_real || "",
+    registroFolioReal: row.registro_folio_real || "",
+    registroLibroReal: row.registro_libro_real || "",
   };
 }
 
@@ -561,7 +568,22 @@ function propiedadHaciaFila(p) {
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     saldo_a_favor: p.saldoAFavor,
+    codigo_cliente_referencia: p.codigoClienteReferencia || null,
+    registro_finca_documento: p.registroFincaDocumento || null,
+    registro_folio_documento: p.registroFolioDocumento || null,
+    registro_libro_documento: p.registroLibroDocumento || null,
+    registro_finca_real: p.registroFincaReal || null,
+    registro_folio_real: p.registroFolioReal || null,
+    registro_libro_real: p.registroLibroReal || null,
   };
+}
+
+// Junta finca/folio/libro en una sola línea para mostrarlos (ej. "1234-56-78"). Si falta
+// alguno de los tres se muestra igual, solo con esa parte vacía, para no ocultar los datos
+// que sí se capturaron.
+function formatoRegistro(finca, folio, libro) {
+  if (!finca && !folio && !libro) return "";
+  return `${finca || "—"}-${folio || "—"}-${libro || "—"}`;
 }
 
 // ---------- Cuotas: puente entre el modelo local y la tabla `cuotas` de Supabase ----------
@@ -2138,6 +2160,13 @@ function AppInterno({ perfil, cerrarSesion }) {
       monto_luz_mensual: datos.montoLuzMensual || 0,
       sistema_amortizacion: datos.sistemaAmortizacion || "nivelada",
       saldo_a_favor: 0,
+      codigo_cliente_referencia: datos.codigoClienteReferencia || null,
+      registro_finca_documento: datos.registroFincaDocumento || null,
+      registro_folio_documento: datos.registroFolioDocumento || null,
+      registro_libro_documento: datos.registroLibroDocumento || null,
+      registro_finca_real: datos.registroFincaReal || null,
+      registro_folio_real: datos.registroFolioReal || null,
+      registro_libro_real: datos.registroLibroReal || null,
     };
     const { data, error } = await supabase.from("propiedades").insert(fila).select().single();
     if (error) { alert("No se pudo crear la propiedad: " + error.message); return; }
@@ -4127,6 +4156,10 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     aplicaLuz: false, montoLuzMensual: "",
     sistemaAmortizacion: "nivelada",
     fechaInicio: new Date().toISOString().slice(0, 10),
+    // Datos internos — no los ve el cliente, viven solo en las pantallas de "Inmobiliaria".
+    codigoClienteReferencia: "",
+    registroFincaDocumento: "", registroFolioDocumento: "", registroLibroDocumento: "",
+    registroFincaReal: "", registroFolioReal: "", registroLibroReal: "",
   });
 
   const precioNum = Number(f.precio) || 0;
@@ -4172,6 +4205,37 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
         </div>
         <Campo label="Dirección" value={f.direccion} onChange={set("direccion")} />
         <Campo label="Teléfono (para avisos)" value={f.telefono} onChange={set("telefono")} />
+
+        <div className="border-t border-[#2A3547] pt-4">
+          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">
+            <Lock size={12} /> Datos internos — el cliente nunca los ve
+          </div>
+          <div className="space-y-3">
+            <Campo label="Código de acceso (referencia)" value={f.codigoClienteReferencia} onChange={set("codigoClienteReferencia")} placeholder="Opcional — solo queda anotado aquí" />
+            <p className="text-[11px] text-[#6b7280] -mt-2">
+              Este campo es solo de referencia; no crea el acceso del cliente. Para activarlo, usa "Generar código" en la propiedad ya creada.
+            </p>
+
+            <div>
+              <div className="text-[11px] text-[#8A93A3] mb-1.5">Finca / Folio / Libro — según el documento</div>
+              <div className="grid grid-cols-3 gap-2">
+                <Campo label="Finca" value={f.registroFincaDocumento} onChange={set("registroFincaDocumento")} />
+                <Campo label="Folio" value={f.registroFolioDocumento} onChange={set("registroFolioDocumento")} />
+                <Campo label="Libro" value={f.registroLibroDocumento} onChange={set("registroLibroDocumento")} />
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] text-[#8A93A3] mb-1.5">Finca / Folio / Libro — real (asignado)</div>
+              <div className="grid grid-cols-3 gap-2">
+                <Campo label="Finca" value={f.registroFincaReal} onChange={set("registroFincaReal")} />
+                <Campo label="Folio" value={f.registroFolioReal} onChange={set("registroFolioReal")} />
+                <Campo label="Libro" value={f.registroLibroReal} onChange={set("registroLibroReal")} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <CampoMoneda label="Precio de venta" value={f.precio} onChange={(n) => setF({ ...f, precio: n })} />
           <CampoMoneda label="Enganche" value={f.enganche} onChange={(n) => setF({ ...f, enganche: n })} />
@@ -5227,6 +5291,19 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
         </button>
       </div>
 
+      {(prop.codigoClienteReferencia || formatoRegistro(prop.registroFincaDocumento, prop.registroFolioDocumento, prop.registroLibroDocumento) || formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal)) && (
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 mb-3 text-[11px] space-y-1">
+          <div className="flex items-center gap-1.5 text-[#8A93A3] uppercase tracking-wide"><Lock size={11} /> Datos internos (no los ve el cliente)</div>
+          {prop.codigoClienteReferencia && <div>Código de referencia: <span className="font-mono">{prop.codigoClienteReferencia}</span></div>}
+          {formatoRegistro(prop.registroFincaDocumento, prop.registroFolioDocumento, prop.registroLibroDocumento) && (
+            <div>Finca-Folio-Libro (documento): <span className="font-mono">{formatoRegistro(prop.registroFincaDocumento, prop.registroFolioDocumento, prop.registroLibroDocumento)}</span></div>
+          )}
+          {formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal) && (
+            <div>Finca-Folio-Libro (real): <span className="font-mono">{formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal)}</span></div>
+          )}
+        </div>
+      )}
+
       <PanelClientesPropiedad propiedadId={prop.id} />
 
       <div className="grid grid-cols-3 gap-3 mb-2">
@@ -5562,9 +5639,16 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
   const [direccion, setDireccion] = useState(prop.direccion || "");
   const [cliente, setCliente] = useState(prop.cliente || "");
   const [telefono, setTelefono] = useState(prop.telefono || "");
+  const [codigoClienteReferencia, setCodigoClienteReferencia] = useState(prop.codigoClienteReferencia || "");
+  const [registroFincaDocumento, setRegistroFincaDocumento] = useState(prop.registroFincaDocumento || "");
+  const [registroFolioDocumento, setRegistroFolioDocumento] = useState(prop.registroFolioDocumento || "");
+  const [registroLibroDocumento, setRegistroLibroDocumento] = useState(prop.registroLibroDocumento || "");
+  const [registroFincaReal, setRegistroFincaReal] = useState(prop.registroFincaReal || "");
+  const [registroFolioReal, setRegistroFolioReal] = useState(prop.registroFolioReal || "");
+  const [registroLibroReal, setRegistroLibroReal] = useState(prop.registroLibroReal || "");
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
-      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6 overflow-y-auto">
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm my-6">
         <div className="font-serif text-lg mb-3">Editar datos generales</div>
         <div className="space-y-3">
           <Campo label="Folio / Lote" value={folio} onChange={(e) => setFolio(e.target.value)} />
@@ -5572,9 +5656,46 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
           <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
           <Campo label="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} />
         </div>
+
+        <div className="border-t border-[#2A3547] mt-4 pt-4">
+          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">
+            <Lock size={12} /> Datos internos — el cliente nunca los ve
+          </div>
+          <div className="space-y-3">
+            <Campo label="Código de acceso (referencia)" value={codigoClienteReferencia} onChange={(e) => setCodigoClienteReferencia(e.target.value)} />
+            <div>
+              <div className="text-[11px] text-[#8A93A3] mb-1.5">Finca / Folio / Libro — según el documento</div>
+              <div className="grid grid-cols-3 gap-2">
+                <Campo label="Finca" value={registroFincaDocumento} onChange={(e) => setRegistroFincaDocumento(e.target.value)} />
+                <Campo label="Folio" value={registroFolioDocumento} onChange={(e) => setRegistroFolioDocumento(e.target.value)} />
+                <Campo label="Libro" value={registroLibroDocumento} onChange={(e) => setRegistroLibroDocumento(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-[#8A93A3] mb-1.5">Finca / Folio / Libro — real (asignado)</div>
+              <div className="grid grid-cols-3 gap-2">
+                <Campo label="Finca" value={registroFincaReal} onChange={(e) => setRegistroFincaReal(e.target.value)} />
+                <Campo label="Folio" value={registroFolioReal} onChange={(e) => setRegistroFolioReal(e.target.value)} />
+                <Campo label="Libro" value={registroLibroReal} onChange={(e) => setRegistroLibroReal(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-2 mt-4">
           <button onClick={onCancelar} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
-          <button onClick={() => onGuardar({ folio, direccion, cliente, telefono })} disabled={!direccion || !cliente} className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">Guardar</button>
+          <button
+            onClick={() => onGuardar({
+              folio, direccion, cliente, telefono,
+              codigoClienteReferencia,
+              registroFincaDocumento, registroFolioDocumento, registroLibroDocumento,
+              registroFincaReal, registroFolioReal, registroLibroReal,
+            })}
+            disabled={!direccion || !cliente}
+            className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
+          >
+            Guardar
+          </button>
         </div>
       </div>
     </div>

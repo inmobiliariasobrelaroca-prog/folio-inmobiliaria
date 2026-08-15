@@ -388,128 +388,6 @@ function generarCodigoNumerico() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// Vista imprimible: solo visible cuando el navegador está imprimiendo (o guardando como PDF).
-// No depende de ninguna librería externa, así que funciona en cualquier entorno.
-function VistaImprimible({ prop, proyecto, hoy }) {
-  const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
-  const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
-  const tarjetas = [
-    ["Precio de venta", fmt(prop.precio)],
-    ["Enganche", fmt(prop.enganche)],
-    ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
-    ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
-    ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
-    ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
-    ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
-    ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
-    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)],
-    ["Saldo actual", fmt(saldoActual)],
-    ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
-    ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
-  ];
-  const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
-  const estadoColor = {
-    pendiente: "bg-gray-100 text-gray-600",
-    gracia: "bg-amber-100 text-amber-700",
-    vencido: "bg-red-100 text-red-700",
-    parcial: "bg-blue-100 text-blue-700",
-    revision: "bg-amber-100 text-amber-700",
-    pagado: "bg-green-100 text-green-700",
-  };
-
-  return (
-    <div className="hidden print:block bg-white text-[#14212f] p-8" style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
-      <div className="bg-[#101826] text-white rounded-md px-5 py-4 mb-5 flex justify-between items-start">
-        <div>
-          <div className="text-xl font-bold">Tabla de Pagos</div>
-          <div className="text-sm mt-1">{prop.cliente}</div>
-          <div className="text-xs text-[#C9A227] mt-0.5">{proyecto?.nombre || ""}</div>
-        </div>
-        <div className="text-[10px] text-gray-300 text-right">Generado el {fmtDate(hoy)}</div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mb-5">
-        {tarjetas.map(([label, value]) => (
-          <div key={label} className="border border-gray-300 rounded-sm px-2.5 py-2">
-            <div className="text-[8px] uppercase text-gray-500">{label}</div>
-            <div className="text-[11px] font-bold">{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {vencidas.length > 0 && (
-        <div className="mb-6 border border-red-300 rounded-sm p-3 bg-red-50">
-          <div className="text-sm font-bold text-red-800 mb-2">Cuotas atrasadas ({vencidas.length}) — Total para ponerse al día: {fmt(totalParaPonerseAlDia)}</div>
-          {vencidas.map((f) => {
-            const esParcial = f.estado === "parcial";
-            const pasos = explicarPago(f, prop, hoy);
-            const est = calcularEstadoPago(f, hoy, prop);
-            return (
-              <div key={f.numero} className="mb-3 pb-3 border-b border-red-200 last:border-b-0 last:mb-0 last:pb-0">
-                <div className="text-[11px] font-bold mb-1">
-                  Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
-                  <span className={`inline-block px-1.5 py-0.5 rounded-sm ml-1 ${esParcial ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>{esParcial ? "Parcial" : "Vencida"}</span>
-                  <span className="float-right">Total: {fmt(est.montoRequerido)}</span>
-                </div>
-                <ol className="text-[9px] text-gray-700 space-y-0.5 list-decimal list-inside">
-                  {pasos.map((p, i) => (
-                    <li key={i}><span className="font-bold">{p.titulo}.</span> {p.detalle}</li>
-                  ))}
-                </ol>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="text-sm font-bold mb-2">Tabla de amortización</div>
-      <table className="w-full text-[9px] border-collapse mb-6">
-        <thead>
-          <tr className="bg-[#101826] text-white">
-            <th className="p-1 text-left">#</th>
-            <th className="p-1 text-left">Fecha</th>
-            <th className="p-1 text-left">Fecha real de pago</th>
-            <th className="p-1 text-right">Capital</th>
-            <th className="p-1 text-right">Interés</th>
-            <th className="p-1 text-right">Cuota</th>
-            <th className="p-1 text-right">Abono a capital</th>
-            <th className="p-1 text-right">Mora</th>
-            {prop.aplicaLuz && <th className="p-1 text-right">Luz</th>}
-            <th className="p-1 text-right">Saldo</th>
-            <th className="p-1 text-left">Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {prop.tabla.map((f, i) => {
-            const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
-            const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
-            const luzMora = prop.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
-            return (
-              <tr key={f.numero} className={i % 2 === 1 ? "bg-gray-100" : ""}>
-                <td className="p-1">{f.numero}</td>
-                <td className="p-1">{fmtDate(f.fecha)}</td>
-                <td className="p-1">{(f.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.fechaPagoReal)) > (prop?.diasGracia || 0)) ? fmtDate(f.fechaPagoReal) : "-"}</td>
-                <td className="p-1 text-right">{fmt(f.capital)}</td>
-                <td className="p-1 text-right">{fmt(f.interes)}</td>
-                <td className="p-1 text-right">{fmt(f.pago)}</td>
-                <td className="p-1 text-right">{f.abono > 0 ? fmt(f.abono) : "-"}</td>
-                <td className="p-1 text-right">{mora > 0 ? fmt(mora) : "-"}</td>
-                {prop.aplicaLuz && (
-                  <td className="p-1 text-right">
-                    {f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`}
-                  </td>
-                )}
-                <td className="p-1 text-right">{fmt(f.saldoFinal)}</td>
-                <td className="p-1"><span className={`inline-block px-1.5 py-0.5 rounded-sm font-bold ${estadoColor[est] || "bg-gray-100 text-gray-600"}`}>{estadoTxt[est] || est}</span></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 // ---------- Datos de ejemplo ----------
 
 const DEFAULTS_CONDICIONES = { diasGracia: 3, moraDiaria: 100, diasGraciaLuz: 3, moraDiariaLuz: 20 };
@@ -1454,6 +1332,194 @@ async function construirPdfCotizacion(d) {
   return doc;
 }
 
+// Junta todo lo que necesita el PDF de "Tabla de pagos" (estado de cuenta de una propiedad)
+// a partir del modelo local — usado tanto por la vista de inmobiliaria como por la del
+// cliente, para no repetir esta preparación de datos en los dos lados.
+function datosPdfTablaPagos(prop, proyecto, hoy) {
+  const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
+  const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
+  const tarjetas = [
+    ["Precio de venta", fmt(prop.precio)],
+    ["Enganche", fmt(prop.enganche)],
+    ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
+    ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
+    ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
+    ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
+    ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
+    ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
+    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)],
+    ["Saldo actual", fmt(saldoActual)],
+    ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
+    ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
+  ];
+
+  const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
+
+  const vencidasTexto = vencidas.map((f) => {
+    const esParcial = f.estado === "parcial";
+    const est = calcularEstadoPago(f, hoy, prop);
+    return {
+      numero: f.numero,
+      fechaTexto: fmtDate(f.fecha),
+      estadoTexto: esParcial ? "Parcial" : "Vencida",
+      totalTexto: fmt(est.montoRequerido),
+      pasos: explicarPago(f, prop, hoy),
+    };
+  });
+
+  const columnas = ["#", "Fecha", "Fecha real de pago", "Capital", "Interés", "Cuota", "Abono", "Mora", ...(prop.aplicaLuz ? ["Luz"] : []), "Saldo", "Estado"];
+  const filasTabla = prop.tabla.map((f) => {
+    const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
+    const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
+    const luzMora = prop.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
+    const fila = [
+      f.numero,
+      fmtDate(f.fecha),
+      (f.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.fechaPagoReal)) > (prop?.diasGracia || 0)) ? fmtDate(f.fechaPagoReal) : "-",
+      fmt(f.capital),
+      fmt(f.interes),
+      fmt(f.pago),
+      f.abono > 0 ? fmt(f.abono) : "-",
+      mora > 0 ? fmt(mora) : "-",
+    ];
+    if (prop.aplicaLuz) {
+      fila.push(f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
+    }
+    fila.push(fmt(f.saldoFinal));
+    fila.push(estadoTxt[est] || est);
+    return fila;
+  });
+
+  return {
+    cliente: prop.cliente,
+    folio: prop.folio || "",
+    proyectoNombre: proyecto?.nombre || "",
+    fechaGenerado: fmtDate(hoy),
+    tarjetas,
+    vencidas: vencidasTexto,
+    totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
+    columnas,
+    filasTabla,
+  };
+}
+
+// Arma el PDF real de la "Tabla de pagos" (estado de cuenta) con jsPDF + jspdf-autotable, en
+// vez del viejo mecanismo de window.print() sobre una vista oculta con @media print. Ese
+// mecanismo dejaba un PDF en blanco dentro de la app instalada como ícono en el teléfono
+// (modo standalone de la PWA) — reportado por Carlos, 2026-08-15: window.print() no tiene
+// soporte confiable fuera de una pestaña normal del navegador en ese modo, sobre todo en
+// iOS. Generar el PDF directamente en JS (mismo enfoque que ya se usaba para la cotización
+// del asesor, ver construirPdfCotizacion arriba) no depende en nada del diálogo de
+// impresión del sistema operativo, así que funciona igual en el navegador y en la PWA.
+async function construirPdfTablaPagos(d) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const xIzq = 14;
+  const xDer = 196;
+  const anchoUtil = xDer - xIzq;
+  const alturaPagina = doc.internal.pageSize.getHeight();
+
+  const logoDataUrl = await cargarImagenDataUrl(logoEmblema);
+
+  const dibujarPiePagina = () => {
+    const alto = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(210, 210, 210);
+    doc.setLineWidth(0.2);
+    doc.line(xIzq, alto - 10, xDer, alto - 10);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.text("Sobre la Roca · Control Financiero", xIzq, alto - 5);
+    doc.text(`Generado el ${d.fechaGenerado}`, xDer, alto - 5, { align: "right" });
+  };
+
+  let y = 16;
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, "PNG", xIzq, 10, 12, 12); } catch {}
+  }
+  const xTitulo = logoDataUrl ? xIzq + 15 : xIzq;
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(16, 24, 38);
+  doc.text("Sobre la Roca", xTitulo, y);
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(130, 130, 130);
+  doc.text("TABLA DE PAGOS", xTitulo, y + 4.5);
+
+  doc.setFont(undefined, "bold"); doc.setFontSize(9); doc.setTextColor(20, 20, 20);
+  doc.text(d.cliente || "—", xDer, 13, { align: "right" });
+  doc.setFont(undefined, "normal"); doc.setFontSize(7.5); doc.setTextColor(150, 120, 30);
+  doc.text(d.proyectoNombre + (d.folio ? ` · ${d.folio}` : ""), xDer, 17.5, { align: "right" });
+
+  doc.setDrawColor(201, 162, 39);
+  doc.setLineWidth(0.6);
+  doc.line(xIzq, 24, xDer, 24);
+
+  y = 31;
+
+  // Tarjetas resumen, en 3 columnas
+  const colAncho = anchoUtil / 3;
+  const filaAlto = 12;
+  d.tarjetas.forEach(([label, valor], i) => {
+    const col = i % 3;
+    const fila = Math.floor(i / 3);
+    const x = xIzq + col * colAncho;
+    const yy = y + fila * filaAlto;
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.2);
+    doc.rect(x, yy, colAncho - 2, filaAlto - 2);
+    doc.setFont(undefined, "normal"); doc.setFontSize(6.3); doc.setTextColor(130, 130, 130);
+    doc.text(String(label).toUpperCase(), x + 2, yy + 4);
+    doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
+    doc.text(String(valor), x + 2, yy + 8.5);
+  });
+  y += Math.ceil(d.tarjetas.length / 3) * filaAlto + 4;
+
+  // Cuotas atrasadas, si hay
+  if (d.vencidas.length > 0) {
+    const altoBloque = 8 + d.vencidas.reduce((s, v) => s + 5 + v.pasos.length * 3.6, 0);
+    if (y + altoBloque > alturaPagina - 20) { doc.addPage(); y = 20; }
+    doc.setDrawColor(220, 38, 38);
+    doc.setFillColor(254, 242, 242);
+    doc.roundedRect(xIzq, y, anchoUtil, altoBloque, 1, 1, "FD");
+    let yy = y + 6;
+    doc.setFont(undefined, "bold"); doc.setFontSize(9); doc.setTextColor(153, 27, 27);
+    doc.text(`Cuotas atrasadas (${d.vencidas.length}) — Total para ponerse al día: ${d.totalParaPonerseAlDiaTexto}`, xIzq + 3, yy);
+    yy += 5;
+    d.vencidas.forEach((v) => {
+      doc.setFont(undefined, "bold"); doc.setFontSize(7.5); doc.setTextColor(30, 30, 30);
+      doc.text(`Cuota #${v.numero} · vence ${v.fechaTexto} · ${v.estadoTexto} · Total: ${v.totalTexto}`, xIzq + 3, yy);
+      yy += 4;
+      doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(80, 80, 80);
+      v.pasos.forEach((p, i) => {
+        doc.text(`${i + 1}. ${p.titulo}. ${p.detalle}`, xIzq + 5, yy);
+        yy += 3.6;
+      });
+    });
+    y += altoBloque + 6;
+  }
+
+  if (y > alturaPagina - 40) { doc.addPage(); y = 20; }
+  doc.setFont(undefined, "bold"); doc.setFontSize(10); doc.setTextColor(16, 24, 38);
+  doc.text("Tabla de amortización", xIzq, y);
+  y += 3;
+
+  autoTable(doc, {
+    startY: y,
+    head: [d.columnas],
+    body: d.filasTabla,
+    theme: "striped",
+    styles: { fontSize: 6.3, cellPadding: 1 },
+    headStyles: { fillColor: [16, 24, 38], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    columnStyles: { 0: { cellWidth: 8 } },
+    margin: { left: xIzq, right: 14, bottom: 16 },
+    didDrawPage: dibujarPiePagina,
+  });
+
+  return doc;
+}
+
 // Cotizador integrado del asesor: mismo cálculo y formato que public/cotizador.html
 // (esa página sigue siendo la referencia), pero precargado desde la propiedad
 // elegida y sin campos de mora/luz editables — el catálogo de venta no tiene
@@ -1922,7 +1988,6 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [pantalla, setPantalla] = useState("proyectos");
   const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
-  const [imprimir, setImprimir] = useState(null);
   const [actualizando, setActualizando] = useState(false);
   // Cuenta cuántos guardados hacia Supabase están todavía en camino (se disparan en segundo
   // plano, sin esperarlos). Mientras haya alguno pendiente, el refresco automático no debe
@@ -1933,39 +1998,6 @@ function AppInterno({ perfil, cerrarSesion }) {
     promesa.finally(() => { escriturasPendientesRef.current = Math.max(0, escriturasPendientesRef.current - 1); });
   };
   const hoy = new Date().toISOString().slice(0, 10);
-
-  useEffect(() => {
-    if (!imprimir) return;
-    // El navegador usa document.title como nombre sugerido del PDF al imprimir/guardar,
-    // así que lo cambiamos al nombre del cliente en vez de dejar el genérico "Vite App".
-    const tituloOriginal = document.title;
-    const nombreCliente = (imprimir.prop?.cliente || "estado-de-cuenta").trim();
-    const fechaHoy = (imprimir.hoy || "").replaceAll("-", "");
-    document.title = `${nombreCliente} - Estado de cuenta ${fechaHoy}`;
-    let terminado = false;
-    const limpiar = () => {
-      if (terminado) return;
-      terminado = true;
-      setImprimir(null);
-      document.title = tituloOriginal;
-    };
-    const t = setTimeout(() => window.print(), 80);
-    // "afterprint" no siempre se dispara al cancelar (sobre todo en Safari/Mac) — por eso además
-    // limpiamos apenas la ventana recupera el foco (que pasa siempre al cerrarse el diálogo, se
-    // haya impreso o cancelado), con un pequeño margen para no pisar el propio window.print().
-    const onFoco = () => setTimeout(limpiar, 200);
-    window.addEventListener("afterprint", limpiar);
-    window.addEventListener("focus", onFoco);
-    // Resguardo final: si ninguno de los dos disparó, no dejamos el botón trabado para siempre.
-    const tSeguridad = setTimeout(limpiar, 15000);
-    return () => {
-      clearTimeout(t);
-      clearTimeout(tSeguridad);
-      window.removeEventListener("afterprint", limpiar);
-      window.removeEventListener("focus", onFoco);
-      if (!terminado) document.title = tituloOriginal;
-    };
-  }, [imprimir]);
 
   const cargarDatos = async () => {
       const { data: proys, error: errProys } = await supabase.from("proyectos").select("*").order("created_at");
@@ -2291,7 +2323,7 @@ function AppInterno({ perfil, cerrarSesion }) {
         )}
 
         {modo === "inmobiliaria" && pantalla === "detalle" && propSel && (
-          <DetallePropiedad prop={propSel} proyecto={proySel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} onImprimir={(datos) => setImprimir(datos)} />
+          <DetallePropiedad prop={propSel} proyecto={proySel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} />
         )}
 
         {modo === "cliente" && (
@@ -2302,11 +2334,9 @@ function AppInterno({ perfil, cerrarSesion }) {
             setSeleccion={setSeleccion}
             hoy={hoy}
             actualizar={(id, fn) => actualizarProp(id, fn)}
-            onImprimir={(datos) => setImprimir(datos)}
           />
         )}
       </div>
-      {imprimir && <VistaImprimible prop={imprimir.prop} proyecto={imprimir.proyecto} hoy={imprimir.hoy} />}
     </>
   );
 }
@@ -4722,7 +4752,7 @@ function NotaInmobiliaria({ comprobante, actualizar }) {
   );
 }
 
-function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, onImprimir }) {
+function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
@@ -4740,6 +4770,22 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [codigoGenerado, setCodigoGenerado] = useState(null);
   const [errorCodigo, setErrorCodigo] = useState("");
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+
+  // Genera y descarga el PDF de la tabla de pagos directamente en el navegador (jsPDF), sin
+  // pasar por window.print() — ver nota junto a construirPdfTablaPagos.
+  const descargarPdfTablaPagos = async () => {
+    setGenerandoPdf(true);
+    try {
+      const doc = await construirPdfTablaPagos(datosPdfTablaPagos(prop, proyecto, hoy));
+      const nombreCliente = (prop.cliente || "estado-de-cuenta").trim().replace(/[^\p{L}\p{N}]+/gu, "_");
+      doc.save(`${nombreCliente}-tabla-de-pagos-${hoy.replaceAll("-", "")}.pdf`);
+    } catch (e) {
+      alert("No se pudo generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
 
   const generarCodigoCliente = async () => {
     setErrorCodigo("");
@@ -5290,7 +5336,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, on
           <h1 className="font-serif text-xl leading-tight">{prop.direccion}</h1>
           <div className="text-xs text-[#8A93A3] mt-0.5">{prop.cliente}{prop.telefono ? ` · ${prop.telefono}` : ""}</div>
         </div>
-        <button onClick={() => onImprimir({ prop, proyecto, hoy })} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5" title="Imprimir / generar PDF">
+        <button onClick={descargarPdfTablaPagos} disabled={generandoPdf} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 disabled:opacity-40" title="Descargar tabla de pagos (PDF)">
           <Printer size={16} />
         </button>
         <button onClick={() => setEditandoDatos(true)} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5" title="Editar datos generales">
@@ -6009,16 +6055,32 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
 
 // ---------- Vista Cliente ----------
 
-function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, actualizar, onImprimir }) {
+function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, actualizar }) {
   const prop = propiedades.find((p) => p.id === seleccion) || propiedades[0];
   const [subiendoIdx, setSubiendoIdx] = useState(null);
   const [verHistorialMoras, setVerHistorialMoras] = useState(false);
   const [explicandoPago, setExplicandoPago] = useState(null);
   const [tab, setTab] = useState("tabla");
+  const [generandoPdf, setGenerandoPdf] = useState(false);
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
   const proyecto = proyectos.find((py) => py.id === prop.proyectoId);
+
+  // Genera y descarga el PDF de la tabla de pagos directamente en el navegador (jsPDF), sin
+  // pasar por window.print() — ver nota junto a construirPdfTablaPagos.
+  const descargarPdfTablaPagos = async () => {
+    setGenerandoPdf(true);
+    try {
+      const doc = await construirPdfTablaPagos(datosPdfTablaPagos(prop, proyecto, hoy));
+      const nombreCliente = (prop.cliente || "estado-de-cuenta").trim().replace(/[^\p{L}\p{N}]+/gu, "_");
+      doc.save(`${nombreCliente}-tabla-de-pagos-${hoy.replaceAll("-", "")}.pdf`);
+    } catch (e) {
+      alert("No se pudo generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
   const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const comparativaAbono = calcularComparativaAbono(prop);
   const alDia = vencidas.length === 0;
@@ -6129,8 +6191,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
         {proyecto && <div className="text-[10px] uppercase tracking-widest text-[#C9A227] mb-1">{proyecto.nombre}</div>}
         <div className="text-[11px] uppercase tracking-widest text-[#8A93A3]">Hola, {prop.cliente.split(" ")[0]}</div>
         <div className="font-serif text-2xl mt-1">{prop.direccion}</div>
-        <button onClick={() => onImprimir({ prop, proyecto, hoy })} className="mt-3 inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md">
-          <Printer size={13} /> Descargar tabla de pagos (PDF)
+        <button onClick={descargarPdfTablaPagos} disabled={generandoPdf} className="mt-3 inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md disabled:opacity-40">
+          <Printer size={13} /> {generandoPdf ? "Generando..." : "Descargar tabla de pagos (PDF)"}
         </button>
       </div>
 

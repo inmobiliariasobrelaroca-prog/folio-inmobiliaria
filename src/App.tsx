@@ -5577,9 +5577,15 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Saldo</div>
           <div className="font-mono text-sm mt-0.5">{fmt(saldoActual)}</div>
           {prop.saldoAdicionalSinInteres > 0 && (
-            <div className="text-[10px] text-[#8A93A3] mt-1 space-y-0.5 border-t border-[#2A3547] pt-1">
-              <div>+ cargo adicional: <span className="font-mono">{fmt(prop.saldoAdicionalSinInteres)}</span></div>
-              <div className="text-[#EDE7D9]">Total: <span className="font-mono">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</span></div>
+            <div className="mt-1.5 space-y-1.5 border-t border-[#2A3547] pt-1.5">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">+ Construcción extra</div>
+                <div className="font-mono text-sm mt-0.5">{fmt(prop.saldoAdicionalSinInteres)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Total</div>
+                <div className="font-mono text-sm mt-0.5 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+              </div>
             </div>
           )}
         </div>
@@ -6569,9 +6575,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div className="text-[10px] uppercase text-[#8A93A3]">Saldo del crédito</div>
           <div className="font-mono text-xl mt-1">{fmt(saldoActual)}</div>
           {prop.saldoAdicionalSinInteres > 0 && (
-            <div className="text-[11px] text-[#8A93A3] mt-1.5 space-y-0.5 border-t border-[#2A3547] pt-1.5">
-              <div>+ cargo adicional: <span className="font-mono">{fmt(prop.saldoAdicionalSinInteres)}</span></div>
-              <div className="text-[#EDE7D9] font-medium">Total: <span className="font-mono">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</span></div>
+            <div className="mt-2 space-y-2 border-t border-[#2A3547] pt-2">
+              <div>
+                <div className="text-[10px] uppercase text-[#8A93A3]">+ Construcción extra</div>
+                <div className="font-mono text-xl mt-1">{fmt(prop.saldoAdicionalSinInteres)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-[#8A93A3]">Total</div>
+                <div className="font-mono text-xl mt-1 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+              </div>
             </div>
           )}
         </div>

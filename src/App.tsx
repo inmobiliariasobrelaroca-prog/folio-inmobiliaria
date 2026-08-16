@@ -692,6 +692,39 @@ async function verDocumentoStorage(archivoUrl) {
   window.open(data.signedUrl, "_blank");
 }
 
+// ---------- Fotos de referencia de la propiedad: Supabase Storage (bucket público) + tabla
+// `propiedades_fotos` ----------
+// Son fotos de la casa en sí (fachada, calle, rótulo con el número, etc.), solo para
+// identificar rápido "de qué casa hablamos" al abrirla — no tienen nada que ver con los
+// comprobantes de pago ni con los documentos del contrato. El bucket es público, así que la
+// URL se arma directo con getPublicUrl (sin pedirle un enlace firmado a Supabase cada vez).
+
+function fotoPropiedadDesdeFila(row) {
+  return { id: row.id, storagePath: row.storage_path, nombre: row.nombre, fecha: row.created_at };
+}
+
+function urlFotoPropiedad(storagePath) {
+  return supabase.storage.from("fotos-propiedades").getPublicUrl(storagePath).data.publicUrl;
+}
+
+async function subirFotoPropiedadStorage(propiedadId, file) {
+  const path = `${propiedadId}/${crypto.randomUUID()}-${file.name}`;
+  const { error: errUpload } = await supabase.storage.from("fotos-propiedades").upload(path, file);
+  if (errUpload) { console.error("Error subiendo foto:", errUpload); return null; }
+  const { data, error: errInsert } = await supabase
+    .from("propiedades_fotos")
+    .insert({ propiedad_id: propiedadId, storage_path: path, nombre: file.name })
+    .select().single();
+  if (errInsert) { console.error("Error registrando foto:", errInsert); return null; }
+  return fotoPropiedadDesdeFila(data);
+}
+
+async function eliminarFotoPropiedadStorage(fotoId, storagePath) {
+  await supabase.storage.from("fotos-propiedades").remove([storagePath]);
+  const { error } = await supabase.from("propiedades_fotos").delete().eq("id", fotoId);
+  if (error) console.error("Error eliminando foto:", error);
+}
+
 function datosIniciales() {
   const proyectoId = crypto.randomUUID();
   const fechaInicio = new Date().toISOString().slice(0, 10);
@@ -2012,6 +2045,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       let cuotasPorPropiedad = {};
       let luzPorPropiedad = {};
       let documentosPorPropiedad = {};
+      let fotosPorPropiedad = {};
       let notifsPorPropiedad = {};
 
       if (idsPropiedades.length > 0) {
@@ -2083,6 +2117,14 @@ function AppInterno({ perfil, cerrarSesion }) {
           documentosPorPropiedad[row.propiedad_id].push(documentoDesdeFila(row));
         });
 
+        const { data: fotoRows, error: errFotos } = await supabase
+          .from("propiedades_fotos").select("*").in("propiedad_id", idsPropiedades).order("created_at");
+        if (errFotos) console.error("Error cargando fotos de propiedades:", errFotos);
+        (fotoRows || []).forEach((row) => {
+          if (!fotosPorPropiedad[row.propiedad_id]) fotosPorPropiedad[row.propiedad_id] = [];
+          fotosPorPropiedad[row.propiedad_id].push(fotoPropiedadDesdeFila(row));
+        });
+
         const { data: notifRows, error: errNotifs } = await supabase
           .from("notificaciones").select("*").in("propiedad_id", idsPropiedades).order("created_at", { ascending: false });
         if (errNotifs) console.error("Error cargando notificaciones:", errNotifs);
@@ -2108,6 +2150,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           tabla,
           cargosLuz: luzPorPropiedad[base.id] || [],
           documentos: documentosPorPropiedad[base.id] || [],
+          fotos: fotosPorPropiedad[base.id] || [],
           notificaciones: notifsPorPropiedad[base.id] || [],
         });
       }
@@ -2208,6 +2251,7 @@ function AppInterno({ perfil, cerrarSesion }) {
     nueva.cargosLuz = [];
     nueva.notificaciones = [];
     nueva.documentos = [];
+    nueva.fotos = [];
     nueva.tabla = generarTabla(nueva);
     await sincronizarCuotas(nueva.id, nueva.tabla);
     setPropiedades((prev) => [...prev, nueva]);
@@ -4121,10 +4165,19 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
           return (
             <button key={p.id} onClick={() => onAbrir(p.id)} className="w-full text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 hover:border-[#C9A227]/50 transition">
               <div className="flex justify-between items-start">
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">{p.folio}</div>
-                  <div className="font-serif text-lg">{p.direccion}</div>
-                  <div className="text-sm text-[#8A93A3]">{p.cliente}</div>
+                <div className="flex items-start gap-3">
+                  {(p.fotos || []).length > 0 ? (
+                    <img src={urlFotoPropiedad(p.fotos[0].storagePath)} alt="" className="w-12 h-12 rounded-md object-cover border border-[#2A3547] shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-md border border-dashed border-[#2A3547] flex items-center justify-center shrink-0 text-[#3a4864]">
+                      <ImageIcon size={16} />
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">{p.folio}</div>
+                    <div className="font-serif text-lg">{p.direccion}</div>
+                    <div className="text-sm text-[#8A93A3]">{p.cliente}</div>
+                  </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className={`text-[10px] px-2 py-1 rounded-full border font-medium uppercase tracking-wide ${alDia ? "border-emerald-700 text-emerald-400" : "border-red-800 text-red-400"}`}>
@@ -5007,6 +5060,36 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
     });
   };
 
+  const [subiendoFotos, setSubiendoFotos] = useState(false);
+
+  const subirFotos = async (files) => {
+    if (!files || files.length === 0) return;
+    setSubiendoFotos(true);
+    try {
+      const nuevas = [];
+      for (const file of Array.from(files)) {
+        const foto = await subirFotoPropiedadStorage(prop.id, file);
+        if (foto) nuevas.push(foto);
+      }
+      if (nuevas.length > 0) {
+        actualizar((p) => {
+          p.fotos = [...(p.fotos || []), ...nuevas];
+          return p;
+        });
+      }
+    } finally {
+      setSubiendoFotos(false);
+    }
+  };
+
+  const eliminarFoto = async (foto) => {
+    await eliminarFotoPropiedadStorage(foto.id, foto.storagePath);
+    actualizar((p) => {
+      p.fotos = (p.fotos || []).filter((f) => f.id !== foto.id);
+      return p;
+    });
+  };
+
   const abrirCondiciones = () => { if (!condicionesDesbloqueadas) setPidiendoPin("condiciones"); };
 
   const abrirCondonar = (idx) => { setPidiendoPin(idx); };
@@ -5331,6 +5414,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-4">
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        {(prop.fotos || []).length > 0 ? (
+          <img src={urlFotoPropiedad(prop.fotos[0].storagePath)} alt="" className="w-11 h-11 rounded-md object-cover border border-[#2A3547] shrink-0" />
+        ) : (
+          <div className="w-11 h-11 rounded-md border border-dashed border-[#2A3547] flex items-center justify-center shrink-0 text-[#3a4864]">
+            <ImageIcon size={16} />
+          </div>
+        )}
         <div className="flex-1">
           <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">{prop.folio}</div>
           <h1 className="font-serif text-xl leading-tight">{prop.direccion}</h1>
@@ -5410,6 +5500,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
           ["tabla", "Tabla de pagos", Clock],
           ["abono", "Abono a capital", TrendingDown],
           ["contrato", `Contrato${(prop.documentos || []).length ? ` (${prop.documentos.length})` : ""}`, FileText],
+          ["fotos", `Fotos${(prop.fotos || []).length ? ` (${prop.fotos.length})` : ""}`, ImageIcon],
           ["condiciones", "Condiciones", Settings2],
           ["avisos", `Avisos${notifsAdmin.filter((n) => !n.leida).length ? ` (${notifsAdmin.filter((n) => !n.leida).length})` : ""}`, Bell],
         ].map(([id, label, Icon]) => (
@@ -5523,6 +5614,40 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
               {prop.tabla[0] && <Fila2 label="Primer pago (mes vencido)" value={fmtDate(prop.tabla[0].fecha)} />}
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === "fotos" && (
+        <div className="space-y-4">
+          <p className="text-xs text-[#8A93A3]">Fotos de referencia de la casa (fachada, calle, número/rótulo...) para identificarla rápido — no se muestran al cliente ni tienen relación con los comprobantes de pago.</p>
+
+          {puede("subir_documentos") && (
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-[#2A3547] rounded-lg py-8 cursor-pointer hover:border-[#C9A227]/50">
+              <ImageIcon size={22} className="text-[#8A93A3]" />
+              <span className="text-sm text-[#8A93A3]">{subiendoFotos ? "Subiendo..." : "Subir fotos de la casa"}</span>
+              <span className="text-[11px] text-[#6b7280]">Puedes seleccionar varias a la vez</span>
+              <input type="file" accept="image/*" multiple className="hidden" disabled={subiendoFotos} onChange={(e) => subirFotos(e.target.files)} />
+            </label>
+          )}
+
+          {(prop.fotos || []).length > 0 ? (
+            <div className="grid grid-cols-3 gap-2">
+              {prop.fotos.map((foto) => (
+                <div key={foto.id} className="relative group">
+                  <a href={urlFotoPropiedad(foto.storagePath)} target="_blank" rel="noreferrer">
+                    <img src={urlFotoPropiedad(foto.storagePath)} alt={foto.nombre || ""} className="w-full aspect-square object-cover rounded-md border border-[#2A3547]" />
+                  </a>
+                  {puede("subir_documentos") && (
+                    <button onClick={() => eliminarFoto(foto)} className="absolute top-1 right-1 bg-red-900/90 hover:bg-red-800 text-white p-1 rounded-md" title="Eliminar foto">
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-[#8A93A3] text-xs py-6">Todavía no hay fotos de esta propiedad.</div>
+          )}
         </div>
       )}
 

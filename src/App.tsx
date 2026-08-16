@@ -4303,6 +4303,10 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                     <span className="font-sans">Total adeudado</span>
                     <span className="text-red-400">{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia)}</span>
                   </div>
+                  <div className="flex justify-between mt-1.5 pt-1.5 border-t border-[#2A3547] text-[#8A93A3]">
+                    <span className="font-sans">Saldo pendiente (sin mora)</span>
+                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia - moraTotal)}</span>
+                  </div>
                 </div>
               ) : (
                 <div className="flex gap-5 mt-3 text-xs font-mono">

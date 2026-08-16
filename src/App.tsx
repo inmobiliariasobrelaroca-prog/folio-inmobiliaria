@@ -417,6 +417,7 @@ function propiedadDesdeFila(row) {
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
+    contratoTranscrito: row.contrato_transcrito || "",
     clienteUserId: row.cliente_user_id,
     codigoClienteReferencia: row.codigo_cliente_referencia || "",
     registroFincaDocumento: row.registro_finca_documento || "",
@@ -450,6 +451,7 @@ function propiedadHaciaFila(p) {
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     saldo_a_favor: p.saldoAFavor,
     saldo_adicional_sin_interes: p.saldoAdicionalSinInteres || 0,
+    contrato_transcrito: p.contratoTranscrito || null,
     codigo_cliente_referencia: p.codigoClienteReferencia || null,
     registro_finca_documento: p.registroFincaDocumento || null,
     registro_folio_documento: p.registroFolioDocumento || null,
@@ -1551,6 +1553,80 @@ async function construirPdfTablaPagos(d) {
     margin: { left: xIzq, right: 14, bottom: 16 },
     didDrawPage: dibujarPiePagina,
   });
+
+  return doc;
+}
+
+// Arma un PDF simple (solo texto, con paginación automática) de la transcripción del
+// contrato — ver sección "Transcripción del contrato" en la pestaña Contrato de
+// DetallePropiedad, agregada 2026-08-16 a pedido de Carlos para poder leer el contrato sin
+// tener que abrir las fotos escaneadas. Es de referencia; el documento original (fotos/PDF
+// subidos en "Contrato") sigue siendo el que vale legalmente.
+async function construirPdfTranscripcionContrato(prop, proyecto, texto) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const xIzq = 14;
+  const xDer = 196;
+  const anchoUtil = xDer - xIzq;
+  const alturaPagina = doc.internal.pageSize.getHeight();
+
+  const logoDataUrl = await cargarImagenDataUrl(logoEmblema);
+
+  const dibujarPiePagina = () => {
+    const alto = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(210, 210, 210);
+    doc.setLineWidth(0.2);
+    doc.line(xIzq, alto - 10, xDer, alto - 10);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.text("Sobre la Roca · Control Financiero", xIzq, alto - 5);
+    doc.text("Transcripción de referencia — no sustituye al documento original", xDer, alto - 5, { align: "right" });
+  };
+
+  let y = 16;
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, "PNG", xIzq, 10, 12, 12); } catch {}
+  }
+  const xTitulo = logoDataUrl ? xIzq + 15 : xIzq;
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(16, 24, 38);
+  doc.text("Sobre la Roca", xTitulo, y);
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(130, 130, 130);
+  doc.text("TRANSCRIPCIÓN DEL CONTRATO", xTitulo, y + 4.5);
+
+  doc.setFont(undefined, "bold"); doc.setFontSize(9); doc.setTextColor(20, 20, 20);
+  doc.text(prop.cliente || "—", xDer, 13, { align: "right" });
+  doc.setFont(undefined, "normal"); doc.setFontSize(7.5); doc.setTextColor(150, 120, 30);
+  doc.text((proyecto?.nombre || "") + (prop.folio ? ` · ${prop.folio}` : ""), xDer, 17.5, { align: "right" });
+
+  doc.setDrawColor(201, 162, 39);
+  doc.setLineWidth(0.6);
+  doc.line(xIzq, 24, xDer, 24);
+
+  y = 32;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(30, 30, 30);
+
+  const parrafos = String(texto || "").split(/\n{2,}/);
+  parrafos.forEach((parrafo) => {
+    const lineas = doc.splitTextToSize(parrafo.trim(), anchoUtil);
+    lineas.forEach((linea) => {
+      if (y > alturaPagina - 18) { doc.addPage(); y = 20; }
+      doc.text(linea, xIzq, y);
+      y += 4;
+    });
+    y += 3;
+  });
+
+  const totalPaginas = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPaginas; i++) {
+    doc.setPage(i);
+    dibujarPiePagina();
+  }
 
   return doc;
 }
@@ -5105,6 +5181,35 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
     });
   };
 
+  // Transcripción del contrato: texto plano (leído a mano del contrato escaneado) que se
+  // guarda en propiedades.contrato_transcrito, solo para lectura rápida del staff — ver
+  // sección "Transcripción del contrato" más abajo, dentro de la pestaña Contrato.
+  const [editandoTranscripcion, setEditandoTranscripcion] = useState(false);
+  const [textoTranscripcion, setTextoTranscripcion] = useState(prop.contratoTranscrito || "");
+  const [generandoPdfTranscripcion, setGenerandoPdfTranscripcion] = useState(false);
+
+  const guardarTranscripcion = () => {
+    const texto = textoTranscripcion.trim();
+    actualizar((p) => {
+      p.contratoTranscrito = texto;
+      return p;
+    });
+    setEditandoTranscripcion(false);
+  };
+
+  const descargarPdfTranscripcion = async () => {
+    setGenerandoPdfTranscripcion(true);
+    try {
+      const doc = await construirPdfTranscripcionContrato(prop, proyecto, prop.contratoTranscrito);
+      const nombreCliente = (prop.cliente || "contrato").trim().replace(/[^\p{L}\p{N}]+/gu, "_");
+      doc.save(`${nombreCliente}-transcripcion-contrato.pdf`);
+    } catch (e) {
+      alert("No se pudo generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdfTranscripcion(false);
+    }
+  };
+
   const abrirCondiciones = () => { if (!condicionesDesbloqueadas) setPidiendoPin("condiciones"); };
 
   const abrirCondonar = (idx) => { setPidiendoPin(idx); };
@@ -5607,6 +5712,51 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
               ))}
             </div>
           )}
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Transcripción del contrato</div>
+              {!editandoTranscripcion && (
+                <div className="flex gap-2">
+                  {prop.contratoTranscrito && (
+                    <button onClick={descargarPdfTranscripcion} disabled={generandoPdfTranscripcion} className="text-[11px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                      <Download size={12} /> {generandoPdfTranscripcion ? "Generando..." : "Descargar PDF"}
+                    </button>
+                  )}
+                  {puede("subir_documentos") && (
+                    <button onClick={() => { setTextoTranscripcion(prop.contratoTranscrito || ""); setEditandoTranscripcion(true); }} className="text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                      <Pencil size={12} /> {prop.contratoTranscrito ? "Editar" : "Transcribir contrato"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {editandoTranscripcion ? (
+              <div className="space-y-2">
+                <textarea
+                  value={textoTranscripcion}
+                  onChange={(e) => setTextoTranscripcion(e.target.value)}
+                  rows={14}
+                  placeholder="Pega o escribe aquí el texto transcrito del contrato (cláusulas, condiciones, firmas...) tal como aparece en el documento escaneado."
+                  className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-xs leading-relaxed font-mono resize-y focus:outline-none focus:border-[#C9A227]"
+                />
+                <div className="flex gap-2">
+                  <button onClick={() => { setTextoTranscripcion(prop.contratoTranscrito || ""); setEditandoTranscripcion(false); }} className="text-[11px] bg-[#2A3547] px-2.5 py-1.5 rounded-md">Cancelar</button>
+                  <button onClick={guardarTranscripcion} className="text-[11px] bg-[#C9A227] text-[#101826] font-medium px-2.5 py-1.5 rounded-md">Guardar</button>
+                </div>
+              </div>
+            ) : prop.contratoTranscrito ? (
+              <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 max-h-96 overflow-y-auto">
+                <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#c7cdd6]">{prop.contratoTranscrito}</p>
+              </div>
+            ) : (
+              <div className="text-center text-[#8A93A3] text-xs py-6 border border-dashed border-[#2A3547] rounded-lg">
+                Todavía no se ha transcrito el texto de este contrato.
+              </div>
+            )}
+            <div className="text-[10px] text-[#6b7280] mt-1.5">Solo la inmobiliaria ve esta transcripción — es de referencia para leer rápido; el documento subido arriba sigue siendo el que vale legalmente. El cliente no la ve.</div>
+          </div>
 
           <div>
             <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones pactadas en el contrato</div>

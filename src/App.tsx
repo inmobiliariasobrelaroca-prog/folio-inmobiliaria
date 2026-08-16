@@ -416,6 +416,7 @@ function propiedadDesdeFila(row) {
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     saldoAFavor: Number(row.saldo_a_favor || 0),
+    saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
     clienteUserId: row.cliente_user_id,
     codigoClienteReferencia: row.codigo_cliente_referencia || "",
     registroFincaDocumento: row.registro_finca_documento || "",
@@ -448,6 +449,7 @@ function propiedadHaciaFila(p) {
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     saldo_a_favor: p.saldoAFavor,
+    saldo_adicional_sin_interes: p.saldoAdicionalSinInteres || 0,
     codigo_cliente_referencia: p.codigoClienteReferencia || null,
     registro_finca_documento: p.registroFincaDocumento || null,
     registro_folio_documento: p.registroFolioDocumento || null,
@@ -2237,6 +2239,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       monto_luz_mensual: datos.montoLuzMensual || 0,
       sistema_amortizacion: datos.sistemaAmortizacion || "nivelada",
       saldo_a_favor: 0,
+      saldo_adicional_sin_interes: datos.saldoAdicionalSinInteres || 0,
       codigo_cliente_referencia: datos.codigoClienteReferencia || null,
       registro_finca_documento: datos.registroFincaDocumento || null,
       registro_folio_documento: datos.registroFolioDocumento || null,
@@ -4245,6 +4248,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     codigoClienteReferencia: "",
     registroFincaDocumento: "", registroFolioDocumento: "", registroLibroDocumento: "",
     registroFincaReal: "", registroFolioReal: "", registroLibroReal: "",
+    saldoAdicionalSinInteres: "",
   });
 
   const precioNum = Number(f.precio) || 0;
@@ -4317,6 +4321,14 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
                 <Campo label="Folio" value={f.registroFolioReal} onChange={set("registroFolioReal")} />
                 <Campo label="Libro" value={f.registroLibroReal} onChange={set("registroLibroReal")} />
               </div>
+            </div>
+
+            <div>
+              <CampoMoneda label="Cargo adicional sin interés (opcional)" value={f.saldoAdicionalSinInteres} onChange={(n) => setF({ ...f, saldoAdicionalSinInteres: n })} />
+              <p className="text-[11px] text-[#6b7280] mt-1">
+                Para cargos aparte de la cuota mensual (ej. modificaciones extra pactadas en el contrato) que no generan
+                interés ni mora, y no forman parte de la tabla de pagos — solo queda anotado aquí como referencia.
+              </p>
             </div>
           </div>
         </div>
@@ -5437,7 +5449,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
         </button>
       </div>
 
-      {(prop.codigoClienteReferencia || formatoRegistro(prop.registroFincaDocumento, prop.registroFolioDocumento, prop.registroLibroDocumento) || formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal)) && (
+      {(prop.codigoClienteReferencia || formatoRegistro(prop.registroFincaDocumento, prop.registroFolioDocumento, prop.registroLibroDocumento) || formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal) || prop.saldoAdicionalSinInteres > 0) && (
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 mb-3 text-[11px] space-y-1">
           <div className="flex items-center gap-1.5 text-[#8A93A3] uppercase tracking-wide"><Lock size={11} /> Datos internos (no los ve el cliente)</div>
           {prop.codigoClienteReferencia && <div>Código de referencia: <span className="font-mono">{prop.codigoClienteReferencia}</span></div>}
@@ -5446,6 +5458,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
           )}
           {formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal) && (
             <div>Finca-Folio-Libro (real): <span className="font-mono">{formatoRegistro(prop.registroFincaReal, prop.registroFolioReal, prop.registroLibroReal)}</span></div>
+          )}
+          {prop.saldoAdicionalSinInteres > 0 && (
+            <div>Cargo adicional sin interés (aparte de la cuota): <span className="font-mono">{fmt(prop.saldoAdicionalSinInteres)}</span></div>
           )}
         </div>
       )}
@@ -5831,6 +5846,7 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
   const [registroFincaReal, setRegistroFincaReal] = useState(prop.registroFincaReal || "");
   const [registroFolioReal, setRegistroFolioReal] = useState(prop.registroFolioReal || "");
   const [registroLibroReal, setRegistroLibroReal] = useState(prop.registroLibroReal || "");
+  const [saldoAdicionalSinInteres, setSaldoAdicionalSinInteres] = useState(prop.saldoAdicionalSinInteres || 0);
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6 overflow-y-auto">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm my-6">
@@ -5864,6 +5880,12 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
                 <Campo label="Libro" value={registroLibroReal} onChange={(e) => setRegistroLibroReal(e.target.value)} />
               </div>
             </div>
+            <div>
+              <CampoMoneda label="Cargo adicional sin interés" value={saldoAdicionalSinInteres} onChange={setSaldoAdicionalSinInteres} />
+              <p className="text-[11px] text-[#6b7280] mt-1">
+                Aparte de la cuota mensual, no genera interés ni mora. Bájalo a mano conforme el cliente lo vaya abonando.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -5875,6 +5897,7 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
               codigoClienteReferencia,
               registroFincaDocumento, registroFolioDocumento, registroLibroDocumento,
               registroFincaReal, registroFolioReal, registroLibroReal,
+              saldoAdicionalSinInteres: Number(saldoAdicionalSinInteres) || 0,
             })}
             disabled={!direccion || !cliente}
             className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"

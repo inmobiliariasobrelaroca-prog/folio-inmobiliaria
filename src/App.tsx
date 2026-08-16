@@ -4298,7 +4298,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                 </div>
               ) : (
                 <div className="flex gap-5 mt-3 text-xs font-mono">
-                  <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual)}</div></div>
+                  <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</div></div>
                   {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
                   {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
                 </div>

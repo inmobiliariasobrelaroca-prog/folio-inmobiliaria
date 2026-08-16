@@ -5573,7 +5573,16 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
       <PanelClientesPropiedad propiedadId={prop.id} />
 
       <div className="grid grid-cols-3 gap-3 mb-2">
-        <Stat label="Saldo" value={fmt(saldoActual)} />
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Saldo</div>
+          <div className="font-mono text-sm mt-0.5">{fmt(saldoActual)}</div>
+          {prop.saldoAdicionalSinInteres > 0 && (
+            <div className="text-[10px] text-[#8A93A3] mt-1 space-y-0.5 border-t border-[#2A3547] pt-1">
+              <div>+ cargo adicional: <span className="font-mono">{fmt(prop.saldoAdicionalSinInteres)}</span></div>
+              <div className="text-[#EDE7D9]">Total: <span className="font-mono">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</span></div>
+            </div>
+          )}
+        </div>
         <Stat label="Mora a pagar" value={fmt(moraTotal)} warn={moraTotal > 0} />
         <Stat label="Luz pendiente" value={fmt(luzPendiente)} warn={luzPendiente > 0} />
       </div>
@@ -6559,6 +6568,12 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <div className="text-[10px] uppercase text-[#8A93A3]">Saldo del crédito</div>
           <div className="font-mono text-xl mt-1">{fmt(saldoActual)}</div>
+          {prop.saldoAdicionalSinInteres > 0 && (
+            <div className="text-[11px] text-[#8A93A3] mt-1.5 space-y-0.5 border-t border-[#2A3547] pt-1.5">
+              <div>+ cargo adicional: <span className="font-mono">{fmt(prop.saldoAdicionalSinInteres)}</span></div>
+              <div className="text-[#EDE7D9] font-medium">Total: <span className="font-mono">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</span></div>
+            </div>
+          )}
         </div>
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
           <div className="text-[10px] uppercase text-[#8A93A3]">{vencidas.length > 1 ? "Total a pagar" : "Próximo pago"}</div>

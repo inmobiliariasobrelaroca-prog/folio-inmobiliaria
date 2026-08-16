@@ -4268,10 +4268,6 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
 
               {vencidas.length > 1 ? (
                 <div className="mt-3 pt-3 border-t border-[#2A3547] text-xs">
-                  <div className="flex justify-between font-mono mb-2">
-                    <span className="font-sans text-[#8A93A3]">Saldo</span>
-                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</span>
-                  </div>
                   <div className="space-y-1">
                     {vencidas.map((f) => {
                       const est = calcularEstadoPago(f, hoy, p);
@@ -4300,12 +4296,12 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                     <span className="text-red-400">{fmt(totalParaPonerseAlDia)}</span>
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
+                    <span className="font-sans">Saldo</span>
+                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</span>
+                  </div>
+                  <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
                     <span className="font-sans">Total adeudado</span>
                     <span className="text-red-400">{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia)}</span>
-                  </div>
-                  <div className="flex justify-between mt-1.5 pt-1.5 border-t border-[#2A3547] text-[#8A93A3]">
-                    <span className="font-sans">Saldo pendiente (sin mora)</span>
-                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia - moraTotal)}</span>
                   </div>
                 </div>
               ) : (

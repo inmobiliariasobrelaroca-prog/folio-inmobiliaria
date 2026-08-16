@@ -2446,7 +2446,7 @@ function AppInterno({ perfil, cerrarSesion }) {
         )}
 
         {modo === "inmobiliaria" && pantalla === "detalle" && propSel && (
-          <DetallePropiedad prop={propSel} proyecto={proySel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} />
+          <DetallePropiedad prop={propSel} proyecto={proySel} hoy={hoy} onVolver={() => setPantalla("propiedades")} actualizar={(fn) => actualizarProp(propSel.id, fn)} puede={puede} esAdmin={esAdmin} />
         )}
 
         {modo === "cliente" && (
@@ -4896,7 +4896,7 @@ function NotaInmobiliaria({ comprobante, actualizar }) {
   );
 }
 
-function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) {
+function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, esAdmin }) {
   const [tab, setTab] = useState("tabla");
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
@@ -5723,7 +5723,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
                       <Download size={12} /> {generandoPdfTranscripcion ? "Generando..." : "Descargar PDF"}
                     </button>
                   )}
-                  {puede("subir_documentos") && (
+                  {esAdmin && (
                     <button onClick={() => { setTextoTranscripcion(prop.contratoTranscrito || ""); setEditandoTranscripcion(true); }} className="text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1 rounded-md flex items-center gap-1.5">
                       <Pencil size={12} /> {prop.contratoTranscrito ? "Editar" : "Transcribir contrato"}
                     </button>
@@ -5755,7 +5755,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede }) 
                 Todavía no se ha transcrito el texto de este contrato.
               </div>
             )}
-            <div className="text-[10px] text-[#6b7280] mt-1.5">Solo la inmobiliaria ve esta transcripción — es de referencia para leer rápido; el documento subido arriba sigue siendo el que vale legalmente. El cliente no la ve.</div>
+            <div className="text-[10px] text-[#6b7280] mt-1.5">Solo la inmobiliaria ve esta transcripción — es de referencia para leer rápido; el documento subido arriba sigue siendo el que vale legalmente. El cliente no la ve. Solo un super administrador puede transcribir o editar el texto; cualquiera con acceso a esta propiedad puede leerlo y descargarlo.</div>
           </div>
 
           <div>

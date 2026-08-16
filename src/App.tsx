@@ -4524,8 +4524,11 @@ function useVentana(tabla) {
   const cursorIdx = cursor === -1 ? tabla.length : cursor;
   const pasadas = tabla.slice(0, cursorIdx);
   const futuras = tabla.slice(cursorIdx);
-  const nAnt = 3 + extraAnt;
-  const nSig = 3 + extraSig;
+  // Por defecto se muestra solo 1 cuota anterior (la última pagada) y 1 siguiente (la
+  // vencida o la que le toca pagar) — antes eran 3 y 3, mostraba de más. El botón "ver más"
+  // sigue funcionando igual para quien quiera revisar el historial completo.
+  const nAnt = 1 + extraAnt;
+  const nSig = 1 + extraSig;
   const visiblesAnt = pasadas.slice(Math.max(0, pasadas.length - nAnt));
   const visiblesSig = futuras.slice(0, nSig);
   const hayMasAnt = pasadas.length > nAnt;

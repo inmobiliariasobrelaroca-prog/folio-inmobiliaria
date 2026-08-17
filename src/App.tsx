@@ -2127,9 +2127,27 @@ function AppInterno({ perfil, cerrarSesion }) {
       let notifsPorPropiedad = {};
 
       if (idsPropiedades.length > 0) {
-        const { data: cuotasRows, error: errCuotas } = await supabase
-          .from("cuotas").select("*").in("propiedad_id", idsPropiedades).order("numero");
-        if (errCuotas) console.error("Error cargando cuotas:", errCuotas);
+        // Traído en páginas de 1000 filas: Supabase/PostgREST limita cada consulta a un
+        // máximo de filas por defecto (1000, configurable en el proyecto). Con el portafolio
+        // ya en más de 1700 cuotas en total entre todas las propiedades, una sola consulta sin
+        // paginar se quedaba corta a la mitad — y como el ORDER BY era solo "numero" (sin
+        // agrupar antes por propiedad_id), el corte no afectaba a "la propiedad más grande",
+        // sino a las cuotas de número alto de TODAS las propiedades por igual, sin avisar.
+        // Reportado por Carlos, 2026-08-17: el PDF de "Tabla de pagos" de Casa 3 - EUCA3 (177
+        // cuotas) solo mostraba 141.
+        let cuotasRows = [];
+        const TAM_PAGINA_CUOTAS = 1000;
+        let desdeCuotas = 0;
+        while (true) {
+          const { data: paginaCuotas, error: errCuotas } = await supabase
+            .from("cuotas").select("*").in("propiedad_id", idsPropiedades)
+            .order("propiedad_id").order("numero")
+            .range(desdeCuotas, desdeCuotas + TAM_PAGINA_CUOTAS - 1);
+          if (errCuotas) { console.error("Error cargando cuotas:", errCuotas); break; }
+          cuotasRows = cuotasRows.concat(paginaCuotas || []);
+          if (!paginaCuotas || paginaCuotas.length < TAM_PAGINA_CUOTAS) break;
+          desdeCuotas += TAM_PAGINA_CUOTAS;
+        }
 
         // Comprobantes reales (con su imagen en Supabase Storage), para que se vean igual
         // sin importar en qué navegador/dispositivo se esté revisando. No filtramos por lista

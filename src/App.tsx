@@ -831,8 +831,8 @@ function CambiarPasswordInicial({ cerrarSesion, onListo }) {
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 space-y-3">
           <p className="text-xs text-[#8A93A3]">Por seguridad, elige tu propio código numérico (distinto al que te dieron). Va a ser solo tuyo — ni la inmobiliaria lo va a saber. Úsalo la próxima vez para entrar, en el mismo campo de siempre.</p>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu nuevo código (solo números)</span>
-            <input type="text" inputMode="numeric" required value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Tu nuevo código (solo números, mínimo 4 dígitos, máximo 10)</span>
+            <input type="text" inputMode="numeric" minLength={4} maxLength={10} required value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/[^0-9]/g, ""))} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm tracking-widest focus:outline-none focus:border-[#C9A227]" />
           </label>
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Confírmalo</span>

@@ -30,6 +30,14 @@ const fmtDateTime = (iso) => {
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
+// jsPDF con las fuentes estándar (Helvetica) solo soporta WinAnsi/Latin-1 — letras con tilde,
+// ñ y el punto medio "·" caen dentro de ese rango y se ven bien, pero símbolos como la flecha
+// "→" (U+2192) quedan fuera y jsPDF los dibuja como un glifo roto/ilegible. Esta función
+// reemplaza esos símbolos por un equivalente en ASCII simple, solo para texto que va a
+// dibujarse dentro de un PDF con jsPDF — no se usa en la interfaz web, donde la flecha se ve
+// perfecto en cualquier navegador.
+const pdfSafe = (s) => String(s).replace(/→/g, "->").replace(/×/g, "x");
+
 const addMonths = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setMonth(d.getMonth() + n);
@@ -1470,7 +1478,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
     ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
     ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
-    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)],
+    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
     ["Saldo actual", fmt(saldoActual)],
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
@@ -1486,7 +1494,9 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
       fechaTexto: fmtDate(f.fecha),
       estadoTexto: esParcial ? "Parcial" : "Vencida",
       totalTexto: fmt(est.montoRequerido),
-      pasos: explicarPago(f, prop, hoy),
+      // explicarPago() se comparte con el modal de la app (donde la flecha "→" se ve bien en
+      // cualquier navegador) — se sanea aquí, solo para el PDF, para no romper esa vista.
+      pasos: explicarPago(f, prop, hoy).map((p) => ({ titulo: pdfSafe(p.titulo), detalle: pdfSafe(p.detalle) })),
     };
   });
 

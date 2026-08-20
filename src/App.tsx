@@ -425,6 +425,7 @@ function propiedadDesdeFila(row) {
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
+    mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
     contratoTranscrito: row.contrato_transcrito || "",
     clienteUserId: row.cliente_user_id,
     codigoClienteReferencia: row.codigo_cliente_referencia || "",
@@ -459,6 +460,7 @@ function propiedadHaciaFila(p) {
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     saldo_a_favor: p.saldoAFavor,
     saldo_adicional_sin_interes: p.saldoAdicionalSinInteres || 0,
+    mensualidad_ajustada: p.mensualidadAjustada || 0,
     contrato_transcrito: p.contratoTranscrito || null,
     codigo_cliente_referencia: p.codigoClienteReferencia || null,
     registro_finca_documento: p.registroFincaDocumento || null,
@@ -1469,8 +1471,8 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
   // elemento arriba, tachado, cuando está presente.
   const tarjetas = [
     ["Precio de venta", fmt(prop.precio)],
-    ea ? ["Enganche", fmt(ea.engancheReal), fmt(ea.engancheOriginal)] : ["Enganche", fmt(prop.enganche)],
-    ea
+    ea?.cargo > 0 ? ["Enganche", fmt(ea.engancheReal), fmt(ea.engancheOriginal)] : ["Enganche", fmt(prop.enganche)],
+    ea?.cargo > 0
       ? ["Monto financiado", fmt(ea.montoFinanciadoReal), fmt(ea.montoFinanciadoOriginal)]
       : ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
@@ -1478,7 +1480,9 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
     ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
     ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
-    ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
+    ea?.mensualidadReal && prop.sistemaAmortizacion !== "saldos"
+      ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
+      : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
     ["Saldo actual", fmt(saldoActual)],
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
@@ -1529,7 +1533,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     proyectoNombre: proyecto?.nombre || "",
     fechaGenerado: fmtDate(hoy),
     tarjetas,
-    notaCargoPendiente: ea ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
+    notaCargoPendiente: ea?.cargo > 0 ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
     vencidas: vencidasTexto,
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
     columnas,
@@ -2444,6 +2448,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       sistema_amortizacion: datos.sistemaAmortizacion || "nivelada",
       saldo_a_favor: 0,
       saldo_adicional_sin_interes: datos.saldoAdicionalSinInteres || 0,
+      mensualidad_ajustada: datos.mensualidadAjustada || 0,
       codigo_cliente_referencia: datos.codigoClienteReferencia || null,
       registro_finca_documento: datos.registroFincaDocumento || null,
       registro_folio_documento: datos.registroFolioDocumento || null,
@@ -4257,13 +4262,19 @@ function resumenProp(prop, hoy) {
 // original tachado + el real) en el PDF y en las pantallas de "Condiciones".
 function engancheAjustado(prop) {
   const cargo = Number(prop.saldoAdicionalSinInteres || 0);
-  if (cargo <= 0) return null;
+  const mensualidadReal = Number(prop.mensualidadAjustada || 0);
+  // Ambos ajustes suelen venir de la misma causa (un enganche incompleto que sube el monto
+  // financiado y por lo tanto la cuota), pero se guardan por separado — una propiedad puede
+  // tener uno sin el otro, así que cualquiera de los dos activa esta vista "ajustada".
+  if (cargo <= 0 && mensualidadReal <= 0) return null;
   return {
     cargo,
     engancheOriginal: prop.enganche,
     engancheReal: Math.max(0, prop.enganche - cargo),
     montoFinanciadoOriginal: Math.max(0, prop.precio - prop.enganche),
     montoFinanciadoReal: Math.max(0, prop.precio - prop.enganche) + cargo,
+    mensualidadReal: mensualidadReal > 0 ? mensualidadReal : null,
+    mensualidadOriginal: prop.tabla[0]?.pago ?? 0,
   };
 }
 
@@ -4480,6 +4491,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     registroFincaDocumento: "", registroFolioDocumento: "", registroLibroDocumento: "",
     registroFincaReal: "", registroFolioReal: "", registroLibroReal: "",
     saldoAdicionalSinInteres: "",
+    mensualidadAjustada: "",
   });
 
   const precioNum = Number(f.precio) || 0;
@@ -4559,6 +4571,14 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
               <p className="text-[11px] text-[#6b7280] mt-1">
                 Para cargos aparte de la cuota mensual (ej. modificaciones extra pactadas en el contrato) que no generan
                 interés ni mora, y no forman parte de la tabla de pagos — solo queda anotado aquí como referencia.
+              </p>
+            </div>
+
+            <div>
+              <CampoMoneda label="Mensualidad ajustada (opcional)" value={f.mensualidadAjustada} onChange={(n) => setF({ ...f, mensualidadAjustada: n })} />
+              <p className="text-[11px] text-[#6b7280] mt-1">
+                Si la cuota real difiere de la que calcula la tabla de pagos (por ejemplo, por el mismo cargo adicional
+                de arriba), pon aquí el monto correcto — se muestra tachando el de la tabla, en el PDF y en Condiciones.
               </p>
             </div>
           </div>
@@ -5933,9 +5953,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones pactadas en el contrato</div>
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-              <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
-              <Fila2 label="Monto financiado" value={ea ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea ? fmt(ea.montoFinanciadoOriginal) : null} />
-              {ea && (
+              <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea?.cargo > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
                 </div>
@@ -5943,7 +5963,11 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
-              <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
+              <Fila2
+                label="Mensualidad"
+                value={ea?.mensualidadReal ? fmt(ea.mensualidadReal) : (prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0))}
+                tachado={ea?.mensualidadReal && prop.sistemaAmortizacion !== "saldos" ? fmt(ea.mensualidadOriginal) : null}
+              />
               {prop.tabla[0] && (
                 <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
               )}
@@ -6022,8 +6046,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="space-y-3">
               <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
                 <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-                <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
-                {ea && (
+                <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
+                {ea?.cargo > 0 && (
                   <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                     Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
                   </div>
@@ -6178,6 +6202,7 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
   const [registroFolioReal, setRegistroFolioReal] = useState(prop.registroFolioReal || "");
   const [registroLibroReal, setRegistroLibroReal] = useState(prop.registroLibroReal || "");
   const [saldoAdicionalSinInteres, setSaldoAdicionalSinInteres] = useState(prop.saldoAdicionalSinInteres || 0);
+  const [mensualidadAjustada, setMensualidadAjustada] = useState(prop.mensualidadAjustada || 0);
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6 overflow-y-auto">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-5 w-full max-w-sm my-6">
@@ -6217,6 +6242,13 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
                 Aparte de la cuota mensual, no genera interés ni mora. Bájalo a mano conforme el cliente lo vaya abonando.
               </p>
             </div>
+            <div>
+              <CampoMoneda label="Mensualidad ajustada (opcional)" value={mensualidadAjustada} onChange={setMensualidadAjustada} />
+              <p className="text-[11px] text-[#6b7280] mt-1">
+                Si la cuota real es distinta a la que calcula la tabla de pagos, pon aquí el monto correcto — se muestra
+                tachando el de la tabla, en el PDF y en Condiciones. Déjalo en 0 para no mostrar ningún ajuste.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -6229,6 +6261,7 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
               registroFincaDocumento, registroFolioDocumento, registroLibroDocumento,
               registroFincaReal, registroFolioReal, registroLibroReal,
               saldoAdicionalSinInteres: Number(saldoAdicionalSinInteres) || 0,
+              mensualidadAjustada: Number(mensualidadAjustada) || 0,
             })}
             disabled={!direccion || !cliente}
             className="flex-1 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md"
@@ -6887,9 +6920,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
             <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones de tu crédito</div>
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-              <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
-              <Fila2 label="Monto financiado" value={ea ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea ? fmt(ea.montoFinanciadoOriginal) : null} />
-              {ea && (
+              <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea?.cargo > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
                 </div>
@@ -6897,7 +6930,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
-              <Fila2 label="Mensualidad" value={prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0)} />
+              <Fila2
+                label="Mensualidad"
+                value={ea?.mensualidadReal ? fmt(ea.mensualidadReal) : (prop.sistemaAmortizacion === "saldos" ? `${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}` : fmt(prop.tabla[0]?.pago ?? 0))}
+                tachado={ea?.mensualidadReal && prop.sistemaAmortizacion !== "saldos" ? fmt(ea.mensualidadOriginal) : null}
+              />
               {prop.tabla[0] && (
                 <Fila2 label="Día de pago mensual" value={`Día ${new Date(prop.tabla[0].fecha + "T00:00:00").getDate()} de cada mes · límite sin mora: día ${new Date(addDays(prop.tabla[0].fecha, prop.diasGracia) + "T00:00:00").getDate()}`} />
               )}

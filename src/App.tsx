@@ -1455,10 +1455,16 @@ async function construirPdfCotizacion(d) {
 function datosPdfTablaPagos(prop, proyecto, hoy) {
   const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
   const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
+  const ea = engancheAjustado(prop);
+  // Tarjeta con formato [label, valorReal] o, si hay un cargo adicional pendiente que la
+  // afecte, [label, valorReal, valorTachado] — construirPdfTablaPagos dibuja el tercer
+  // elemento arriba, tachado, cuando está presente.
   const tarjetas = [
     ["Precio de venta", fmt(prop.precio)],
-    ["Enganche", fmt(prop.enganche)],
-    ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
+    ea ? ["Enganche", fmt(ea.engancheReal), fmt(ea.engancheOriginal)] : ["Enganche", fmt(prop.enganche)],
+    ea
+      ? ["Monto financiado", fmt(ea.montoFinanciadoReal), fmt(ea.montoFinanciadoOriginal)]
+      : ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
     ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
@@ -1513,6 +1519,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     proyectoNombre: proyecto?.nombre || "",
     fechaGenerado: fmtDate(hoy),
     tarjetas,
+    notaCargoPendiente: ea ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
     vencidas: vencidasTexto,
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
     columnas,
@@ -1574,10 +1581,14 @@ async function construirPdfTablaPagos(d) {
 
   y = 31;
 
-  // Tarjetas resumen, en 3 columnas
+  // Tarjetas resumen, en 3 columnas. Cuando una tarjeta trae un tercer elemento (valor
+  // original), se dibuja tachado arriba del valor real vigente — caso de propiedades con un
+  // cargo adicional pendiente (ver engancheAjustado) donde el enganche/monto financiado del
+  // contrato original ya no coincide con lo realmente recibido.
   const colAncho = anchoUtil / 3;
-  const filaAlto = 12;
-  d.tarjetas.forEach(([label, valor], i) => {
+  const algunaTachada = d.tarjetas.some((t) => t[2]);
+  const filaAlto = algunaTachada ? 15 : 12;
+  d.tarjetas.forEach(([label, valor, valorTachado], i) => {
     const col = i % 3;
     const fila = Math.floor(i / 3);
     const x = xIzq + col * colAncho;
@@ -1586,15 +1597,56 @@ async function construirPdfTablaPagos(d) {
     doc.setLineWidth(0.2);
     doc.rect(x, yy, colAncho - 2, filaAlto - 2);
     doc.setFont(undefined, "normal"); doc.setFontSize(6.3); doc.setTextColor(130, 130, 130);
-    doc.text(String(label).toUpperCase(), x + 2, yy + 4);
-    doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-    doc.text(String(valor), x + 2, yy + 8.5);
+    doc.text(String(label).toUpperCase(), x + 2, yy + 3.8);
+    if (valorTachado) {
+      const textoViejo = String(valorTachado);
+      doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(190, 60, 60);
+      doc.text(textoViejo, x + 2, yy + 7.4);
+      const anchoViejo = doc.getTextWidth(textoViejo);
+      doc.setDrawColor(190, 60, 60);
+      doc.setLineWidth(0.3);
+      doc.line(x + 2, yy + 6.4, x + 2 + anchoViejo, yy + 6.4);
+      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
+      doc.text(String(valor), x + 2, yy + 12);
+    } else {
+      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
+      doc.text(String(valor), x + 2, yy + (algunaTachada ? 11 : 8.5));
+    }
   });
   y += Math.ceil(d.tarjetas.length / 3) * filaAlto + 4;
 
-  // Cuotas atrasadas, si hay
+  // Nota llamativa sobre el cargo pendiente sin interés (si aplica), antes del bloque de
+  // cuotas atrasadas — a pedido de Carlos, para que quede claro que esos 20,000 (u otro
+  // monto) no generan mora ni interés mientras estén pendientes.
+  if (d.notaCargoPendiente) {
+    doc.setFont(undefined, "bold"); doc.setFontSize(8.5);
+    const notaLineas = doc.splitTextToSize(d.notaCargoPendiente.toUpperCase(), anchoUtil - 6);
+    const altoNota = 5 + notaLineas.length * 4.2;
+    if (y + altoNota > alturaPagina - 20) { doc.addPage(); y = 20; }
+    doc.setDrawColor(220, 38, 38);
+    doc.setLineWidth(0.5);
+    doc.setFillColor(254, 226, 226);
+    doc.roundedRect(xIzq, y, anchoUtil, altoNota, 1, 1, "FD");
+    doc.setTextColor(185, 28, 28);
+    doc.text(notaLineas, xIzq + 3, y + 4.6);
+    y += altoNota + 4;
+  }
+
+  // Cuotas atrasadas, si hay. Las explicaciones de cada cuota pueden ser largas, así que se
+  // envuelven con splitTextToSize antes de calcular el alto del recuadro — antes se dibujaban
+  // sin envolver y el texto se salía por la derecha del recuadro rojo en cuotas con
+  // explicaciones largas.
   if (d.vencidas.length > 0) {
-    const altoBloque = 8 + d.vencidas.reduce((s, v) => s + 5 + v.pasos.length * 3.6, 0);
+    const maxWidthPasos = anchoUtil - 11;
+    doc.setFont(undefined, "normal"); doc.setFontSize(6.8);
+    const vencidasConLineas = d.vencidas.map((v) => ({
+      ...v,
+      pasosLineas: v.pasos.map((p) => doc.splitTextToSize(`${p.titulo}. ${p.detalle}`, maxWidthPasos)),
+    }));
+    const altoBloque = 8 + vencidasConLineas.reduce(
+      (s, v) => s + 5 + v.pasosLineas.reduce((s2, lineas) => s2 + lineas.length * 3.6, 0),
+      0
+    );
     if (y + altoBloque > alturaPagina - 20) { doc.addPage(); y = 20; }
     doc.setDrawColor(220, 38, 38);
     doc.setFillColor(254, 242, 242);
@@ -1603,14 +1655,19 @@ async function construirPdfTablaPagos(d) {
     doc.setFont(undefined, "bold"); doc.setFontSize(9); doc.setTextColor(153, 27, 27);
     doc.text(`Cuotas atrasadas (${d.vencidas.length}) — Total para ponerse al día: ${d.totalParaPonerseAlDiaTexto}`, xIzq + 3, yy);
     yy += 5;
-    d.vencidas.forEach((v) => {
+    vencidasConLineas.forEach((v) => {
       doc.setFont(undefined, "bold"); doc.setFontSize(7.5); doc.setTextColor(30, 30, 30);
       doc.text(`Cuota #${v.numero} · vence ${v.fechaTexto} · ${v.estadoTexto} · Total: ${v.totalTexto}`, xIzq + 3, yy);
       yy += 4;
       doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(80, 80, 80);
-      v.pasos.forEach((p, i) => {
-        doc.text(`${i + 1}. ${p.titulo}. ${p.detalle}`, xIzq + 5, yy);
+      v.pasosLineas.forEach((lineas, i) => {
+        const [primera, ...resto] = lineas;
+        doc.text(`${i + 1}. ${primera}`, xIzq + 5, yy);
         yy += 3.6;
+        resto.forEach((linea) => {
+          doc.text(linea, xIzq + 8, yy);
+          yy += 3.6;
+        });
       });
     });
     y += altoBloque + 6;
@@ -1621,6 +1678,7 @@ async function construirPdfTablaPagos(d) {
   doc.text("Tabla de amortización", xIzq, y);
   y += 3;
 
+  const colEstado = d.columnas.length - 1;
   autoTable(doc, {
     startY: y,
     head: [d.columnas],
@@ -1632,6 +1690,12 @@ async function construirPdfTablaPagos(d) {
     columnStyles: { 0: { cellWidth: 8 } },
     margin: { left: xIzq, right: 14, bottom: 16 },
     didDrawPage: dibujarPiePagina,
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === colEstado && String(data.cell.raw).trim() === "Vencido") {
+        data.cell.styles.textColor = [220, 38, 38];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
   });
 
   return doc;
@@ -4174,6 +4238,25 @@ function resumenProp(prop, hoy) {
   return { saldoActual, vencidas, enRevision, moraCredito, moraLuz, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia };
 }
 
+// Cuando una propiedad tiene un "cargo adicional sin interés" pendiente (por ejemplo, un
+// enganche que quedó incompleto — el cliente dio menos de lo pactado y la diferencia se
+// registró en saldoAdicionalSinInteres para cobrarla después, sin generar mora ni interés),
+// el enganche y el monto financiado que aparecen en el contrato original ya no reflejan la
+// realidad: el enganche "real" recibido es menor, y el monto financiado real es mayor por esa
+// misma diferencia. Esta función calcula esos valores ajustados para poder mostrar ambos (el
+// original tachado + el real) en el PDF y en las pantallas de "Condiciones".
+function engancheAjustado(prop) {
+  const cargo = Number(prop.saldoAdicionalSinInteres || 0);
+  if (cargo <= 0) return null;
+  return {
+    cargo,
+    engancheOriginal: prop.enganche,
+    engancheReal: Math.max(0, prop.enganche - cargo),
+    montoFinanciadoOriginal: Math.max(0, prop.precio - prop.enganche),
+    montoFinanciadoReal: Math.max(0, prop.precio - prop.enganche) + cargo,
+  };
+}
+
 // ---------- Proyectos ----------
 
 function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onActualizar, puedeCrear }) {
@@ -5016,6 +5099,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
   const [destinoCorregido, setDestinoCorregido] = useState(null);
 
   const { saldoActual, vencidas, moraCredito, moraLuz, moraTotal, luzPendiente, totalParaPonerseAlDia } = resumenProp(prop, hoy);
+  const ea = engancheAjustado(prop);
   const ventana = useVentana(prop.tabla);
 
   const marcarPagado = (idx) => {
@@ -5839,8 +5923,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones pactadas en el contrato</div>
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-              <Fila2 label="Enganche" value={fmt(prop.enganche)} />
-              <Fila2 label="Monto financiado" value={fmt(Math.max(0, prop.precio - prop.enganche))} />
+              <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {ea && (
+                <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
+                  Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
+                </div>
+              )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
@@ -5923,7 +6012,12 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="space-y-3">
               <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
                 <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-                <Fila2 label="Enganche" value={fmt(prop.enganche)} />
+                <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
+                {ea && (
+                  <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
+                    Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
+                  </div>
+                )}
                 <Fila2 label="Tasa anual" value={`${fmtNum(prop.tasaAnual)}%`} />
                 <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años`} />
                 <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
@@ -6306,11 +6400,14 @@ function ModalClienteInline({ onCancelar, onCreado }) {
   );
 }
 
-function Fila2({ label, value }) {
+function Fila2({ label, value, tachado }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between items-baseline gap-3">
       <span className="text-[#8A93A3]">{label}</span>
-      <span className="font-mono">{value}</span>
+      <span className="text-right">
+        {tachado && <span className="font-mono text-red-400/70 line-through mr-2">{tachado}</span>}
+        <span className="font-mono">{value}</span>
+      </span>
     </div>
   );
 }
@@ -6327,7 +6424,7 @@ function Stat({ label, value, warn }) {
 function Badge({ estado }) {
   const map = {
     pagado: { icon: CheckCircle2, cls: "text-emerald-400 border-emerald-700", txt: "Pagado" },
-    vencido: { icon: AlertTriangle, cls: "text-red-400 border-red-800", txt: "Vencido" },
+    vencido: { icon: AlertTriangle, cls: "text-red-400 border-red-800 font-bold", txt: "Vencido" },
     gracia: { icon: Clock, cls: "text-orange-300 border-orange-700", txt: "En gracia" },
     pendiente: { icon: Clock, cls: "text-[#8A93A3] border-[#3a4864]", txt: "Pendiente" },
     revision: { icon: Upload, cls: "text-amber-400 border-amber-700", txt: "En revisión" },
@@ -6460,6 +6557,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     }
   };
   const { saldoActual, vencidas, moraTotal, luzPendiente, proximaCuota, pendienteActual, totalParaPonerseAlDia } = resumenProp(prop, hoy);
+  const ea = engancheAjustado(prop);
   const comparativaAbono = calcularComparativaAbono(prop);
   const alDia = vencidas.length === 0;
   const ventana = useVentana(prop.tabla);
@@ -6779,8 +6877,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
             <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Condiciones de tu crédito</div>
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
-              <Fila2 label="Enganche" value={fmt(prop.enganche)} />
-              <Fila2 label="Monto financiado" value={fmt(Math.max(0, prop.precio - prop.enganche))} />
+              <Fila2 label="Enganche" value={ea ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea ? fmt(ea.engancheOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {ea && (
+                <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
+                  Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
+                </div>
+              )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
               <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />

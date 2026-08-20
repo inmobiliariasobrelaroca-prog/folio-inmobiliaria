@@ -525,6 +525,86 @@ function cuotaDesdeFila(row) {
   };
 }
 
+// Trae todas las cuotas de una lista de propiedades, paginando de a 1000 filas (límite de
+// PostgREST) pero pidiendo las páginas EN PARALELO en vez de una por una: primero se pregunta
+// cuántas hay en total (head:true no trae filas, solo el conteo) y luego se disparan todas las
+// páginas de una vez con Promise.all. Con más de 2,000 cuotas en el portafolio, pedirlas en fila
+// (como antes) costaba 2-3 idas y vueltas seguidas al servidor solo para esto.
+async function cargarCuotasPaginadas(idsPropiedades) {
+  const TAM_PAGINA = 1000;
+  const { count, error: errCount } = await supabase
+    .from("cuotas").select("id", { count: "exact", head: true }).in("propiedad_id", idsPropiedades);
+  if (errCount) { console.error("Error contando cuotas:", errCount); return []; }
+  const totalPaginas = Math.max(1, Math.ceil((count || 0) / TAM_PAGINA));
+  const paginas = await Promise.all(
+    Array.from({ length: totalPaginas }, (_, i) => {
+      const desde = i * TAM_PAGINA;
+      return supabase
+        .from("cuotas").select("*").in("propiedad_id", idsPropiedades)
+        .order("propiedad_id").order("numero")
+        .range(desde, desde + TAM_PAGINA - 1);
+    })
+  );
+  let filas = [];
+  for (const { data, error } of paginas) {
+    if (error) { console.error("Error cargando cuotas:", error); continue; }
+    filas = filas.concat(data || []);
+  }
+  return filas;
+}
+
+// Trae todos los comprobantes y genera sus enlaces firmados de Supabase Storage EN UN SOLO
+// lote (createSignedUrls, plural) en vez de uno por uno. Antes, con 40+ comprobantes en el
+// sistema, se pedía el enlace de cada uno por separado y se esperaba a que terminara antes de
+// pedir el siguiente — esa fila secuencial era, junto con la paginación de cuotas de arriba, la
+// mayor parte de los 24+ segundos que tardaba la app entre el login y la pantalla de Proyectos
+// (y se repetía cada vez que la pestaña recuperaba el foco). No filtramos por lista de
+// cuota_id acá (con muchas cuotas esa lista arma una URL demasiado larga y Supabase la rechaza
+// con 400) — los permisos (RLS) ya limitan qué comprobantes puede ver cada quien.
+async function cargarComprobantesConEnlaces() {
+  const { data: compRows, error: errComp } = await supabase
+    .from("comprobantes").select("*").order("created_at", { ascending: false });
+  if (errComp) console.error("Error cargando comprobantes:", errComp);
+  const filas = compRows || [];
+
+  const urlPorRuta = {};
+  if (filas.length > 0) {
+    const rutas = filas.map((row) => row.imagen_url);
+    const { data: firmados, error: errFirmas } = await supabase.storage
+      .from("comprobantes").createSignedUrls(rutas, 3600);
+    if (errFirmas) {
+      console.error("Error generando enlaces de comprobantes:", errFirmas);
+    } else {
+      (firmados || []).forEach((f) => { if (f.signedUrl && f.path) urlPorRuta[f.path] = f.signedUrl; });
+    }
+  }
+
+  const comprobantesPorCuota = {};
+  const historialComprobantesPorCuota = {};
+  for (const row of filas) {
+    const comprobanteObj = {
+      id: row.id,
+      imagen: urlPorRuta[row.imagen_url] || null,
+      fecha: row.created_at,
+      estado: row.estado,
+      montoDepositado: Number(row.monto_depositado),
+      moraAlSubir: Number(row.mora_al_subir || 0),
+      montoRequerido: Number(row.monto_requerido || 0),
+      excedente: Number(row.excedente || 0),
+      faltante: Number(row.faltante || 0),
+      resultado: row.resultado,
+      destinoExcedente: row.destino_excedente,
+      fechaPagoReal: row.fecha_pago_real,
+      notaCliente: row.nota_cliente,
+      notaInmobiliaria: row.nota_inmobiliaria,
+    };
+    if (!comprobantesPorCuota[row.cuota_id]) comprobantesPorCuota[row.cuota_id] = comprobanteObj; // el más reciente (para revisar/aprobar)
+    if (!historialComprobantesPorCuota[row.cuota_id]) historialComprobantesPorCuota[row.cuota_id] = [];
+    historialComprobantesPorCuota[row.cuota_id].push(comprobanteObj); // todos, para mostrarlos en la tabla ya pagada
+  }
+  return { comprobantesPorCuota, historialComprobantesPorCuota };
+}
+
 // Guarda las cuotas de una propiedad en Supabase manteniendo el mismo id por cada
 // número de cuota (upsert), y borra solo las que ya no existen (por ejemplo, tras un
 // abono a capital que acorta el plazo restante).
@@ -2111,11 +2191,13 @@ function AppInterno({ perfil, cerrarSesion }) {
   const hoy = new Date().toISOString().slice(0, 10);
 
   const cargarDatos = async () => {
-      const { data: proys, error: errProys } = await supabase.from("proyectos").select("*").order("created_at");
+      // proyectos y propiedades no dependen uno del otro: se piden a la vez en vez de en fila.
+      const [{ data: proys, error: errProys }, { data: props, error: errProps }] = await Promise.all([
+        supabase.from("proyectos").select("*").order("created_at"),
+        supabase.from("propiedades").select("*").order("created_at"),
+      ]);
       if (errProys) console.error("Error cargando proyectos:", errProys);
       setProyectos((proys || []).map((r) => ({ id: r.id, nombre: r.nombre, ubicacion: r.ubicacion })));
-
-      const { data: props, error: errProps } = await supabase.from("propiedades").select("*").order("created_at");
       if (errProps) console.error("Error cargando propiedades:", errProps);
       const propsList = props || [];
 
@@ -2127,68 +2209,30 @@ function AppInterno({ perfil, cerrarSesion }) {
       let notifsPorPropiedad = {};
 
       if (idsPropiedades.length > 0) {
-        // Traído en páginas de 1000 filas: Supabase/PostgREST limita cada consulta a un
-        // máximo de filas por defecto (1000, configurable en el proyecto). Con el portafolio
-        // ya en más de 1700 cuotas en total entre todas las propiedades, una sola consulta sin
-        // paginar se quedaba corta a la mitad — y como el ORDER BY era solo "numero" (sin
-        // agrupar antes por propiedad_id), el corte no afectaba a "la propiedad más grande",
-        // sino a las cuotas de número alto de TODAS las propiedades por igual, sin avisar.
+        // Cuotas, comprobantes, luz, documentos, fotos y notificaciones no dependen entre sí,
+        // así que se piden todas a la vez con Promise.all en vez de una por una. Antes esta fila
+        // secuencial (más la paginación de cuotas y los enlaces de comprobantes uno por uno,
+        // ver cargarCuotasPaginadas/cargarComprobantesConEnlaces más arriba) era la mayor parte
+        // de los 24+ segundos entre el login y la pantalla de Proyectos.
+        const [
+          cuotasRows,
+          { comprobantesPorCuota, historialComprobantesPorCuota },
+          { data: luzRows, error: errLuz },
+          { data: docRows, error: errDocs },
+          { data: fotoRows, error: errFotos },
+          { data: notifRows, error: errNotifs },
+        ] = await Promise.all([
+          cargarCuotasPaginadas(idsPropiedades),
+          cargarComprobantesConEnlaces(),
+          supabase.from("cargos_luz").select("*").in("propiedad_id", idsPropiedades).order("fecha"),
+          supabase.from("documentos").select("*").in("propiedad_id", idsPropiedades).order("created_at"),
+          supabase.from("propiedades_fotos").select("*").in("propiedad_id", idsPropiedades).order("created_at"),
+          supabase.from("notificaciones").select("*").in("propiedad_id", idsPropiedades).order("created_at", { ascending: false }),
+        ]);
+
         // Reportado por Carlos, 2026-08-17: el PDF de "Tabla de pagos" de Casa 3 - EUCA3 (177
-        // cuotas) solo mostraba 141.
-        let cuotasRows = [];
-        const TAM_PAGINA_CUOTAS = 1000;
-        let desdeCuotas = 0;
-        while (true) {
-          const { data: paginaCuotas, error: errCuotas } = await supabase
-            .from("cuotas").select("*").in("propiedad_id", idsPropiedades)
-            .order("propiedad_id").order("numero")
-            .range(desdeCuotas, desdeCuotas + TAM_PAGINA_CUOTAS - 1);
-          if (errCuotas) { console.error("Error cargando cuotas:", errCuotas); break; }
-          cuotasRows = cuotasRows.concat(paginaCuotas || []);
-          if (!paginaCuotas || paginaCuotas.length < TAM_PAGINA_CUOTAS) break;
-          desdeCuotas += TAM_PAGINA_CUOTAS;
-        }
-
-        // Comprobantes reales (con su imagen en Supabase Storage), para que se vean igual
-        // sin importar en qué navegador/dispositivo se esté revisando. No filtramos por lista
-        // de cuota_id acá (con muchas cuotas esa lista arma una URL demasiado larga y Supabase
-        // la rechaza con 400) — los permisos (RLS) ya limitan qué comprobantes puede ver cada quien.
-        let comprobantesPorCuota = {};
-        let historialComprobantesPorCuota = {};
-        {
-          const { data: compRows, error: errComp } = await supabase
-            .from("comprobantes").select("*").order("created_at", { ascending: false });
-          if (errComp) console.error("Error cargando comprobantes:", errComp);
-          for (const row of compRows || []) {
-            let imagenUrl = null;
-            try {
-              const { data: signed } = await supabase.storage.from("comprobantes").createSignedUrl(row.imagen_url, 3600);
-              imagenUrl = signed?.signedUrl || null;
-            } catch (e) {
-              console.error("Error generando enlace del comprobante:", e);
-            }
-            const comprobanteObj = {
-              id: row.id,
-              imagen: imagenUrl,
-              fecha: row.created_at,
-              estado: row.estado,
-              montoDepositado: Number(row.monto_depositado),
-              moraAlSubir: Number(row.mora_al_subir || 0),
-              montoRequerido: Number(row.monto_requerido || 0),
-              excedente: Number(row.excedente || 0),
-              faltante: Number(row.faltante || 0),
-              resultado: row.resultado,
-              destinoExcedente: row.destino_excedente,
-              fechaPagoReal: row.fecha_pago_real,
-              notaCliente: row.nota_cliente,
-              notaInmobiliaria: row.nota_inmobiliaria,
-            };
-            if (!comprobantesPorCuota[row.cuota_id]) comprobantesPorCuota[row.cuota_id] = comprobanteObj; // el más reciente (para revisar/aprobar)
-            if (!historialComprobantesPorCuota[row.cuota_id]) historialComprobantesPorCuota[row.cuota_id] = [];
-            historialComprobantesPorCuota[row.cuota_id].push(comprobanteObj); // todos, para mostrarlos en la tabla ya pagada
-          }
-        }
-
+        // cuotas) solo mostraba 141 — por eso cargarCuotasPaginadas() sigue trayendo TODAS las
+        // cuotas del portafolio (más de 2,000) sin cortar en el límite de 1000 filas de PostgREST.
         (cuotasRows || []).forEach((row) => {
           if (!cuotasPorPropiedad[row.propiedad_id]) cuotasPorPropiedad[row.propiedad_id] = [];
           const fila = cuotaDesdeFila(row);
@@ -2197,32 +2241,24 @@ function AppInterno({ perfil, cerrarSesion }) {
           cuotasPorPropiedad[row.propiedad_id].push(fila);
         });
 
-        const { data: luzRows, error: errLuz } = await supabase
-          .from("cargos_luz").select("*").in("propiedad_id", idsPropiedades).order("fecha");
         if (errLuz) console.error("Error cargando cargos de luz:", errLuz);
         (luzRows || []).forEach((row) => {
           if (!luzPorPropiedad[row.propiedad_id]) luzPorPropiedad[row.propiedad_id] = [];
           luzPorPropiedad[row.propiedad_id].push(cargoLuzDesdeFila(row));
         });
 
-        const { data: docRows, error: errDocs } = await supabase
-          .from("documentos").select("*").in("propiedad_id", idsPropiedades).order("created_at");
         if (errDocs) console.error("Error cargando documentos:", errDocs);
         (docRows || []).forEach((row) => {
           if (!documentosPorPropiedad[row.propiedad_id]) documentosPorPropiedad[row.propiedad_id] = [];
           documentosPorPropiedad[row.propiedad_id].push(documentoDesdeFila(row));
         });
 
-        const { data: fotoRows, error: errFotos } = await supabase
-          .from("propiedades_fotos").select("*").in("propiedad_id", idsPropiedades).order("created_at");
         if (errFotos) console.error("Error cargando fotos de propiedades:", errFotos);
         (fotoRows || []).forEach((row) => {
           if (!fotosPorPropiedad[row.propiedad_id]) fotosPorPropiedad[row.propiedad_id] = [];
           fotosPorPropiedad[row.propiedad_id].push(fotoPropiedadDesdeFila(row));
         });
 
-        const { data: notifRows, error: errNotifs } = await supabase
-          .from("notificaciones").select("*").in("propiedad_id", idsPropiedades).order("created_at", { ascending: false });
         if (errNotifs) console.error("Error cargando notificaciones:", errNotifs);
         (notifRows || []).forEach((row) => {
           if (!notifsPorPropiedad[row.propiedad_id]) notifsPorPropiedad[row.propiedad_id] = [];

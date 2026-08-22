@@ -1472,7 +1472,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
   const tarjetas = [
     ["Precio de venta", fmt(prop.precio)],
     ea?.cargo > 0 ? ["Enganche", fmt(ea.engancheReal), fmt(ea.engancheOriginal)] : ["Enganche", fmt(prop.enganche)],
-    ea?.cargo > 0
+    ea?.cargo > 0 || ea?.abonoInicial > 0
       ? ["Monto financiado", fmt(ea.montoFinanciadoReal), fmt(ea.montoFinanciadoOriginal)]
       : ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
@@ -4284,16 +4284,28 @@ function engancheAjustado(prop) {
   const pagoVigente = prop.sistemaAmortizacion !== "saldos" ? mensualidadVigente(prop.tabla) : pagoInicial;
   const mensualidadDetectada = Math.abs(pagoVigente - pagoInicial) > 0.005 ? pagoVigente : 0;
   const mensualidadReal = mensualidadManual > 0 ? mensualidadManual : mensualidadDetectada;
-  // Ambos ajustes suelen venir de la misma causa (un enganche incompleto que sube el monto
-  // financiado y por lo tanto la cuota), pero se guardan por separado — una propiedad puede
-  // tener uno sin el otro, así que cualquiera de los dos activa esta vista "ajustada".
-  if (cargo <= 0 && mensualidadReal <= 0) return null;
+
+  const montoFinanciadoOriginal = Math.max(0, prop.precio - prop.enganche);
+  // Otro motivo, distinto del enganche incompleto, por el que el monto financiado puede quedar
+  // desactualizado: un abono a capital hecho al inicio del crédito (antes de la primera cuota),
+  // que redujo el saldo real sobre el que se calculó toda la tabla por debajo del que resulta de
+  // restar precio - enganche. Se detecta comparando ese saldo inicial real (la primera fila de
+  // la tabla) contra el valor "de contrato". A diferencia del cargo por enganche incompleto, este
+  // abono no cambia el enganche en sí — solo el monto financiado queda menor al original.
+  const saldoInicialReal = prop.tabla[0]?.saldoInicial ?? montoFinanciadoOriginal;
+  const abonoInicial = cargo <= 0 ? Math.max(0, montoFinanciadoOriginal - saldoInicialReal) : 0;
+
+  // Todos estos ajustes suelen venir de una sola causa a la vez, pero se detectan por separado
+  // — una propiedad puede tener cualquiera de los tres sin los otros, así que cualquiera activa
+  // esta vista "ajustada".
+  if (cargo <= 0 && mensualidadReal <= 0 && abonoInicial <= 0.5) return null;
   return {
     cargo,
+    abonoInicial: abonoInicial > 0.5 ? abonoInicial : 0,
     engancheOriginal: prop.enganche,
     engancheReal: Math.max(0, prop.enganche - cargo),
-    montoFinanciadoOriginal: Math.max(0, prop.precio - prop.enganche),
-    montoFinanciadoReal: Math.max(0, prop.precio - prop.enganche) + cargo,
+    montoFinanciadoOriginal,
+    montoFinanciadoReal: cargo > 0 ? montoFinanciadoOriginal + cargo : abonoInicial > 0.5 ? montoFinanciadoOriginal - abonoInicial : montoFinanciadoOriginal,
     mensualidadReal: mensualidadReal > 0 ? mensualidadReal : null,
     mensualidadOriginal: pagoInicial,
   };
@@ -5975,10 +5987,15 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
-              <Fila2 label="Monto financiado" value={ea?.cargo > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
+                </div>
+              )}
+              {ea?.abonoInicial > 0 && (
+                <div className="!mt-3 bg-[#C9A227]/10 border border-[#C9A227]/40 rounded-md px-3 py-2 text-[12px] font-semibold text-[#C9A227]">
+                  Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
@@ -6942,10 +6959,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
             <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 space-y-2 text-sm">
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
-              <Fila2 label="Monto financiado" value={ea?.cargo > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
+                </div>
+              )}
+              {ea?.abonoInicial > 0 && (
+                <div className="!mt-3 bg-[#C9A227]/10 border border-[#C9A227]/40 rounded-md px-3 py-2 text-[12px] font-semibold text-[#C9A227]">
+                  Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />

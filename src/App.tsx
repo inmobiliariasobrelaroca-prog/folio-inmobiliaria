@@ -4260,9 +4260,30 @@ function resumenProp(prop, hoy) {
 // realidad: el enganche "real" recibido es menor, y el monto financiado real es mayor por esa
 // misma diferencia. Esta función calcula esos valores ajustados para poder mostrar ambos (el
 // original tachado + el real) en el PDF y en las pantallas de "Condiciones".
+//
+// La mensualidad también puede quedar desactualizada por otro motivo, sin relación con el
+// enganche: un abono a capital que recalculó la cuota (ver recalcularConAbono). En ese caso no
+// hace falta llenar "Mensualidad ajustada" a mano — se detecta sola comparando la cuota de la
+// primera fila contra la cuota "vigente" (la próxima cuota pendiente, o si ya no queda ninguna,
+// la de la última pagada). El campo "Mensualidad ajustada" sigue existiendo para forzar un valor
+// a mano cuando haga falta (por ejemplo junto con el cargo del enganche incompleto) y, si está
+// lleno, tiene prioridad sobre la detección automática.
+function mensualidadVigente(tabla) {
+  const proximaPendiente = tabla.find((f) => f.estado === "pendiente");
+  if (proximaPendiente) return proximaPendiente.pago;
+  for (let i = tabla.length - 1; i >= 0; i--) {
+    if (tabla[i].estado === "pagado") return tabla[i].pago;
+  }
+  return tabla[0]?.pago ?? 0;
+}
+
 function engancheAjustado(prop) {
   const cargo = Number(prop.saldoAdicionalSinInteres || 0);
-  const mensualidadReal = Number(prop.mensualidadAjustada || 0);
+  const mensualidadManual = Number(prop.mensualidadAjustada || 0);
+  const pagoInicial = prop.tabla[0]?.pago ?? 0;
+  const pagoVigente = prop.sistemaAmortizacion !== "saldos" ? mensualidadVigente(prop.tabla) : pagoInicial;
+  const mensualidadDetectada = Math.abs(pagoVigente - pagoInicial) > 0.005 ? pagoVigente : 0;
+  const mensualidadReal = mensualidadManual > 0 ? mensualidadManual : mensualidadDetectada;
   // Ambos ajustes suelen venir de la misma causa (un enganche incompleto que sube el monto
   // financiado y por lo tanto la cuota), pero se guardan por separado — una propiedad puede
   // tener uno sin el otro, así que cualquiera de los dos activa esta vista "ajustada".
@@ -4274,7 +4295,7 @@ function engancheAjustado(prop) {
     montoFinanciadoOriginal: Math.max(0, prop.precio - prop.enganche),
     montoFinanciadoReal: Math.max(0, prop.precio - prop.enganche) + cargo,
     mensualidadReal: mensualidadReal > 0 ? mensualidadReal : null,
-    mensualidadOriginal: prop.tabla[0]?.pago ?? 0,
+    mensualidadOriginal: pagoInicial,
   };
 }
 

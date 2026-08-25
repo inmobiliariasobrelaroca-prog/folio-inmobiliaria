@@ -795,6 +795,34 @@ async function verDocumentoStorage(archivoUrl) {
   window.open(data.signedUrl, "_blank");
 }
 
+// ---------- Abonos programados: pagos grandes pactados en el contrato (aparte de la cuota
+// mensual normal), como los abonos de enganche que se pagarán en fechas futuras acordadas.
+// Se guardan en su propia tabla (no en `propiedades`) porque no dependen del guardado general
+// de la propiedad — igual que documentos y fotos.
+
+function abonoProgramadoDesdeFila(row) {
+  return { id: row.id, fecha: row.fecha, monto: Number(row.monto), descripcion: row.descripcion || "", cumplido: !!row.cumplido };
+}
+
+async function crearAbonoProgramado(propiedadId, datos) {
+  const { data, error } = await supabase
+    .from("abonos_programados")
+    .insert({ propiedad_id: propiedadId, fecha: datos.fecha, monto: datos.monto, descripcion: datos.descripcion || "", cumplido: !!datos.cumplido })
+    .select().single();
+  if (error) { console.error("Error creando abono programado:", error); return null; }
+  return abonoProgramadoDesdeFila(data);
+}
+
+async function actualizarAbonoProgramado(id, datos) {
+  const { error } = await supabase.from("abonos_programados").update(datos).eq("id", id);
+  if (error) console.error("Error actualizando abono programado:", error);
+}
+
+async function eliminarAbonoProgramadoDB(id) {
+  const { error } = await supabase.from("abonos_programados").delete().eq("id", id);
+  if (error) console.error("Error eliminando abono programado:", error);
+}
+
 // ---------- Fotos de referencia de la propiedad: Supabase Storage (bucket público) + tabla
 // `propiedades_fotos` ----------
 // Son fotos de la casa en sí (fachada, calle, rótulo con el número, etc.), solo para
@@ -2294,6 +2322,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       let documentosPorPropiedad = {};
       let fotosPorPropiedad = {};
       let notifsPorPropiedad = {};
+      let abonosProgramadosPorPropiedad = {};
 
       if (idsPropiedades.length > 0) {
         // Cuotas, comprobantes, luz, documentos, fotos y notificaciones no dependen entre sí,
@@ -2308,6 +2337,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           { data: docRows, error: errDocs },
           { data: fotoRows, error: errFotos },
           { data: notifRows, error: errNotifs },
+          { data: abonosProgRows, error: errAbonosProg },
         ] = await Promise.all([
           cargarCuotasPaginadas(idsPropiedades),
           cargarComprobantesConEnlaces(),
@@ -2315,6 +2345,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           supabase.from("documentos").select("*").in("propiedad_id", idsPropiedades).order("created_at"),
           supabase.from("propiedades_fotos").select("*").in("propiedad_id", idsPropiedades).order("created_at"),
           supabase.from("notificaciones").select("*").in("propiedad_id", idsPropiedades).order("created_at", { ascending: false }),
+          supabase.from("abonos_programados").select("*").in("propiedad_id", idsPropiedades).order("fecha"),
         ]);
 
         // Reportado por Carlos, 2026-08-17: el PDF de "Tabla de pagos" de Casa 3 - EUCA3 (177
@@ -2351,6 +2382,12 @@ function AppInterno({ perfil, cerrarSesion }) {
           if (!notifsPorPropiedad[row.propiedad_id]) notifsPorPropiedad[row.propiedad_id] = [];
           notifsPorPropiedad[row.propiedad_id].push(notifDesdeFila(row));
         });
+
+        if (errAbonosProg) console.error("Error cargando abonos programados:", errAbonosProg);
+        (abonosProgRows || []).forEach((row) => {
+          if (!abonosProgramadosPorPropiedad[row.propiedad_id]) abonosProgramadosPorPropiedad[row.propiedad_id] = [];
+          abonosProgramadosPorPropiedad[row.propiedad_id].push(abonoProgramadoDesdeFila(row));
+        });
       }
 
       const lista = [];
@@ -2371,6 +2408,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           documentos: documentosPorPropiedad[base.id] || [],
           fotos: fotosPorPropiedad[base.id] || [],
           notificaciones: notifsPorPropiedad[base.id] || [],
+          abonosProgramados: abonosProgramadosPorPropiedad[base.id] || [],
         });
       }
       setPropiedades(lista);
@@ -4869,6 +4907,66 @@ function BotonMas({ onClick, texto, direccion }) {
   );
 }
 
+// Banner destacado con los abonos grandes pactados en el contrato aparte de la cuota mensual
+// (por ejemplo, los pagos de enganche que se harán en fechas futuras acordadas). Se muestra
+// igual del lado de la inmobiliaria y del lado del cliente, en "Tabla de pagos" y "Condiciones".
+// `onMarcarCumplido`/`onEliminar` son opcionales — solo se pasan del lado de la inmobiliaria.
+function AbonosProgramadosBanner({ abonos, hoy, onMarcarCumplido, onEliminar }) {
+  if (!abonos || abonos.length === 0) return null;
+  const ordenados = [...abonos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+  return (
+    <div className="mb-4 bg-gradient-to-br from-[#C9A227]/15 to-transparent border-2 border-[#C9A227]/60 rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Sparkles size={16} className="text-[#C9A227]" />
+        <div className="text-sm font-semibold text-[#EDE7D9]">Abonos de enganche programados</div>
+      </div>
+      <div className="space-y-2">
+        {ordenados.map((a) => {
+          const vencido = !a.cumplido && a.fecha < hoy;
+          const estado = a.cumplido ? "Pagado" : vencido ? "Vencido" : "Próximo";
+          const colorEstado = a.cumplido
+            ? "border-emerald-700 bg-emerald-950/30 text-emerald-300"
+            : vencido
+            ? "border-red-800 bg-red-950/30 text-red-300"
+            : "border-[#C9A227]/60 bg-[#C9A227]/10 text-[#C9A227]";
+          return (
+            <div key={a.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-base font-semibold text-[#EDE7D9]">{fmt(a.monto)}</span>
+                  <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${colorEstado}`}>
+                    {a.cumplido && <CheckCircle2 size={11} />}
+                    {vencido && <AlertTriangle size={11} />}
+                    {estado}
+                  </span>
+                </div>
+                <div className="text-xs text-[#8A93A3] mt-1">{fmtDate(a.fecha)}{a.descripcion ? ` · ${a.descripcion}` : ""}</div>
+              </div>
+              {(onMarcarCumplido || onEliminar) && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {onMarcarCumplido && (
+                    <button
+                      onClick={() => onMarcarCumplido(a)}
+                      className="text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md whitespace-nowrap"
+                    >
+                      {a.cumplido ? "Deshacer" : "Marcar pagado"}
+                    </button>
+                  )}
+                  {onEliminar && (
+                    <button onClick={() => onEliminar(a)} className="text-red-400 hover:text-red-300 p-1.5" title="Eliminar">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Fila de detalle numérico reutilizada en admin y cliente
 // Arma la explicación paso a paso de cómo se aplicó (o se está aplicando) el pago de una
 // cuota, en el mismo orden real que usa el sistema: primero mora, después cuota, después luz.
@@ -5417,6 +5515,23 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     });
   };
 
+  const marcarCumplidoAbonoProgramado = async (abono) => {
+    await actualizarAbonoProgramado(abono.id, { cumplido: !abono.cumplido });
+    actualizar((p) => {
+      p.abonosProgramados = (p.abonosProgramados || []).map((a) => (a.id === abono.id ? { ...a, cumplido: !abono.cumplido } : a));
+      return p;
+    });
+  };
+
+  const eliminarAbonoProgramado = async (abono) => {
+    if (!confirm(`¿Eliminar el abono programado de ${fmt(abono.monto)} (${fmtDate(abono.fecha)})?`)) return;
+    await eliminarAbonoProgramadoDB(abono.id);
+    actualizar((p) => {
+      p.abonosProgramados = (p.abonosProgramados || []).filter((a) => a.id !== abono.id);
+      return p;
+    });
+  };
+
   // Transcripción del contrato: texto plano (leído a mano del contrato escaneado) que se
   // guarda en propiedades.contrato_transcrito, solo para lectura rápida del staff — ver
   // sección "Transcripción del contrato" más abajo, dentro de la pestaña Contrato.
@@ -5888,6 +6003,12 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
       {tab === "tabla" && (
         <div className="space-y-2">
+          <AbonosProgramadosBanner
+            abonos={prop.abonosProgramados}
+            hoy={hoy}
+            onMarcarCumplido={marcarCumplidoAbonoProgramado}
+            onEliminar={eliminarAbonoProgramado}
+          />
           {ventana.hayMasAnt && <BotonMas direccion="arriba" texto="Ver cuotas anteriores" onClick={() => ventana.setExtraAnt((v) => v + 6)} />}
           {ventana.visiblesAnt.map((f) => renderFila(f, prop.tabla.indexOf(f)))}
           <div className="text-center text-[10px] uppercase tracking-widest text-[#8A93A3] py-1">Hoy</div>
@@ -6107,6 +6228,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               </div>
             )}
           </div>
+
+          <AbonosProgramadosBanner
+            abonos={prop.abonosProgramados}
+            hoy={hoy}
+            onMarcarCumplido={marcarCumplidoAbonoProgramado}
+            onEliminar={eliminarAbonoProgramado}
+          />
 
           {!condicionesDesbloqueadas || !condForm ? (
             <div className="space-y-3">
@@ -6929,6 +7057,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
         </div>
       )}
 
+      <AbonosProgramadosBanner abonos={prop.abonosProgramados} hoy={hoy} />
+
       <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2 mt-6">Tus cuotas</div>
       <div className="space-y-2">
         {ventana.hayMasAnt && <BotonMas direccion="arriba" texto="Ver cuotas anteriores" onClick={() => ventana.setExtraAnt((v) => v + 6)} />}
@@ -6971,6 +7101,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
 
       {tab === "condiciones" && (
         <div className="space-y-4">
+          <AbonosProgramadosBanner abonos={prop.abonosProgramados} hoy={hoy} />
           {(prop.documentos || []).length > 0 && (
             <div className="space-y-2">
               <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Documentos</div>

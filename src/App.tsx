@@ -65,17 +65,21 @@ function mesesRestantes(principal, tasaAnual, pago) {
   return Math.max(1, Math.ceil(n));
 }
 
-function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, sistemaAmortizacion, fechaInicioIntereses }) {
+function generarTabla({ precio, enganche, tasaAnual, plazoAnios, fechaInicio, sistemaAmortizacion, fechaInicioIntereses, sistemaPago }) {
   const principal = Math.max(0, precio - enganche);
   const meses = Math.round(plazoAnios * 12);
   const i = tasaAnual / 100 / 12;
   const esSaldos = sistemaAmortizacion === "saldos";
   const capitalFijo = esSaldos ? principal / meses : 0;
   const pagoNivelado = esSaldos ? 0 : pagoMensual(principal, tasaAnual, meses);
+  // "vencido" (casi todos los clientes): la cuota #1 cae un mes después de la fecha base. "adelantado"
+  // (el cliente paga antes de usar el mes, como una renta): la cuota #1 cae el mismo día de la fecha
+  // base, sin correrla un mes — el resto de la tabla sigue mensual desde ahí.
+  const esAdelantado = sistemaPago === "adelantado";
   let saldo = principal;
   const filas = [];
   for (let n = 1; n <= meses; n++) {
-    const fecha = addMonths(fechaInicio, n);
+    const fecha = addMonths(fechaInicio, esAdelantado ? n - 1 : n);
     let interes = saldo * i;
     // Si el crédito empezó a generar intereses antes de la fecha que se usa para armar el
     // calendario mensual (ej. hubo semanas entre la entrega y el arranque de cobros), la
@@ -423,6 +427,10 @@ function propiedadDesdeFila(row) {
     aplicaLuz: !!row.aplica_luz,
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
+    // "vencido" (default): el pago del mes cae un mes después de la fecha base — así pagan casi
+    // todos los clientes. "adelantado": el cliente paga por adelantado, antes de usar el mes, así
+    // que la cuota #1 cae el mismo día de la fecha base en vez de un mes después.
+    sistemaPago: row.sistema_pago || "vencido",
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
     mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
@@ -458,6 +466,7 @@ function propiedadHaciaFila(p) {
     aplica_luz: !!p.aplicaLuz,
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
+    sistema_pago: p.sistemaPago || "vencido",
     saldo_a_favor: p.saldoAFavor,
     saldo_adicional_sin_interes: p.saldoAdicionalSinInteres || 0,
     mensualidad_ajustada: p.mensualidadAjustada || 0,
@@ -1479,7 +1488,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
     ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
-    ...(prop.tabla[0] ? [["Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
+    ...(prop.tabla[0] ? [[prop.sistemaPago === "adelantado" ? "Primer pago (mes adelantado)" : "Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
     ea?.mensualidadReal && prop.sistemaAmortizacion !== "saldos"
       ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
       : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
@@ -2446,6 +2455,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       aplica_luz: !!datos.aplicaLuz,
       monto_luz_mensual: datos.montoLuzMensual || 0,
       sistema_amortizacion: datos.sistemaAmortizacion || "nivelada",
+      sistema_pago: datos.sistemaPago || "vencido",
       saldo_a_favor: 0,
       saldo_adicional_sin_interes: datos.saldoAdicionalSinInteres || 0,
       mensualidad_ajustada: datos.mensualidadAjustada || 0,
@@ -4518,6 +4528,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     diasGracia: 3, moraDiaria: 100, diasGraciaLuz: 3, moraDiariaLuz: 20,
     aplicaLuz: false, montoLuzMensual: "",
     sistemaAmortizacion: "nivelada",
+    sistemaPago: "vencido",
     fechaInicio: new Date().toISOString().slice(0, 10),
     // Datos internos — no los ve el cliente, viven solo en las pantallas de "Inmobiliaria".
     codigoClienteReferencia: "",
@@ -4626,11 +4637,27 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
           <Campo label="Plazo (años)" type="number" min="0" step="1" value={f.plazoAnios} onChange={set("plazoAnios")} />
         </div>
         <Campo label="Fecha de inicio (entrega de llaves / firma)" type="date" value={f.fechaInicio} onChange={set("fechaInicio")} />
-        {f.fechaInicio && (
-          <p className="text-[11px] text-[#8A93A3] -mt-2">
-            Todos los clientes pagan mes vencido: con esta fecha, el primer pago cae el {fmtDate(addMonths(f.fechaInicio, 1))}, un mes después de la entrega — no el mismo día.
-          </p>
-        )}
+
+        <div>
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-2">¿Cómo paga este cliente?</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setF({ ...f, sistemaPago: "vencido" })} className={`text-left p-3 rounded-md border text-xs ${f.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>
+              <div className="font-medium mb-0.5">Mes vencido</div>
+              <div className="text-[#8A93A3]">Paga después de usar el mes (la mayoría de clientes).</div>
+            </button>
+            <button type="button" onClick={() => setF({ ...f, sistemaPago: "adelantado" })} className={`text-left p-3 rounded-md border text-xs ${f.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>
+              <div className="font-medium mb-0.5">Mes adelantado</div>
+              <div className="text-[#8A93A3]">Paga antes de usar el mes (como una renta).</div>
+            </button>
+          </div>
+          {f.fechaInicio && (
+            <p className="text-[11px] text-[#8A93A3] mt-2">
+              {f.sistemaPago === "adelantado"
+                ? <>Con esta fecha, el primer pago cae el mismo {fmtDate(f.fechaInicio)} — no un mes después.</>
+                : <>Con esta fecha, el primer pago cae el {fmtDate(addMonths(f.fechaInicio, 1))}, un mes después de la entrega — no el mismo día.</>}
+            </p>
+          )}
+        </div>
 
         <div className="border-t border-[#2A3547] pt-4">
           <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2.5">Mora del crédito</div>
@@ -5513,6 +5540,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         p.tasaAnual = Number(condForm.tasaAnual);
         p.plazoAnios = Number(condForm.plazoAnios);
         p.sistemaAmortizacion = condForm.sistemaAmortizacion || "nivelada";
+        p.sistemaPago = condForm.sistemaPago || "vencido";
         p.fechaInicio = condForm.fechaInicio;
         p.fechaInicioIntereses = condForm.fechaInicioIntereses || null;
         p.tabla = generarTabla(p);
@@ -6017,7 +6045,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               {prop.fechaInicioIntereses && prop.fechaInicioIntereses !== prop.fechaInicio && (
                 <Fila2 label="Fecha de inicio de intereses" value={fmtDate(prop.fechaInicioIntereses)} />
               )}
-              {prop.tabla[0] && <Fila2 label="Primer pago (mes vencido)" value={fmtDate(prop.tabla[0].fecha)} />}
+              {prop.tabla[0] && <Fila2 label={prop.sistemaPago === "adelantado" ? "Primer pago (mes adelantado)" : "Primer pago (mes vencido)"} value={fmtDate(prop.tabla[0].fecha)} />}
             </div>
           </div>
         </div>
@@ -6125,7 +6153,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                 <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
                 <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
                 <label className="block">
-                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Fecha base (cuota #1 = un mes después)</span>
+                  <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{condForm.sistemaPago === "adelantado" ? "Fecha base (cuota #1 = el mismo día)" : "Fecha base (cuota #1 = un mes después)"}</span>
                   <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
                 </label>
                 <label className="block">
@@ -6139,6 +6167,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
                   <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
+                </div>
+              </div>
+              <div>
+                <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">¿Cómo paga este cliente?</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "vencido" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes vencido</button>
+                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "adelantado" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes adelantado</button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -6199,6 +6234,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                 diasGracia: prop.diasGracia, moraDiaria: prop.moraDiaria, diasGraciaLuz: prop.diasGraciaLuz, moraDiariaLuz: prop.moraDiariaLuz,
                 aplicaLuz: prop.aplicaLuz, montoLuzMensual: prop.montoLuzMensual,
                 sistemaAmortizacion: prop.sistemaAmortizacion || "nivelada",
+                sistemaPago: prop.sistemaPago || "vencido",
                 fechaInicio: prop.fechaInicio, fechaInicioIntereses: prop.fechaInicioIntereses || "",
               });
             } else {
@@ -6992,7 +7028,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               {prop.fechaInicioIntereses && prop.fechaInicioIntereses !== prop.fechaInicio && (
                 <Fila2 label="Fecha de inicio de intereses" value={fmtDate(prop.fechaInicioIntereses)} />
               )}
-              {prop.tabla[0] && <Fila2 label="Primer pago (mes vencido)" value={fmtDate(prop.tabla[0].fecha)} />}
+              {prop.tabla[0] && <Fila2 label={prop.sistemaPago === "adelantado" ? "Primer pago (mes adelantado)" : "Primer pago (mes vencido)"} value={fmtDate(prop.tabla[0].fecha)} />}
             </div>
           </div>
         </div>

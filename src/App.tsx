@@ -1564,6 +1564,19 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     return fila;
   });
 
+  // Abonos de enganche u otros pagos grandes pactados en el contrato aparte de la cuota
+  // mensual (ver AbonosProgramadosBanner en la pantalla) — se destacan igual en el PDF impreso.
+  const abonosProgramadosTexto = (prop.abonosProgramados || [])
+    .slice()
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0))
+    .map((a) => ({
+      fechaTexto: fmtDate(a.fecha),
+      montoTexto: fmt(a.monto),
+      descripcion: pdfSafe(a.descripcion || ""),
+      cumplido: a.cumplido,
+      vencido: !a.cumplido && a.fecha < hoy,
+    }));
+
   return {
     cliente: prop.cliente,
     folio: prop.folio || "",
@@ -1571,6 +1584,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     fechaGenerado: fmtDate(hoy),
     tarjetas,
     notaCargoPendiente: ea?.cargo > 0 ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
+    abonosProgramados: abonosProgramadosTexto,
     vencidas: vencidasTexto,
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
     columnas,
@@ -1665,6 +1679,40 @@ async function construirPdfTablaPagos(d) {
     }
   });
   y += Math.ceil(d.tarjetas.length / 3) * filaAlto + 4;
+
+  // Abonos de enganche u otros pagos grandes programados aparte de la cuota mensual — se
+  // destacan en dorado, antes de cualquier otra nota o de la tabla de amortización, a pedido
+  // de Carlos (2026-08-25) para que sea imposible pasarlos por alto al imprimir el PDF.
+  if (d.abonosProgramados.length > 0) {
+    const maxWidthDesc = anchoUtil - 6;
+    doc.setFontSize(6.8);
+    const abonosConLineas = d.abonosProgramados.map((a) => ({
+      ...a,
+      descLineas: a.descripcion ? doc.splitTextToSize(a.descripcion, maxWidthDesc) : [],
+    }));
+    const altoNota = 11.5 + abonosConLineas.reduce((s, a) => s + 5 + a.descLineas.length * 3.6, 0);
+    if (y + altoNota > alturaPagina - 20) { doc.addPage(); y = 20; }
+    doc.setDrawColor(201, 162, 39);
+    doc.setLineWidth(0.5);
+    doc.setFillColor(252, 244, 214);
+    doc.roundedRect(xIzq, y, anchoUtil, altoNota, 1, 1, "FD");
+    doc.setFont(undefined, "bold"); doc.setFontSize(8.5); doc.setTextColor(120, 92, 15);
+    doc.text("ABONOS DE ENGANCHE PROGRAMADOS", xIzq + 3, y + 4.8);
+    let yy = y + 9.5;
+    abonosConLineas.forEach((a) => {
+      const estado = a.cumplido ? "PAGADO" : a.vencido ? "VENCIDO" : "PRÓXIMO";
+      doc.setFont(undefined, "bold"); doc.setFontSize(7.5); doc.setTextColor(20, 20, 20);
+      doc.text(`${a.montoTexto} · ${a.fechaTexto}`, xIzq + 3, yy);
+      doc.setTextColor(a.cumplido ? 21 : a.vencido ? 190 : 150, a.cumplido ? 128 : a.vencido ? 40 : 110, a.cumplido ? 61 : a.vencido ? 40 : 30);
+      doc.text(estado, xDer - 3, yy, { align: "right" });
+      yy += 5;
+      if (a.descLineas.length > 0) {
+        doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(90, 75, 30);
+        a.descLineas.forEach((linea) => { doc.text(linea, xIzq + 3, yy); yy += 3.6; });
+      }
+    });
+    y += altoNota + 4;
+  }
 
   // Nota llamativa sobre el cargo pendiente sin interés (si aplica), antes del bloque de
   // cuotas atrasadas — a pedido de Carlos, para que quede claro que esos 20,000 (u otro

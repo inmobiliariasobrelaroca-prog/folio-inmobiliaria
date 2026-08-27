@@ -5140,22 +5140,22 @@ function DetalleFila({ f, mora, prop, hoy }) {
   const [verExplicacion, setVerExplicacion] = useState(false);
   const luzMora = prop?.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
   return (
-    <div className="grid grid-cols-4 gap-2 mt-2.5 pt-2.5 border-t border-[#2A3547] text-[11px]">
-      <div><div className="text-[#8A93A3]">Capital</div><div className="font-mono">{fmt(f.capital)}</div></div>
-      <div><div className="text-[#8A93A3]">Interés</div><div className="font-mono">{fmt(f.interes)}</div></div>
-      <div><div className="text-[#8A93A3]">Saldo restante</div><div className="font-mono">{fmt(f.saldoFinal)}</div></div>
+    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4 mt-2.5 pt-2.5 border-t border-[#2A3547] text-[11px]">
+      <div><div className="text-[#8A93A3]">Capital</div><div className="font-mono break-words">{fmt(f.capital)}</div></div>
+      <div><div className="text-[#8A93A3]">Interés</div><div className="font-mono break-words">{fmt(f.interes)}</div></div>
+      <div><div className="text-[#8A93A3]">Saldo restante</div><div className="font-mono break-words">{fmt(f.saldoFinal)}</div></div>
       <div>
         <div className="text-[#8A93A3]">Mora</div>
-        <div className={`font-mono ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
+        <div className={`font-mono break-words ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
       </div>
       {f.fechaPagoReal && Math.abs(daysBetween(f.fecha, f.fechaPagoReal)) > (prop?.diasGracia || 0) && (
-        <div className="col-span-4 -mt-0.5">
+        <div className="col-span-2 sm:col-span-4 -mt-0.5">
           <span className="text-[#8A93A3]">Fecha real de pago: </span>
           <span className="font-mono text-[#EDE7D9]">{fmtDate(f.fechaPagoReal)}</span>
         </div>
       )}
       {prop?.aplicaLuz && (
-        <div className="col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
+        <div className="col-span-2 sm:col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
           <span className="flex items-center gap-1.5 text-[#8A93A3]"><Zap size={12} className="text-[#C9A227]" /> Luz de este mes: <span className="font-mono text-[#EDE7D9]">{fmt(prop.montoLuzMensual)}</span></span>
           {f.luzPagado ? (
             <span className="text-emerald-400">Pagada</span>
@@ -5165,22 +5165,22 @@ function DetalleFila({ f, mora, prop, hoy }) {
         </div>
       )}
       {f.abono > 0 && (
-        <div className="col-span-4 -mt-0.5">
+        <div className="col-span-2 sm:col-span-4 -mt-0.5">
           <span className="text-[#C9A227]">Abono a capital aplicado: {fmt(f.abono)}</span>
         </div>
       )}
       {f.moraCondonada > 0 && (
-        <div className="col-span-4 -mt-0.5">
+        <div className="col-span-2 sm:col-span-4 -mt-0.5">
           <span className="text-emerald-400">Mora condonada: {fmt(f.moraCondonada)}</span>
         </div>
       )}
       {f.estado === "parcial" && (
-        <div className="col-span-4 -mt-0.5">
+        <div className="col-span-2 sm:col-span-4 -mt-0.5">
           <span className="text-red-400">Pago parcial recibido: {fmt(f.montoPagadoAcumulado || 0)} de {fmt(f.pago)} — falta {fmt(Math.max(0, f.pago - (f.montoPagadoAcumulado || 0)))}</span>
         </div>
       )}
       {(f.fechaPagoReal || f.comprobante?.fechaPagoReal || (f.montoPagadoAcumulado || 0) > 0) && (
-        <div className="col-span-4 -mt-0.5">
+        <div className="col-span-2 sm:col-span-4 -mt-0.5">
           <button onClick={() => setVerExplicacion(true)} className="text-[11px] text-[#C9A227] underline">¿Cómo se aplicó este pago?</button>
         </div>
       )}
@@ -7132,11 +7132,11 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               {historialMoras.map((r) => (
                 <div key={r.numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]">
                   <div className="text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDate(r.fecha)}</div>
-                  <div className="grid grid-cols-4 gap-2">
-                    <div><div className="text-[#8A93A3]">Generada</div><div className="font-mono">{fmt(r.generada)}</div></div>
-                    <div><div className="text-[#8A93A3]">Pagada</div><div className="font-mono text-emerald-400">{fmt(r.pagada)}</div></div>
-                    <div><div className="text-[#8A93A3]">Condonada</div><div className="font-mono text-[#C9A227]">{fmt(r.condonada)}</div></div>
-                    <div><div className="text-[#8A93A3]">Pendiente</div><div className={`font-mono ${r.pendiente > 0 ? "text-red-400" : ""}`}>{fmt(r.pendiente)}</div></div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
+                    <div><div className="text-[#8A93A3]">Generada</div><div className="font-mono break-words">{fmt(r.generada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Pagada</div><div className="font-mono break-words text-emerald-400">{fmt(r.pagada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Condonada</div><div className="font-mono break-words text-[#C9A227]">{fmt(r.condonada)}</div></div>
+                    <div><div className="text-[#8A93A3]">Pendiente</div><div className={`font-mono break-words ${r.pendiente > 0 ? "text-red-400" : ""}`}>{fmt(r.pendiente)}</div></div>
                   </div>
                 </div>
               ))}

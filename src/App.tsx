@@ -1093,6 +1093,7 @@ function Login({ onIngreso }) {
   );
 }
 // ============================================================
+// ============================================================
 // MÓDULO DE TESORERÍA — autónomo
 //
 // INTEGRACIÓN: una sola línea en App.tsx.
@@ -1139,7 +1140,7 @@ function ModuloTesoreria({ perfil }) {
 }
 
 function PanelTesoreria({ onCerrar }) {
-  const [tab, setTab] = useState("resumen");
+  const [tab, setTab] = useState("mapa");
   const [bolsas, setBolsas] = useState([]);
   const [centros, setCentros] = useState([]);
   const [cuotas, setCuotas] = useState([]);
@@ -1179,8 +1180,10 @@ function PanelTesoreria({ onCerrar }) {
       <div className="max-w-3xl mx-auto p-5 pb-24">
         <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
           {[
+            ["mapa", "Mapa", Zap],
             ["resumen", "Resumen", Calculator],
             ["facturas", "Subir factura", Upload],
+            ["pendientes", "Documentar", AlertTriangle],
             ["movimientos", "Movimientos", FileText],
           ].map(([id, label, Icon]) => (
             <button key={id} onClick={() => setTab(id)}
@@ -1194,10 +1197,14 @@ function PanelTesoreria({ onCerrar }) {
 
         {cargando ? (
           <div className="text-sm text-[#8A93A3]">Cargando...</div>
+        ) : tab === "mapa" ? (
+          <MapaFlujo bolsas={bolsas} total={total} />
         ) : tab === "resumen" ? (
           <ResumenTesoreria total={total} bolsas={bolsas} centros={centros} cuotas={cuotas} />
         ) : tab === "facturas" ? (
           <SubirFacturaTesoreria bolsas={bolsas} centros={centros} onRegistrada={cargar} />
+        ) : tab === "pendientes" ? (
+          <DocumentarGastos onCambio={cargar} />
         ) : (
           <MovimientosTesoreria />
         )}
@@ -1262,19 +1269,7 @@ function ResumenTesoreria({ total, bolsas, centros, cuotas }) {
         </div>
       )}
 
-      {centros.length > 0 && (
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Obras</div>
-          <div className="grid grid-cols-2 gap-2">
-            {centros.map((c) => (
-              <div key={c.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
-                <div className="text-sm">{c.nombre}</div>
-                {c.ubicacion && <div className="text-[11px] text-[#8A93A3]">{c.ubicacion}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <PresupuestoObras />
     </div>
   );
 }
@@ -1595,6 +1590,419 @@ function MovimientosTesoreria() {
   );
 }
 
+// ---------- Inversión declarada por obra ----------
+
+function PresupuestoObras() {
+  const [filas, setFilas] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("v_presupuesto_centros").select("*").order("nombre");
+      setFilas(data || []);
+    })();
+  }, []);
+
+  if (filas.length === 0) return null;
+
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Obras</div>
+      <div className="space-y-2">
+        {filas.map((c) => {
+          const tope = c.inversion_declarada != null;
+          const pct = tope && Number(c.inversion_declarada) > 0
+            ? Math.min(100, (Number(c.gastado) / Number(c.inversion_declarada)) * 100)
+            : 0;
+          const apretado = tope && pct >= 85;
+          return (
+            <div key={c.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm truncate">{c.nombre}</div>
+                <div className="font-mono text-xs shrink-0">{fmt(c.gastado)}</div>
+              </div>
+              {tope ? (
+                <>
+                  <div className="h-1.5 bg-[#0C121C] rounded-full mt-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${apretado ? "bg-red-500" : "bg-[#C9A227]"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="text-[10px] text-[#8A93A3] mt-1">
+                    Quedan {fmt(c.disponible)} de {fmt(c.inversion_declarada)} declarados
+                  </div>
+                </>
+              ) : (
+                <div className="text-[10px] text-[#6b7280] mt-1">Sin inversión declarada</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Adjuntar documentos a gastos ya pagados ----------
+
+function DocumentarGastos({ onCambio }) {
+  const [gastos, setGastos] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [abierto, setAbierto] = useState(null);
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data } = await supabase.from("v_gastos_documentacion").select("*").limit(40);
+    setGastos(data || []);
+    setCargando(false);
+  };
+  useEffect(() => { cargar(); }, []);
+
+  if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando...</div>;
+  if (gastos.length === 0) return <div className="text-sm text-[#8A93A3]">Todavía no hay gastos registrados.</div>;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-[#8A93A3] mb-1">
+        Cada gasto puede llevar varios papeles: el voucher del banco y después la factura del
+        proveedor. Solo las facturas cierran el pendiente.
+      </p>
+      {gastos.map((g) => {
+        const faltaFactura = Number(g.en_facturas) < Number(g.pagado) - 1;
+        return (
+          <div key={g.movimiento_id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm truncate">{g.descripcion || "Sin descripción"}</div>
+                <div className="text-[11px] text-[#8A93A3] truncate">
+                  {fmtDate(g.fecha)} · {g.centro_costo || "Sin obra"} · {g.bolsa}
+                </div>
+              </div>
+              <div className="font-mono text-sm shrink-0">{fmt(g.pagado)}</div>
+            </div>
+
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {faltaFactura ? (
+                <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border border-amber-700 text-amber-400 uppercase tracking-wide">
+                  <AlertTriangle size={10} /> Falta factura por {fmt(Number(g.pagado) - Number(g.en_facturas))}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border border-emerald-700 text-emerald-400 uppercase tracking-wide">
+                  <CheckCircle2 size={10} /> Documentado
+                </span>
+              )}
+              {Number(g.en_vouchers) > 0 && (
+                <span className="text-[10px] text-[#8A93A3]">Voucher {fmt(g.en_vouchers)}</span>
+              )}
+              <button
+                onClick={() => setAbierto(abierto === g.movimiento_id ? null : g.movimiento_id)}
+                className="ml-auto text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1 rounded-md"
+              >
+                {abierto === g.movimiento_id ? "Cerrar" : `Documentos (${g.documentos})`}
+              </button>
+            </div>
+
+            {abierto === g.movimiento_id && (
+              <DocumentosDelGasto
+                gasto={g}
+                onCambio={() => { cargar(); onCambio && onCambio(); }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DocumentosDelGasto({ gasto, onCambio }) {
+  const [docs, setDocs] = useState([]);
+  const [tipo, setTipo] = useState("factura");
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState("");
+
+  const cargar = async () => {
+    const { data } = await supabase
+      .from("facturas")
+      .select("id, tipo_documento, serie, numero, fecha, monto_total, confianza, proveedores(nombre)")
+      .eq("movimiento_id", gasto.movimiento_id)
+      .order("created_at");
+    setDocs(data || []);
+  };
+  useEffect(() => { cargar(); }, [gasto.movimiento_id]);
+
+  const subir = async (archivo) => {
+    if (!archivo) return;
+    setSubiendo(true);
+    setError("");
+    try {
+      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+      const hoy = new Date();
+      const carpeta = `${hoy.getFullYear()}/${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+      const path = `${carpeta}/${crypto.randomUUID()}.${ext}`;
+
+      const { error: errUp } = await supabase.storage
+        .from("facturas").upload(path, archivo, { contentType: archivo.type });
+      if (errUp) throw new Error("No se pudo subir: " + errUp.message);
+
+      const { data: nueva, error: errIns } = await supabase
+        .from("facturas")
+        .insert({ storage_path: path, archivo_url: path, tipo_documento: tipo })
+        .select("id").single();
+      if (errIns) throw new Error(errIns.message);
+
+      const res = await llamarFuncionSesion("lector-facturas", { factura_id: nueva.id });
+      if (!res?.ok) throw new Error(res?.error || "El lector no devolvió datos");
+
+      const { error: errLink } = await supabase.rpc("vincular_factura", {
+        p_movimiento_id: gasto.movimiento_id,
+        p_factura_id: nueva.id,
+      });
+      if (errLink) throw new Error(errLink.message);
+
+      await cargar();
+      onCambio && onCambio();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  const etiqueta = { factura: "Factura", voucher: "Voucher", recibo: "Recibo", nota_credito: "Nota de crédito", otro: "Otro" };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547] space-y-2">
+      {error && <div className="text-[11px] text-red-400 bg-red-950/30 border border-red-800 rounded-md p-2">{error}</div>}
+
+      {docs.length > 0 && (
+        <div className="space-y-1.5">
+          {docs.map((d) => (
+            <div key={d.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs truncate">
+                  <span className="text-[#C9A227]">{etiqueta[d.tipo_documento] || d.tipo_documento}</span>
+                  {d.proveedores?.nombre ? ` · ${d.proveedores.nombre}` : ""}
+                </div>
+                <div className="text-[10px] text-[#8A93A3] truncate">
+                  {[d.serie, d.numero].filter(Boolean).join("-")}
+                  {d.fecha ? ` · ${fmtDate(d.fecha)}` : ""}
+                </div>
+              </div>
+              <div className="font-mono text-xs shrink-0">{fmt(d.monto_total)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-1.5">
+        {["factura", "voucher", "recibo"].map((t) => (
+          <button key={t} type="button" onClick={() => setTipo(t)}
+            className={`flex-1 text-[11px] py-1.5 rounded-md border ${tipo === t ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>
+            {etiqueta[t]}
+          </button>
+        ))}
+      </div>
+
+      <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
+        <Upload size={12} /> {subiendo ? "Leyendo..." : `Adjuntar ${etiqueta[tipo].toLowerCase()}`}
+        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={subiendo}
+          onChange={(e) => subir(e.target.files && e.target.files[0])} />
+      </label>
+    </div>
+  );
+}
+
+// ---------- Mapa de flujo del dinero ----------
+//
+// Tres anillos: el centro es todo el dinero disponible, el primer
+// anillo son las bolsas, y el segundo las obras a donde se fue.
+// Al tocar una obra se abre el desglose por categoría abajo.
+// Todo en SVG, sin librerías externas.
+
+function MapaFlujo({ bolsas, total }) {
+  const [flujos, setFlujos] = useState([]);
+  const [desglose, setDesglose] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [sel, setSel] = useState(null); // { nivel: 'bolsa'|'centro', id, nombre, monto }
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: f }, { data: d }] = await Promise.all([
+        supabase.from("v_flujo_bolsa_centro").select("*"),
+        supabase.from("v_flujo_centro_categoria").select("*"),
+      ]);
+      setFlujos(f || []);
+      setDesglose(d || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  if (cargando) return <div className="text-sm text-[#8A93A3]">Armando el mapa...</div>;
+
+  const CX = 180, CY = 195, R1 = 82, R2 = 152;
+  const conSaldo = bolsas.filter((b) => Number(b.saldo_actual) > 0 || flujos.some((f) => f.bolsa_id === b.id));
+  const maxBolsa = Math.max(1, ...conSaldo.map((b) => Number(b.saldo_actual) || 0));
+
+  // Anillo 1: bolsas repartidas en círculo
+  const nodosBolsa = conSaldo.map((b, i) => {
+    const ang = (-90 + (i * 360) / Math.max(1, conSaldo.length)) * (Math.PI / 180);
+    const salido = flujos.filter((f) => f.bolsa_id === b.id).reduce((s, f) => s + Number(f.total), 0);
+    return {
+      ...b,
+      ang,
+      x: CX + R1 * Math.cos(ang),
+      y: CY + R1 * Math.sin(ang),
+      r: 9 + 11 * Math.sqrt(Math.max(0, Number(b.saldo_actual)) / maxBolsa),
+      salido,
+    };
+  });
+
+  // Anillo 2: obras de la bolsa seleccionada
+  const bolsaSel = sel?.nivel === "bolsa" ? sel.id : sel?.nivel === "centro" ? sel.bolsaId : null;
+  const hijos = bolsaSel ? flujos.filter((f) => f.bolsa_id === bolsaSel) : [];
+  const nodoPadre = nodosBolsa.find((n) => n.id === bolsaSel);
+  const maxHijo = Math.max(1, ...hijos.map((h) => Number(h.total)));
+
+  const nodosCentro = hijos.map((h, i) => {
+    const abanico = Math.min(120, 34 * Math.max(1, hijos.length)) * (Math.PI / 180);
+    const base = nodoPadre ? nodoPadre.ang : 0;
+    const ang = hijos.length === 1 ? base : base - abanico / 2 + (i * abanico) / (hijos.length - 1);
+    return {
+      ...h,
+      x: CX + R2 * Math.cos(ang),
+      y: CY + R2 * Math.sin(ang),
+      r: 7 + 9 * Math.sqrt(Number(h.total) / maxHijo),
+    };
+  });
+
+  const curva = (x1, y1, x2, y2) => {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const cx = mx + (my - CY) * 0.18, cy = my - (mx - CX) * 0.18;
+    return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+  };
+
+  const corto = (t, n) => (t && t.length > n ? t.slice(0, n - 1) + "…" : t || "");
+
+  const catsDelCentro = sel?.nivel === "centro"
+    ? desglose.filter((d) => d.centro_id === sel.id).sort((a, b) => Number(b.total) - Number(a.total))
+    : [];
+
+  return (
+    <div>
+      <svg viewBox="0 0 360 390" className="w-full" style={{ maxHeight: "62vh" }}>
+        {/* Enlaces centro → bolsas */}
+        {nodosBolsa.map((n) => (
+          <path key={`l-${n.id}`} d={curva(CX, CY, n.x, n.y)} fill="none"
+            stroke={bolsaSel === n.id ? "#C9A227" : "#2A3547"}
+            strokeWidth={bolsaSel === n.id ? 2 : 1.2} />
+        ))}
+
+        {/* Enlaces bolsa → obras */}
+        {nodoPadre && nodosCentro.map((n, i) => (
+          <path key={`lc-${i}`} d={curva(nodoPadre.x, nodoPadre.y, n.x, n.y)} fill="none"
+            stroke={sel?.nivel === "centro" && sel.id === n.centro_id ? "#C9A227" : "#3a4864"}
+            strokeWidth={sel?.nivel === "centro" && sel.id === n.centro_id ? 2 : 1.2} />
+        ))}
+
+        {/* Obras */}
+        {nodosCentro.map((n, i) => {
+          const activo = sel?.nivel === "centro" && sel.id === n.centro_id;
+          return (
+            <g key={`c-${i}`} onClick={() => setSel({ nivel: "centro", id: n.centro_id, nombre: n.centro, monto: n.total, bolsaId: n.bolsa_id })} style={{ cursor: "pointer" }}>
+              <circle cx={n.x} cy={n.y} r={n.r} fill={activo ? "#C9A227" : "#1A2333"}
+                stroke={activo ? "#C9A227" : "#3a4864"} strokeWidth="1.5" />
+              <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="7.5"
+                fill={activo ? "#C9A227" : "#8A93A3"}>{corto(n.centro, 16)}</text>
+              <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill="#8A93A3">
+                {fmt(n.total)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Bolsas */}
+        {nodosBolsa.map((n) => {
+          const activo = bolsaSel === n.id;
+          return (
+            <g key={n.id} onClick={() => setSel(activo && sel.nivel === "bolsa" ? null : { nivel: "bolsa", id: n.id, nombre: n.nombre, monto: n.saldo_actual })} style={{ cursor: "pointer" }}>
+              <circle cx={n.x} cy={n.y} r={n.r}
+                fill={n.tipo === "reserva" ? "#3a2f10" : activo ? "#C9A227" : "#161F2E"}
+                stroke={activo ? "#C9A227" : "#2A3547"} strokeWidth="2" />
+              <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="8"
+                fill={activo ? "#C9A227" : "#EDE7D9"}>{corto(n.nombre.split("—")[0].trim(), 14)}</text>
+              <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill="#8A93A3">
+                {fmt(n.saldo_actual)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Centro */}
+        <g onClick={() => setSel(null)} style={{ cursor: "pointer" }}>
+          <circle cx={CX} cy={CY} r="34" fill="#0C121C" stroke="#C9A227" strokeWidth="2" />
+          <text x={CX} y={CY - 3} textAnchor="middle" fontSize="9" fill="#8A93A3">Disponible</text>
+          <text x={CX} y={CY + 9} textAnchor="middle" fontSize="10" fill="#C9A227" fontWeight="600">
+            {fmt(total)}
+          </text>
+        </g>
+      </svg>
+
+      {/* Panel de detalle */}
+      {!sel ? (
+        <p className="text-[11px] text-[#8A93A3] text-center px-4">
+          Tocá una bolsa para ver a dónde se fue su dinero. Tocá el centro para volver.
+        </p>
+      ) : sel.nivel === "bolsa" ? (
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <div className="font-serif text-lg">{sel.nombre}</div>
+          <div className="text-[11px] text-[#8A93A3] mt-0.5">Disponible {fmt(sel.monto)}</div>
+          {nodosCentro.length === 0 ? (
+            <div className="text-xs text-[#8A93A3] mt-3">Esta bolsa todavía no ha financiado ninguna obra.</div>
+          ) : (
+            <div className="mt-3 space-y-1.5">
+              {nodosCentro.map((n, i) => (
+                <button key={i}
+                  onClick={() => setSel({ nivel: "centro", id: n.centro_id, nombre: n.centro, monto: n.total, bolsaId: n.bolsa_id })}
+                  className="w-full flex justify-between items-baseline text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2 hover:border-[#C9A227]/50">
+                  <span className="truncate">{n.centro}</span>
+                  <span className="font-mono shrink-0 ml-2">{fmt(n.total)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+          <div className="font-serif text-lg">{sel.nombre}</div>
+          <div className="text-[11px] text-[#8A93A3] mt-0.5">
+            Recibió {fmt(sel.monto)} de esta bolsa
+          </div>
+          {catsDelCentro.length === 0 ? (
+            <div className="text-xs text-[#8A93A3] mt-3">Sin desglose todavía.</div>
+          ) : (
+            <div className="mt-3 space-y-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">En qué se gastó</div>
+              {catsDelCentro.map((c, i) => (
+                <div key={i} className="flex justify-between items-baseline text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2">
+                  <span className="truncate">
+                    {c.categoria}
+                    <span className="text-[#8A93A3]"> · {c.movimientos} mov.</span>
+                  </span>
+                  <span className="font-mono shrink-0 ml-2">{fmt(c.total)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setSel({ nivel: "bolsa", id: sel.bolsaId, nombre: bolsas.find((b) => b.id === sel.bolsaId)?.nombre, monto: bolsas.find((b) => b.id === sel.bolsaId)?.saldo_actual })}
+            className="mt-3 text-[11px] text-[#C9A227] underline">
+            Volver a la bolsa
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------- App ----------
 

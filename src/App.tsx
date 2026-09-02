@@ -2590,6 +2590,7 @@ function AppInterno({ perfil, cerrarSesion }) {
     <>
       <AvisoCodigoPendiente />
       <ModuloTesoreria perfil={perfil} />
+      <CambiarClave />
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
         <TopBar
           modo={modo}

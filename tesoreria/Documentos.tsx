@@ -79,7 +79,7 @@ export function DocumentarGastos({ onCambio }) {
   );
 }
 
-function DocumentosDelGasto({ gasto, onCambio }) {
+export function DocumentosDelGasto({ gasto, onCambio }) {
   const [docs, setDocs] = useState([]);
   const [tipo, setTipo] = useState("factura");
   const [subiendo, setSubiendo] = useState(false);

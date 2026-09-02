@@ -4,8 +4,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { CheckCircle2 } from "lucide-react";
-import { fmt, Campo, CampoMoneda, SelectorCategoria, CrearObra, CrearBolsa } from "./comun";
+import { FileText, Upload, X, CheckCircle2 } from "lucide-react";
+import { fmt, llamarFuncionSesion, C_BOLSA, Campo, CampoMoneda, SelectorCategoria, CrearObra, CrearBolsa } from "./comun";
 
 export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -26,6 +26,9 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const [proveedores, setProveedores] = useState([]);
   const [proveedor, setProveedor] = useState("");
   const [nuevoProv, setNuevoProv] = useState("");
+  const [archivo, setArchivo] = useState(null);
+  const [tipoDoc, setTipoDoc] = useState("factura");
+  const [paso, setPaso] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [ok, setOk] = useState(null);
@@ -56,6 +59,7 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const limpiar = () => {
     setMonto(0); setCentro(""); setCategoria(""); setDescripcion(""); setProveedor("");
     setFecha(hoy); setPendiente(true); setError("");
+    setArchivo(null); setTipoDoc("factura"); setPaso("");
   };
 
   const listo =
@@ -75,9 +79,64 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         factura_pendiente: tipo === "egreso" ? pendiente : false,
         proveedor_id: tipo === "egreso" ? (proveedor || null) : null,
       };
-      const { error: e } = await supabase.from("movimientos").insert(fila);
+      const { data: mov, error: e } = await supabase
+        .from("movimientos").insert(fila).select("id").single();
       if (e) throw new Error(e.message);
-      setOk(`${tipo === "ingreso" ? "Ingreso" : tipo === "egreso" ? "Gasto" : "Traslado"} de ${fmt(monto)} registrado.`);
+
+      let aviso = `${tipo === "ingreso" ? "Ingreso" : tipo === "egreso" ? "Gasto" : "Traslado"} de ${fmt(monto)} registrado.`;
+
+      // Si se adjuntó un papel, se sube y se enlaza al movimiento recién
+      // creado. Si algo falla acá, el movimiento ya quedó guardado: se
+      // avisa para que el documento se adjunte después desde Documentar.
+      if (archivo && mov?.id) {
+        try {
+          setPaso("Subiendo el documento...");
+          const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+          const d = new Date();
+          const carpeta = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+          const path = `${carpeta}/${crypto.randomUUID()}.${ext}`;
+
+          const { error: errUp } = await supabase.storage
+            .from("facturas").upload(path, archivo, { contentType: archivo.type });
+          if (errUp) throw new Error(errUp.message);
+
+          const { data: nueva, error: errIns } = await supabase
+            .from("facturas")
+            .insert({ storage_path: path, archivo_url: path, tipo_documento: tipoDoc })
+            .select("id").single();
+          if (errIns) throw new Error(errIns.message);
+
+          setPaso("Leyendo el documento...");
+          const res = await llamarFuncionSesion("lector-facturas", { factura_id: nueva.id });
+
+          const { data: leida } = await supabase
+            .from("facturas").select("monto_total").eq("id", nueva.id).single();
+          const aplicar = Math.min(Number(leida?.monto_total) || Number(monto), Number(monto));
+
+          const { error: errLink } = await supabase.from("factura_movimientos").insert({
+            factura_id: nueva.id, movimiento_id: mov.id, monto_aplicado: aplicar,
+          });
+          if (errLink) throw new Error(errLink.message);
+
+          await supabase.from("facturas")
+            .update({ movimiento_id: mov.id, centro_costo_id: centro || null })
+            .eq("id", nueva.id);
+
+          if (tipoDoc === "factura" && aplicar >= Number(monto) - 1) {
+            await supabase.from("movimientos")
+              .update({ factura_pendiente: false }).eq("id", mov.id);
+          }
+
+          aviso += res?.ok
+            ? " El documento quedó adjunto y leído."
+            : " El documento quedó adjunto, pero no se pudo leer: revisalo en Documentar.";
+        } catch (errDoc) {
+          aviso += ` El movimiento se guardó, pero el documento no: ${errDoc.message}`;
+        }
+      }
+
+      setPaso("");
+      setOk(aviso);
       limpiar();
       onGuardado && onGuardado();
     } catch (e) {
@@ -243,9 +302,50 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         </label>
       )}
 
+      {/* El papel se adjunta acá mismo, sin tener que volver después
+          por la pestaña Documentar. */}
+      {tipo === "egreso" && (
+        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 space-y-2">
+          <div className="text-[11px] uppercase tracking-wide text-[#8A93A3]">
+            El papel del gasto <span className="text-[#6b7280]">(opcional)</span>
+          </div>
+
+          <div className="flex gap-1.5">
+            {[["factura", "Factura"], ["voucher", "Voucher"], ["recibo", "Recibo"]].map(([v, t]) => (
+              <button key={v} type="button" onClick={() => setTipoDoc(v)}
+                className={`flex-1 text-[11px] py-1.5 rounded-md border ${tipoDoc === v ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {archivo ? (
+            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <FileText size={14} style={{ color: C_BOLSA }} className="shrink-0" />
+              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
+              <button type="button" onClick={() => setArchivo(null)}
+                className="text-[#8A93A3] hover:text-[#EDE7D9] shrink-0">
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
+              <Upload size={12} /> Adjuntar {tipoDoc}
+              <input type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+            </label>
+          )}
+
+          <p className="text-[10px] text-[#6b7280]">
+            Se sube y se lee al guardar. Si no lo tenés a mano, dejalo así y
+            adjuntalo después desde Documentar.
+          </p>
+        </div>
+      )}
+
       <button onClick={guardar} disabled={!listo || guardando}
         className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md text-sm">
-        {guardando ? "Guardando..." : "Registrar movimiento"}
+        {guardando ? (paso || "Guardando...") : "Registrar movimiento"}
       </button>
 
       <p className="text-[10px] text-[#6b7280] text-center leading-relaxed">

@@ -32,7 +32,7 @@ import Permisos from "./tesoreria/Permisos";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v22";
+const VERSION = "v23";
 
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
@@ -163,7 +163,10 @@ function PanelTesoreria({ perfil, onCerrar }) {
       </div>
 
       <div className="max-w-3xl mx-auto p-5 pb-24">
-        <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
+        {/* Las pestañas se acomodan en varias filas si no caben. Antes usaban
+            overflow-x-auto y la última quedaba fuera de vista, sin ninguna
+            señal de que hubiera más. */}
+        <div className="flex flex-wrap gap-x-1 gap-y-0.5 mb-4 border-b border-[#2A3547]">
           {pestanas.map(([id, label, Icon]) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs border-b-2 -mb-px whitespace-nowrap ${tab === id ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}>

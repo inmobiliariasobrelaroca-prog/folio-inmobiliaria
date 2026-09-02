@@ -2731,13 +2731,15 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
               <Globe size={16} />
             </button>
           )}
-          {modo === "inmobiliaria" && (
-            <BotonTesoreria perfil={perfil} />
-          {onClientes && modo === "inmobiliaria" && (
-            <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Contact size={16} />
-            </button>
-          )}
+            
+<BotonTesoreria perfil={perfil} />
+
+{onClientes && modo === "inmobiliaria" && (
+  <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+    <Contact size={16} />
+  </button>
+)}
+          
           <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
             <LogOut size={16} />
           </button>

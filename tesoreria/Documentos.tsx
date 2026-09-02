@@ -84,15 +84,34 @@ export function DocumentosDelGasto({ gasto, onCambio }) {
   const [tipo, setTipo] = useState("factura");
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
+  const [releyendo, setReleyendo] = useState(null);
   const [visor, setVisor] = useState(null); // { docs, indice }
+
+  // Vuelve a pasar por el lector un documento que quedó sin leer,
+  // sin tener que subir el archivo otra vez.
+  const releer = async (facturaId) => {
+    setReleyendo(facturaId);
+    setError("");
+    try {
+      const res = await llamarFuncionSesion("lector-facturas", { factura_id: facturaId });
+      if (!res?.ok) throw new Error(res?.error || "El lector no devolvió datos");
+      await cargar();
+      onCambio && onCambio();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setReleyendo(null);
+    }
+  };
 
   const cargar = async () => {
     const { data } = await supabase
-      .from("facturas")
-      .select("id, tipo_documento, serie, numero, fecha, monto_total, storage_path, proveedores(nombre)")
-      .eq("movimiento_id", gasto.movimiento_id)
-      .order("created_at");
-    const filas = data || [];
+      .from("factura_movimientos")
+      .select("monto_aplicado, facturas(id, tipo_documento, estado_lectura, serie, numero, fecha, monto_total, storage_path, proveedores(nombre))")
+      .eq("movimiento_id", gasto.movimiento_id);
+    const filas = (data || [])
+      .filter((r) => r.facturas)
+      .map((r) => ({ ...r.facturas, monto_aplicado: r.monto_aplicado }));
 
     // Un solo lote de enlaces firmados para todas las miniaturas
     const rutas = filas.map((f) => f.storage_path).filter(Boolean);
@@ -129,9 +148,17 @@ export function DocumentosDelGasto({ gasto, onCambio }) {
       const res = await llamarFuncionSesion("lector-facturas", { factura_id: nueva.id });
       if (!res?.ok) throw new Error(res?.error || "El lector no devolvió datos");
 
-      const { error: errLink } = await supabase.rpc("vincular_factura", {
-        p_movimiento_id: gasto.movimiento_id,
-        p_factura_id: nueva.id,
+      // Lo que se aplica a este gasto: lo que diga el documento, sin
+      // pasarse de lo que falta por documentar.
+      const { data: leida } = await supabase
+        .from("facturas").select("monto_total").eq("id", nueva.id).single();
+      const falta = Math.max(0, Number(gasto.pagado) - Number(gasto.en_facturas || 0) - Number(gasto.en_vouchers || 0));
+      const aplicar = Math.min(Number(leida?.monto_total) || falta || Number(gasto.pagado), falta || Number(gasto.pagado));
+
+      const { error: errLink } = await supabase.from("factura_movimientos").insert({
+        factura_id: nueva.id,
+        movimiento_id: gasto.movimiento_id,
+        monto_aplicado: aplicar,
       });
       if (errLink) throw new Error(errLink.message);
 
@@ -173,7 +200,15 @@ export function DocumentosDelGasto({ gasto, onCambio }) {
                   {d.fecha ? ` · ${fmtDate(d.fecha)}` : ""}
                 </div>
               </div>
-              <div className="font-mono text-xs shrink-0">{fmt(d.monto_total)}</div>
+              <div className="text-right shrink-0">
+                <div className="font-mono text-xs">{fmt(d.monto_aplicado ?? d.monto_total)}</div>
+                {(d.estado_lectura === "pendiente" || d.estado_lectura === "error") && (
+                  <button type="button" onClick={() => releer(d.id)} disabled={releyendo === d.id}
+                    className="text-[10px] underline mt-0.5" style={{ color: C_BOLSA }}>
+                    {releyendo === d.id ? "Leyendo..." : "Leer ahora"}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

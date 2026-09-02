@@ -2733,7 +2733,6 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           )}
             
 <BotonTesoreria perfil={perfil} />
-
 {onClientes && modo === "inmobiliaria" && (
   <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
     <Contact size={16} />

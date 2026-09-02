@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria from "./ModuloTesoreria";
+import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
 import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";
 import {
@@ -2594,6 +2595,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
         <TopBar
           modo={modo}
+          perfil={perfil}
           setModo={esCliente ? null : (m) => { setModo(m); setPantalla("proyectos"); setProyectoSel(null); setSeleccion(null); }}
           cerrarSesion={cerrarSesion}
           esAdmin={esAdmin}
@@ -2601,7 +2603,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           onEquipo={() => setPantalla("equipo")}
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
-          onClientes={() => setPantalla("clientes")}
+          onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
         />
@@ -2697,7 +2699,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -2731,6 +2733,8 @@ function TopBar({ modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVe
             </button>
           )}
           {modo === "inmobiliaria" && (
+            <BotonTesoreria perfil={perfil} />
+          {onClientes && modo === "inmobiliaria" && (
             <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Contact size={16} />
             </button>

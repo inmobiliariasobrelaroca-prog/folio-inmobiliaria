@@ -19,7 +19,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import {
-  Calculator, Zap, Upload, FileText, X, Plus,
+  Calculator, Zap, Upload, FileText, X, Plus, Clock,
   CheckCircle2, AlertTriangle, Sparkles,
 } from "lucide-react";
 
@@ -170,6 +170,7 @@ function PanelTesoreria({ onCerrar }) {
             ["resumen", "Resumen", Calculator],
             ["facturas", "Subir factura", Upload],
             ["pendientes", "Documentar", AlertTriangle],
+            ["compromisos", "Por pagar", Clock],
             ["movimientos", "Movimientos", FileText],
           ].map(([id, label, Icon]) => (
             <button key={id} onClick={() => setTab(id)}
@@ -193,6 +194,8 @@ function PanelTesoreria({ onCerrar }) {
           <SubirFacturaTesoreria bolsas={bolsas} centros={centros} onRegistrada={cargar} />
         ) : tab === "pendientes" ? (
           <DocumentarGastos onCambio={cargar} />
+        ) : tab === "compromisos" ? (
+          <Compromisos bolsas={bolsas} onCambio={cargar} />
         ) : (
           <MovimientosTesoreria />
         )}
@@ -708,14 +711,25 @@ function DocumentosDelGasto({ gasto, onCambio }) {
   const [tipo, setTipo] = useState("factura");
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
+  const [visor, setVisor] = useState(null); // { docs, indice }
 
   const cargar = async () => {
     const { data } = await supabase
       .from("facturas")
-      .select("id, tipo_documento, serie, numero, fecha, monto_total, confianza, proveedores(nombre)")
+      .select("id, tipo_documento, serie, numero, fecha, monto_total, storage_path, proveedores(nombre)")
       .eq("movimiento_id", gasto.movimiento_id)
       .order("created_at");
-    setDocs(data || []);
+    const filas = data || [];
+
+    // Un solo lote de enlaces firmados para todas las miniaturas
+    const rutas = filas.map((f) => f.storage_path).filter(Boolean);
+    let urls = {};
+    if (rutas.length) {
+      const { data: firmados } = await supabase.storage
+        .from("facturas").createSignedUrls(rutas, 3600);
+      (firmados || []).forEach((f) => { if (f.signedUrl && f.path) urls[f.path] = f.signedUrl; });
+    }
+    setDocs(filas.map((f) => ({ ...f, url: urls[f.storage_path] || null })));
   };
   useEffect(() => { cargar(); }, [gasto.movimiento_id]);
 
@@ -758,6 +772,7 @@ function DocumentosDelGasto({ gasto, onCambio }) {
   };
 
   const etiqueta = { factura: "Factura", voucher: "Voucher", recibo: "Recibo", nota_credito: "Nota de crédito", otro: "Otro" };
+  const esImagen = (p) => p && !/\.pdf$/i.test(p);
 
   return (
     <div className="mt-3 pt-3 border-t border-[#2A3547] space-y-2">
@@ -765,11 +780,19 @@ function DocumentosDelGasto({ gasto, onCambio }) {
 
       {docs.length > 0 && (
         <div className="space-y-1.5">
-          {docs.map((d) => (
-            <div key={d.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2 flex items-center justify-between gap-2">
-              <div className="min-w-0">
+          {docs.map((d, i) => (
+            <div key={d.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2 flex items-center gap-2.5">
+              <button type="button" onClick={() => d.url && setVisor({ docs, indice: i })}
+                className="shrink-0 w-12 h-12 rounded-md bg-[#161F2E] border border-[#2A3547] overflow-hidden flex items-center justify-center">
+                {esImagen(d.storage_path) && d.url ? (
+                  <img src={d.url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <FileText size={16} className="text-[#C9A227]" />
+                )}
+              </button>
+              <div className="min-w-0 flex-1">
                 <div className="text-xs truncate">
-                  <span className="text-[#C9A227]">{etiqueta[d.tipo_documento] || d.tipo_documento}</span>
+                  <span style={{ color: C_BOLSA }}>{etiqueta[d.tipo_documento] || d.tipo_documento}</span>
                   {d.proveedores?.nombre ? ` · ${d.proveedores.nombre}` : ""}
                 </div>
                 <div className="text-[10px] text-[#8A93A3] truncate">
@@ -797,6 +820,59 @@ function DocumentosDelGasto({ gasto, onCambio }) {
         <input type="file" accept="image/*,application/pdf" className="hidden" disabled={subiendo}
           onChange={(e) => subir(e.target.files && e.target.files[0])} />
       </label>
+
+      {visor && <VisorDocumentos visor={visor} setVisor={setVisor} />}
+    </div>
+  );
+}
+
+// Visor a pantalla completa, con flechas para pasar de un documento a otro.
+function VisorDocumentos({ visor, setVisor }) {
+  const { docs, indice } = visor;
+  const actual = docs[indice];
+  const irA = (i) => setVisor({ docs, indice: (i + docs.length) % docs.length });
+
+  useEffect(() => {
+    const alTeclear = (e) => {
+      if (e.key === "Escape") setVisor(null);
+      if (e.key === "ArrowRight") irA(indice + 1);
+      if (e.key === "ArrowLeft") irA(indice - 1);
+    };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [indice, docs]);
+
+  const etiqueta = { factura: "Factura", voucher: "Voucher", recibo: "Recibo", nota_credito: "Nota de crédito", otro: "Otro" };
+  const esPdf = actual.storage_path && /\.pdf$/i.test(actual.storage_path);
+
+  return (
+    <div onClick={() => setVisor(null)} className="fixed inset-0 bg-black/85 flex items-center justify-center z-[60] p-5">
+      <div onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full flex flex-col items-center gap-3">
+        {esPdf ? (
+          <a href={actual.url} target="_blank" rel="noreferrer"
+            className="bg-[#161F2E] border border-[#2A3547] rounded-lg px-6 py-8 text-center">
+            <FileText size={32} className="text-[#C9A227] mx-auto mb-2" />
+            <div className="text-sm">Abrir el PDF</div>
+          </a>
+        ) : (
+          <img src={actual.url} alt="Documento" className="max-w-full max-h-[78vh] rounded-md" />
+        )}
+        <div className="text-xs text-center text-white/80">
+          {etiqueta[actual.tipo_documento] || actual.tipo_documento}
+          {actual.proveedores?.nombre ? ` · ${actual.proveedores.nombre}` : ""}
+          {actual.monto_total ? ` · ${fmt(actual.monto_total)}` : ""}
+          {docs.length > 1 && <span className="text-white/50"> ({indice + 1}/{docs.length})</span>}
+        </div>
+      </div>
+      {docs.length > 1 && (
+        <>
+          <button onClick={(e) => { e.stopPropagation(); irA(indice - 1); }}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-white bg-black/40 rounded-full p-2">‹</button>
+          <button onClick={(e) => { e.stopPropagation(); irA(indice + 1); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-white bg-black/40 rounded-full p-2">›</button>
+        </>
+      )}
+      <button onClick={() => setVisor(null)} className="absolute top-5 right-5 text-white"><X size={22} /></button>
     </div>
   );
 }
@@ -1251,6 +1327,10 @@ function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const [nuevaBolsa, setNuevaBolsa] = useState(false);
   const [listaCentros, setListaCentros] = useState(centros);
   const [listaBolsas, setListaBolsas] = useState(bolsas);
+  const [arbol, setArbol] = useState([]);
+  const [proveedores, setProveedores] = useState([]);
+  const [proveedor, setProveedor] = useState("");
+  const [nuevoProv, setNuevoProv] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [ok, setOk] = useState(null);
@@ -1258,8 +1338,28 @@ function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   useEffect(() => { setListaCentros(centros); }, [centros]);
   useEffect(() => { setListaBolsas(bolsas); }, [bolsas]);
 
+  const cargarCatalogos = async () => {
+    const [{ data: a }, { data: p }] = await Promise.all([
+      supabase.from("v_centros_arbol").select("*").eq("estado", "activo").order("camino"),
+      supabase.from("proveedores").select("id, nombre, tipo").order("nombre"),
+    ]);
+    setArbol(a || []);
+    setProveedores(p || []);
+  };
+  useEffect(() => { cargarCatalogos(); }, []);
+
+  const crearProveedor = async () => {
+    if (!nuevoProv.trim()) return;
+    const { data, error: e } = await supabase.from("proveedores")
+      .insert({ nombre: nuevoProv.trim(), tipo: "persona" }).select("id, nombre").single();
+    if (e) { setError(e.message); return; }
+    setProveedores([...proveedores, data]);
+    setProveedor(data.id);
+    setNuevoProv("");
+  };
+
   const limpiar = () => {
-    setMonto(0); setCentro(""); setCategoria(""); setDescripcion("");
+    setMonto(0); setCentro(""); setCategoria(""); setDescripcion(""); setProveedor("");
     setFecha(hoy); setPendiente(true); setError("");
   };
 
@@ -1278,6 +1378,7 @@ function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         centro_costo_id:  tipo === "egreso" ? (centro || null) : null,
         categoria_id:     tipo === "traslado" ? null : (categoria || null),
         factura_pendiente: tipo === "egreso" ? pendiente : false,
+        proveedor_id: tipo === "egreso" ? (proveedor || null) : null,
       };
       const { error: e } = await supabase.from("movimientos").insert(fila);
       if (e) throw new Error(e.message);
@@ -1311,104 +1412,3 @@ function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
           <CheckCircle2 size={14} /> {ok}
         </div>
       )}
-      {error && (
-        <div className="text-xs text-red-400 bg-red-950/30 border border-red-800 rounded-md p-2.5">{error}</div>
-      )}
-
-      <div className="grid grid-cols-3 gap-2">
-        {[["ingreso", "Entró dinero"], ["egreso", "Se gastó"], ["traslado", "Se movió"]].map(([v, l]) => (
-          <button key={v} type="button" onClick={() => { setTipo(v); setError(""); setOk(null); }}
-            className={`text-xs py-2.5 rounded-md border ${tipo === v ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>
-            {l}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <CampoMoneda label="Monto" value={monto} onChange={setMonto} />
-        <Campo label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-      </div>
-
-      {tipo === "ingreso" && selBolsa(destino, setDestino, "¿A qué bolsa entró?")}
-      {tipo === "egreso" && selBolsa(origen, setOrigen, "¿De qué bolsa salió?")}
-      {tipo === "traslado" && (
-        <div className="space-y-3">
-          {selBolsa(origen, setOrigen, "Sale de")}
-          {selBolsa(destino, setDestino, "Entra a")}
-        </div>
-      )}
-
-      <div className="flex justify-end -mt-1">
-        <button type="button" onClick={() => setNuevaBolsa(!nuevaBolsa)} className="text-[11px] text-[#C9A227] underline">
-          {nuevaBolsa ? "Cancelar" : "+ Crear bolsa nueva"}
-        </button>
-      </div>
-      {nuevaBolsa && (
-        <CrearBolsa onCancelar={() => setNuevaBolsa(false)}
-          onCreada={(b) => {
-            setListaBolsas([...listaBolsas, { ...b, saldo_actual: 0 }]);
-            if (tipo === "ingreso" || tipo === "traslado") setDestino(b.id); else setOrigen(b.id);
-            setNuevaBolsa(false);
-            onGuardado && onGuardado();
-          }} />
-      )}
-
-      {tipo === "egreso" && (
-        <>
-          <div className="flex items-end gap-2">
-            <label className="block flex-1">
-              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Para qué obra?</span>
-              <select value={centro} onChange={(e) => setCentro(e.target.value)}
-                className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
-                <option value="">Elegí una obra</option>
-                {listaCentros.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={() => setNuevaObra(!nuevaObra)}
-              className="mb-0.5 text-[11px] bg-[#2A3547] px-2.5 py-2 rounded-md shrink-0">
-              {nuevaObra ? "Cancelar" : "+ Nueva"}
-            </button>
-          </div>
-          {nuevaObra && (
-            <CrearObra onCancelar={() => setNuevaObra(false)}
-              onCreada={(c) => { setListaCentros([...listaCentros, c]); setCentro(c.id); setNuevaObra(false); onGuardado && onGuardado(); }} />
-          )}
-        </>
-      )}
-
-      {tipo !== "traslado" && (
-        <SelectorCategoria tipo={tipo === "ingreso" ? "ingreso" : "egreso"} valor={categoria} onChange={setCategoria} />
-      )}
-
-      <label className="block">
-        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Qué fue exactamente?</span>
-        <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
-          placeholder="Ej. compra de duchas, comida de albañiles"
-          className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
-      </label>
-
-      {tipo === "egreso" && (
-        <label className="flex items-center justify-between bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 cursor-pointer">
-          <span className="text-xs">
-            Falta la factura del proveedor
-            <span className="block text-[10px] text-[#8A93A3] mt-0.5">
-              Apagalo si no van a dar factura, como comida o pasajes.
-            </span>
-          </span>
-          <input type="checkbox" checked={pendiente} onChange={(e) => setPendiente(e.target.checked)}
-            className="w-4 h-4 accent-[#C9A227] shrink-0 ml-3" />
-        </label>
-      )}
-
-      <button onClick={guardar} disabled={!listo || guardando}
-        className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md text-sm">
-        {guardando ? "Guardando..." : "Registrar movimiento"}
-      </button>
-
-      <p className="text-[10px] text-[#6b7280] text-center leading-relaxed">
-        Si la bolsa no tiene saldo suficiente, o si el gasto pasa la inversión declarada de la obra,
-        el sistema no lo deja pasar y te dice cuánto queda disponible.
-      </p>
-    </div>
-  );
-}

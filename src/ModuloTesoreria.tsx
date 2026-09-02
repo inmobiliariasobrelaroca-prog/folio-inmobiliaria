@@ -32,7 +32,7 @@ import Permisos from "./tesoreria/Permisos";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v21";
+const VERSION = "v22";
 
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
@@ -142,6 +142,13 @@ function PanelTesoreria({ perfil, onCerrar }) {
               Interno · <span className="text-[#6b7280]">{VERSION}</span>
             </div>
             <div className="font-serif text-xl leading-tight">Tesorería</div>
+            {/* Quién está viendo esto. Evita confundir la sesión propia
+                con la de alguien a quien se le estaba probando el acceso. */}
+            <div className="text-[10px] text-[#8A93A3] mt-0.5">
+              {perfil?.usuario?.nombre || "Sin nombre"}
+              {rol?.nombre ? ` · ${rol.nombre}` : ""}
+              {esSuper && <span style={{ color: "#C9A227" }}> · ve todo</span>}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button onClick={refrescar} disabled={actualizando || cargando}

@@ -32,20 +32,66 @@ import Permisos from "./tesoreria/Permisos";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v25";
+const VERSION = "v26";
+
+// Mismo patrón de eventos de ventana que ya usa el aviso de código
+// pendiente. Permite poner el botón en el TopBar sin tener que pasar
+// props por media app.
+const EVENTO_ABRIR = "slr:abrir-tesoreria";
+const EVENTO_BOTON = "slr:tesoreria-boton-montado";
+
+// ¿Puede esta persona entrar al módulo? Mismo criterio que la función
+// es_admin_financiero() de la base.
+function puedeEntrarTesoreria(perfil) {
+  const rol = perfil?.usuario?.roles;
+  return perfil?.tipo === "staff" &&
+    (!!rol?.es_administrador || !!rol?.permisos?.gestionar_finanzas);
+}
+
+// Botón para el TopBar. Al montarse avisa, y el módulo esconde su
+// botón flotante para que no queden los dos.
+export function BotonTesoreria({ perfil }) {
+  useEffect(() => {
+    window.dispatchEvent(new Event(EVENTO_BOTON));
+    const t = setTimeout(() => window.dispatchEvent(new Event(EVENTO_BOTON)), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!puedeEntrarTesoreria(perfil)) return null;
+
+  return (
+    <button
+      onClick={() => window.dispatchEvent(new Event(EVENTO_ABRIR))}
+      title="Tesorería"
+      className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"
+    >
+      <Calculator size={16} />
+    </button>
+  );
+}
 
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
+  const [hayBotonArriba, setHayBotonArriba] = useState(false);
 
-  // Mismo criterio que la función es_admin_financiero() de la base:
-  // administrador general, o permiso explícito gestionar_finanzas.
-  const rol = perfil?.usuario?.roles;
-  const puedeVer = perfil?.tipo === "staff" && (!!rol?.es_administrador || !!rol?.permisos?.gestionar_finanzas);
-  if (!puedeVer) return null;
+  useEffect(() => {
+    const abrir = () => setAbierto(true);
+    const marcar = () => setHayBotonArriba(true);
+    window.addEventListener(EVENTO_ABRIR, abrir);
+    window.addEventListener(EVENTO_BOTON, marcar);
+    return () => {
+      window.removeEventListener(EVENTO_ABRIR, abrir);
+      window.removeEventListener(EVENTO_BOTON, marcar);
+    };
+  }, []);
+
+  if (!puedeEntrarTesoreria(perfil)) return null;
 
   return (
     <>
-      {!abierto && (
+      {/* Respaldo: si el botón del TopBar no está puesto, queda este
+          flotante para no perder el acceso al módulo. */}
+      {!abierto && !hayBotonArriba && (
         <button
           onClick={() => setAbierto(true)}
           title="Tesorería"

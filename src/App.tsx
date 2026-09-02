@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria from "./ModuloTesoreria";
+import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,

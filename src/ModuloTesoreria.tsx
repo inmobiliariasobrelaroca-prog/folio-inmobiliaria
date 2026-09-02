@@ -19,7 +19,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import {
-  Calculator, Zap, Upload, FileText, X,
+  Calculator, Zap, Upload, FileText, X, Plus,
   CheckCircle2, AlertTriangle, Sparkles,
 } from "lucide-react";
 
@@ -166,6 +166,7 @@ function PanelTesoreria({ onCerrar }) {
         <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
           {[
             ["mapa", "Mapa", Zap],
+            ["registrar", "Registrar", Plus],
             ["resumen", "Resumen", Calculator],
             ["facturas", "Subir factura", Upload],
             ["pendientes", "Documentar", AlertTriangle],
@@ -184,6 +185,8 @@ function PanelTesoreria({ onCerrar }) {
           <div className="text-sm text-[#8A93A3]">Cargando...</div>
         ) : tab === "mapa" ? (
           <MapaFlujo bolsas={bolsas} total={total} />
+        ) : tab === "registrar" ? (
+          <RegistrarMovimiento bolsas={bolsas} centros={centros} onGuardado={cargar} />
         ) : tab === "resumen" ? (
           <ResumenTesoreria total={total} bolsas={bolsas} centros={centros} cuotas={cuotas} />
         ) : tab === "facturas" ? (
@@ -1066,6 +1069,346 @@ function MapaFlujo({ bolsas, total }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Registrar movimientos desde la app ----------
+//
+// Todo lo que antes se hacía con SQL: ingresos, egresos y traslados,
+// más la creación de bolsas, obras y categorías sobre la marcha.
+
+function SelectorCategoria({ tipo, valor, onChange }) {
+  const [cats, setCats] = useState([]);
+  const [creando, setCreando] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [padre, setPadre] = useState("");
+  const [error, setError] = useState("");
+
+  const cargar = async () => {
+    const { data } = await supabase.from("categorias").select("id, nombre, padre_id").eq("tipo", tipo).order("nombre");
+    setCats(data || []);
+  };
+  useEffect(() => { cargar(); }, [tipo]);
+
+  const padres = cats.filter((c) => !c.padre_id);
+  const hijosDe = (id) => cats.filter((c) => c.padre_id === id);
+  const sueltas = padres.filter((p) => hijosDe(p.id).length === 0);
+  const conHijos = padres.filter((p) => hijosDe(p.id).length > 0);
+
+  const crear = async () => {
+    if (!nombre.trim()) return;
+    setError("");
+    const { data, error: e } = await supabase
+      .from("categorias")
+      .insert({ nombre: nombre.trim(), tipo, padre_id: padre || null })
+      .select("id").single();
+    if (e) { setError(e.message); return; }
+    await cargar();
+    onChange(data.id);
+    setNombre(""); setPadre(""); setCreando(false);
+  };
+
+  return (
+    <div>
+      <div className="flex items-end gap-2">
+        <label className="block flex-1">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Categoría</span>
+          <select value={valor} onChange={(e) => onChange(e.target.value)}
+            className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
+            <option value="">Elegí una categoría</option>
+            {conHijos.map((p) => (
+              <optgroup key={p.id} label={p.nombre}>
+                <option value={p.id}>{p.nombre} (general)</option>
+                {hijosDe(p.id).map((h) => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+              </optgroup>
+            ))}
+            {sueltas.length > 0 && (
+              <optgroup label="Otras">
+                {sueltas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </label>
+        <button type="button" onClick={() => setCreando(!creando)}
+          className="mb-0.5 text-[11px] bg-[#2A3547] px-2.5 py-2 rounded-md shrink-0">
+          {creando ? "Cancelar" : "+ Nueva"}
+        </button>
+      </div>
+
+      {creando && (
+        <div className="mt-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-2">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)}
+            placeholder="Nombre de la categoría"
+            className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+          <select value={padre} onChange={(e) => setPadre(e.target.value)}
+            className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs">
+            <option value="">Sin categoría padre</option>
+            {padres.map((p) => <option key={p.id} value={p.id}>Dentro de {p.nombre}</option>)}
+          </select>
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          <button type="button" onClick={crear} disabled={!nombre.trim()}
+            className="w-full text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md">
+            Crear categoría
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CrearObra({ onCreada, onCancelar }) {
+  const [nombre, setNombre] = useState("");
+  const [ubicacion, setUbicacion] = useState("");
+  const [presupuesto, setPresupuesto] = useState(0);
+  const [error, setError] = useState("");
+
+  const crear = async () => {
+    setError("");
+    const { data, error: e } = await supabase.from("centros_costo")
+      .insert({ nombre: nombre.trim(), ubicacion: ubicacion.trim() || null,
+                presupuesto: Number(presupuesto) > 0 ? Number(presupuesto) : null })
+      .select("id, nombre").single();
+    if (e) { setError(e.message); return; }
+    onCreada(data);
+  };
+
+  return (
+    <div className="mt-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-2">
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de la obra"
+        className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      <input value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} placeholder="Ubicación (opcional)"
+        className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      <CampoMoneda label="Inversión declarada (opcional)" value={presupuesto} onChange={setPresupuesto} />
+      {error && <div className="text-[11px] text-red-400">{error}</div>}
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancelar} className="flex-1 text-[11px] bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
+        <button type="button" onClick={crear} disabled={!nombre.trim()}
+          className="flex-1 text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md">Crear obra</button>
+      </div>
+    </div>
+  );
+}
+
+function CrearBolsa({ onCreada, onCancelar }) {
+  const [nombre, setNombre] = useState("");
+  const [tipo, setTipo] = useState("operativa");
+  const [banco, setBanco] = useState("");
+  const [titular, setTitular] = useState("");
+  const [error, setError] = useState("");
+
+  const crear = async () => {
+    setError("");
+    const { data, error: e } = await supabase.from("bolsas")
+      .insert({ nombre: nombre.trim(), tipo, banco: banco.trim() || null, titular: titular.trim() || null })
+      .select("id, nombre").single();
+    if (e) { setError(e.message); return; }
+    onCreada(data);
+  };
+
+  return (
+    <div className="mt-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-2">
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de la bolsa"
+        className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      <select value={tipo} onChange={(e) => setTipo(e.target.value)}
+        className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs">
+        <option value="operativa">Operativa</option>
+        <option value="prestamo">Préstamo</option>
+        <option value="renta">Rentas</option>
+        <option value="abono_casa">Abonos de casas</option>
+        <option value="venta">Ventas</option>
+        <option value="reserva">Reserva</option>
+        <option value="otro">Otra</option>
+      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <input value={banco} onChange={(e) => setBanco(e.target.value)} placeholder="Banco"
+          className="bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+        <input value={titular} onChange={(e) => setTitular(e.target.value)} placeholder="Titular"
+          className="bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
+      </div>
+      {error && <div className="text-[11px] text-red-400">{error}</div>}
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancelar} className="flex-1 text-[11px] bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>
+        <button type="button" onClick={crear} disabled={!nombre.trim()}
+          className="flex-1 text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded-md">Crear bolsa</button>
+      </div>
+    </div>
+  );
+}
+
+function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [tipo, setTipo] = useState("egreso");
+  const [fecha, setFecha] = useState(hoy);
+  const [monto, setMonto] = useState(0);
+  const [origen, setOrigen] = useState("");
+  const [destino, setDestino] = useState("");
+  const [centro, setCentro] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [pendiente, setPendiente] = useState(true);
+  const [nuevaObra, setNuevaObra] = useState(false);
+  const [nuevaBolsa, setNuevaBolsa] = useState(false);
+  const [listaCentros, setListaCentros] = useState(centros);
+  const [listaBolsas, setListaBolsas] = useState(bolsas);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(null);
+
+  useEffect(() => { setListaCentros(centros); }, [centros]);
+  useEffect(() => { setListaBolsas(bolsas); }, [bolsas]);
+
+  const limpiar = () => {
+    setMonto(0); setCentro(""); setCategoria(""); setDescripcion("");
+    setFecha(hoy); setPendiente(true); setError("");
+  };
+
+  const listo =
+    Number(monto) > 0 &&
+    (tipo === "ingreso" ? destino : tipo === "egreso" ? origen : origen && destino && origen !== destino);
+
+  const guardar = async () => {
+    setError(""); setOk(null); setGuardando(true);
+    try {
+      const fila = {
+        tipo, fecha, monto: Number(monto),
+        descripcion: descripcion.trim() || null,
+        bolsa_origen_id:  tipo === "ingreso" ? null : origen,
+        bolsa_destino_id: tipo === "egreso"  ? null : destino,
+        centro_costo_id:  tipo === "egreso" ? (centro || null) : null,
+        categoria_id:     tipo === "traslado" ? null : (categoria || null),
+        factura_pendiente: tipo === "egreso" ? pendiente : false,
+      };
+      const { error: e } = await supabase.from("movimientos").insert(fila);
+      if (e) throw new Error(e.message);
+      setOk(`${tipo === "ingreso" ? "Ingreso" : tipo === "egreso" ? "Gasto" : "Traslado"} de ${fmt(monto)} registrado.`);
+      limpiar();
+      onGuardado && onGuardado();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const selBolsa = (valor, set, label) => (
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
+      <select value={valor} onChange={(e) => set(e.target.value)}
+        className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
+        <option value="">Elegí una bolsa</option>
+        {listaBolsas.map((b) => (
+          <option key={b.id} value={b.id}>{b.nombre} — {fmt(b.saldo_actual)}</option>
+        ))}
+      </select>
+    </label>
+  );
+
+  return (
+    <div className="space-y-4">
+      {ok && (
+        <div className="text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-800 rounded-md p-2.5 flex items-center gap-2">
+          <CheckCircle2 size={14} /> {ok}
+        </div>
+      )}
+      {error && (
+        <div className="text-xs text-red-400 bg-red-950/30 border border-red-800 rounded-md p-2.5">{error}</div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        {[["ingreso", "Entró dinero"], ["egreso", "Se gastó"], ["traslado", "Se movió"]].map(([v, l]) => (
+          <button key={v} type="button" onClick={() => { setTipo(v); setError(""); setOk(null); }}
+            className={`text-xs py-2.5 rounded-md border ${tipo === v ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium" : "border-[#2A3547] text-[#EDE7D9]"}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <CampoMoneda label="Monto" value={monto} onChange={setMonto} />
+        <Campo label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+      </div>
+
+      {tipo === "ingreso" && selBolsa(destino, setDestino, "¿A qué bolsa entró?")}
+      {tipo === "egreso" && selBolsa(origen, setOrigen, "¿De qué bolsa salió?")}
+      {tipo === "traslado" && (
+        <div className="space-y-3">
+          {selBolsa(origen, setOrigen, "Sale de")}
+          {selBolsa(destino, setDestino, "Entra a")}
+        </div>
+      )}
+
+      <div className="flex justify-end -mt-1">
+        <button type="button" onClick={() => setNuevaBolsa(!nuevaBolsa)} className="text-[11px] text-[#C9A227] underline">
+          {nuevaBolsa ? "Cancelar" : "+ Crear bolsa nueva"}
+        </button>
+      </div>
+      {nuevaBolsa && (
+        <CrearBolsa onCancelar={() => setNuevaBolsa(false)}
+          onCreada={(b) => {
+            setListaBolsas([...listaBolsas, { ...b, saldo_actual: 0 }]);
+            if (tipo === "ingreso" || tipo === "traslado") setDestino(b.id); else setOrigen(b.id);
+            setNuevaBolsa(false);
+            onGuardado && onGuardado();
+          }} />
+      )}
+
+      {tipo === "egreso" && (
+        <>
+          <div className="flex items-end gap-2">
+            <label className="block flex-1">
+              <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Para qué obra?</span>
+              <select value={centro} onChange={(e) => setCentro(e.target.value)}
+                className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
+                <option value="">Elegí una obra</option>
+                {listaCentros.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => setNuevaObra(!nuevaObra)}
+              className="mb-0.5 text-[11px] bg-[#2A3547] px-2.5 py-2 rounded-md shrink-0">
+              {nuevaObra ? "Cancelar" : "+ Nueva"}
+            </button>
+          </div>
+          {nuevaObra && (
+            <CrearObra onCancelar={() => setNuevaObra(false)}
+              onCreada={(c) => { setListaCentros([...listaCentros, c]); setCentro(c.id); setNuevaObra(false); onGuardado && onGuardado(); }} />
+          )}
+        </>
+      )}
+
+      {tipo !== "traslado" && (
+        <SelectorCategoria tipo={tipo === "ingreso" ? "ingreso" : "egreso"} valor={categoria} onChange={setCategoria} />
+      )}
+
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Qué fue exactamente?</span>
+        <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
+          placeholder="Ej. compra de duchas, comida de albañiles"
+          className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+      </label>
+
+      {tipo === "egreso" && (
+        <label className="flex items-center justify-between bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 cursor-pointer">
+          <span className="text-xs">
+            Falta la factura del proveedor
+            <span className="block text-[10px] text-[#8A93A3] mt-0.5">
+              Apagalo si no van a dar factura, como comida o pasajes.
+            </span>
+          </span>
+          <input type="checkbox" checked={pendiente} onChange={(e) => setPendiente(e.target.checked)}
+            className="w-4 h-4 accent-[#C9A227] shrink-0 ml-3" />
+        </label>
+      )}
+
+      <button onClick={guardar} disabled={!listo || guardando}
+        className="w-full bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-3 rounded-md text-sm">
+        {guardando ? "Guardando..." : "Registrar movimiento"}
+      </button>
+
+      <p className="text-[10px] text-[#6b7280] text-center leading-relaxed">
+        Si la bolsa no tiene saldo suficiente, o si el gasto pasa la inversión declarada de la obra,
+        el sistema no lo deja pasar y te dice cuánto queda disponible.
+      </p>
     </div>
   );
 }

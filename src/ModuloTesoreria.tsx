@@ -32,7 +32,7 @@ import Permisos from "./tesoreria/Permisos";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v23";
+const VERSION = "v25";
 
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
@@ -125,6 +125,21 @@ function PanelTesoreria({ perfil, onCerrar }) {
     return () => document.removeEventListener("visibilitychange", alCambiar);
   }, []);
 
+  // Las obras que llegan acá ya vienen filtradas por el alcance del rol,
+  // así que basta con nombrarlas.
+  const nombresObras = centros.map((c) => c.nombre);
+  const obrasTexto =
+    nombresObras.length === 0
+      ? ""
+      : nombresObras.length <= 2
+      ? nombresObras.join(" · ")
+      : `${nombresObras.slice(0, 2).join(" · ")} y ${nombresObras.length - 2} más`;
+
+  // El rol no le dice nada a quien lo tiene; su obra sí.
+  const etiquetaAlcance = [perfil?.usuario?.nombre, obrasTexto]
+    .filter(Boolean)
+    .join(" · ");
+
   const libre = bolsas
     .filter((b) => b.disponible_para_gasto !== false)
     .reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
@@ -142,12 +157,18 @@ function PanelTesoreria({ perfil, onCerrar }) {
               Interno · <span className="text-[#6b7280]">{VERSION}</span>
             </div>
             <div className="font-serif text-xl leading-tight">Tesorería</div>
-            {/* Quién está viendo esto. Evita confundir la sesión propia
-                con la de alguien a quien se le estaba probando el acceso. */}
+            {/* Quien ve todo necesita saber con qué sesión entró; a quien
+                tiene una obra asignada le sirve más ver cuál es. */}
             <div className="text-[10px] text-[#8A93A3] mt-0.5">
-              {perfil?.usuario?.nombre || "Sin nombre"}
-              {rol?.nombre ? ` · ${rol.nombre}` : ""}
-              {esSuper && <span style={{ color: "#C9A227" }}> · ve todo</span>}
+              {esSuper ? (
+                <>
+                  {perfil?.usuario?.nombre || "Sin nombre"}
+                  {rol?.nombre ? ` · ${rol.nombre}` : ""}
+                  <span style={{ color: "#C9A227" }}> · ve todo</span>
+                </>
+              ) : (
+                etiquetaAlcance
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1">

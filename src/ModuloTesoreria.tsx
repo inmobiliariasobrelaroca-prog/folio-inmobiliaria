@@ -20,7 +20,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw } from "lucide-react";
+import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield } from "lucide-react";
 import { fmt } from "./tesoreria/comun";
 import MapaFlujo from "./tesoreria/Mapa";
 import { ResumenTesoreria, MovimientosTesoreria } from "./tesoreria/Resumen";
@@ -28,6 +28,7 @@ import RegistrarMovimiento from "./tesoreria/Registrar";
 import SubirFacturaTesoreria from "./tesoreria/Facturas";
 import DocumentarGastos from "./tesoreria/Documentos";
 import Compromisos from "./tesoreria/Compromisos";
+import Permisos from "./tesoreria/Permisos";
 
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
@@ -68,6 +69,7 @@ function PanelTesoreria({ perfil, onCerrar }) {
     ["pendientes", "Documentar", AlertTriangle, puede("finanzas_documentar")],
     ["compromisos", "Por pagar", Clock, true],
     ["movimientos", "Movimientos", FileText, true],
+    ["permisos", "Permisos", Shield, esSuper],
   ].filter((p) => p[3]);
 
   const [tab, setTab] = useState("mapa");
@@ -168,6 +170,8 @@ function PanelTesoreria({ perfil, onCerrar }) {
           <DocumentarGastos onCambio={cargar} />
         ) : tab === "compromisos" ? (
           <Compromisos bolsas={bolsas} onCambio={cargar} />
+        ) : tab === "permisos" ? (
+          <Permisos />
         ) : (
           <MovimientosTesoreria />
         )}

@@ -8,16 +8,26 @@ import { FileText, Upload } from "lucide-react";
 import { fmt, fmtDate, C_BOLSA } from "./comun";
 import { DocumentosDelGasto } from "./Documentos";
 
-export function ResumenTesoreria({ libre, apartado, bolsas, centros, cuotas }) {
+export function ResumenTesoreria({ libre, delegado, apartado, bolsas, centros, cuotas }) {
   return (
     <div className="space-y-5">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-        <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Libre para gastar</div>
+        <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">A tu disposición</div>
         <div className="font-serif text-3xl text-[#C9A227] mt-1">{fmt(libre)}</div>
-        {apartado > 0 && (
-          <div className="text-[11px] text-[#8A93A3] mt-2 pt-2 border-t border-[#2A3547]">
-            Además hay <span className="font-mono">{fmt(apartado)}</span> apartados o retenidos
-            que no se pueden usar para obra.
+        {(delegado > 0 || apartado > 0) && (
+          <div className="text-[11px] text-[#8A93A3] mt-2 pt-2 border-t border-[#2A3547] space-y-1">
+            {delegado > 0 && (
+              <div className="flex justify-between">
+                <span>Delegado a terceros</span>
+                <span className="font-mono">{fmt(delegado)}</span>
+              </div>
+            )}
+            {apartado > 0 && (
+              <div className="flex justify-between">
+                <span>Apartado o retenido</span>
+                <span className="font-mono">{fmt(apartado)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -37,9 +47,13 @@ export function ResumenTesoreria({ libre, apartado, bolsas, centros, cuotas }) {
                 <div className={`font-mono text-sm ${b.disponible_para_gasto === false ? "text-[#8A93A3]" : ""}`}>
                   {fmt(b.saldo_actual)}
                 </div>
-                {b.disponible_para_gasto === false && (
+                {b.disponible_para_gasto === false ? (
                   <div className="text-[9px] uppercase tracking-wide text-[#6b7280]">apartado</div>
-                )}
+                ) : b.delegada_a_rol_id ? (
+                  <div className="text-[9px] uppercase tracking-wide text-[#6b7280]">
+                    {b.titular ? `maneja ${b.titular}` : "delegado"}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}

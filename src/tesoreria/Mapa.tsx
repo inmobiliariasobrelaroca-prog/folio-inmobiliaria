@@ -17,7 +17,7 @@ import { fmt, fmtDate, C_ORIGEN, C_BOLSA, C_GASTO } from "./comun";
 // SVG puro, sin librerías. En pantallas angostas se desliza
 // horizontalmente en vez de encogerse hasta ser ilegible.
 
-export function MapaFlujo({ bolsas, libre, apartado }) {
+export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
   const [origenes, setOrigenes] = useState([]);
   const [gastos, setGastos] = useState([]);
   const [desglose, setDesglose] = useState([]);
@@ -57,7 +57,8 @@ export function MapaFlujo({ bolsas, libre, apartado }) {
       gastos.some((g) => g.bolsa_id === b.id) ||
       origenes.some((o) => o.bolsa_id === b.id))
     .map((b) => ({ id: b.id, nombre: b.nombre, monto: Number(b.saldo_actual),
-                   tipo: b.tipo, apartada: b.disponible_para_gasto === false }))
+                   tipo: b.tipo, apartada: b.disponible_para_gasto === false,
+                   delegada: !!b.delegada_a_rol_id }))
     .sort((a, b) => b.monto - a.monto);
 
   // ---- Columna 3: obras ----
@@ -133,9 +134,15 @@ export function MapaFlujo({ bolsas, libre, apartado }) {
     <div>
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 mb-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Libre para gastar</span>
+          <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">A tu disposición</span>
           <span className="font-serif text-2xl" style={{ color: C_BOLSA }}>{fmt(libre)}</span>
         </div>
+        {delegado > 0 && (
+          <div className="flex items-baseline justify-between mt-1.5 pt-1.5 border-t border-[#2A3547]">
+            <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Delegado a terceros</span>
+            <span className="font-mono text-sm text-[#8A93A3]">{fmt(delegado)}</span>
+          </div>
+        )}
         {apartado > 0 && (
           <div className="flex items-baseline justify-between mt-1.5 pt-1.5 border-t border-[#2A3547]">
             <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Apartado o retenido</span>
@@ -186,7 +193,7 @@ export function MapaFlujo({ bolsas, libre, apartado }) {
           {listaBolsa.map((n) => (
             <Nodo key={`b-${n.id}`} x={COL.bolsa} y={yBol[n.id]} nombre={n.nombre} monto={n.monto}
               color={C_BOLSA} fondo="#1C1B10" atenuado={!vivo("bolsa", n.id)}
-              sub={n.apartada ? "apartado" : null}
+              sub={n.apartada ? "apartado" : n.delegada ? "delegado" : null}
               onClick={() => setSel(sel?.tipo === "bolsa" && sel.id === n.id ? null : { tipo: "bolsa", ...n })} />
           ))}
 

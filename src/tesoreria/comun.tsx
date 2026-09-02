@@ -202,12 +202,33 @@ export function CrearBolsa({ onCreada, onCancelar }) {
   const [tipo, setTipo] = useState("operativa");
   const [banco, setBanco] = useState("");
   const [titular, setTitular] = useState("");
+  const [delegadaA, setDelegadaA] = useState("");
+  const [disponible, setDisponible] = useState(true);
+  const [roles, setRoles] = useState([]);
   const [error, setError] = useState("");
+
+  // Roles a los que se le puede delegar el manejo de una bolsa.
+  // El de administrador no aparece: ese ya ve y maneja todo.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("roles").select("id, nombre")
+        .eq("es_administrador", false).order("nombre");
+      setRoles(data || []);
+    })();
+  }, []);
 
   const crear = async () => {
     setError("");
     const { data, error: e } = await supabase.from("bolsas")
-      .insert({ nombre: nombre.trim(), tipo, banco: banco.trim() || null, titular: titular.trim() || null })
+      .insert({
+        nombre: nombre.trim(),
+        tipo,
+        banco: banco.trim() || null,
+        titular: titular.trim() || null,
+        delegada_a_rol_id: delegadaA || null,
+        disponible_para_gasto: disponible,
+      })
       .select("id, nombre").single();
     if (e) { setError(e.message); return; }
     onCreada(data);
@@ -233,6 +254,36 @@ export function CrearBolsa({ onCreada, onCancelar }) {
         <input value={titular} onChange={(e) => setTitular(e.target.value)} placeholder="Titular"
           className="bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs" />
       </div>
+
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">¿Quién la maneja?</span>
+        <select value={delegadaA} onChange={(e) => setDelegadaA(e.target.value)}
+          className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-2.5 py-1.5 text-xs">
+          <option value="">La administración (vos)</option>
+          {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+        </select>
+      </label>
+      {delegadaA ? (
+        <p className="text-[10px] text-[#6b7280]">
+          Para quien tenga ese rol el dinero es propio; a vos te va a aparecer
+          como delegado, separado de lo que manejás directamente. Acordate de
+          darle esta bolsa en su alcance, en la pestaña Permisos.
+        </p>
+      ) : null}
+
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" checked={!disponible}
+          onChange={(e) => setDisponible(!e.target.checked)}
+          className="mt-0.5 w-4 h-4 accent-[#C9A227] shrink-0" />
+        <span>
+          <span className="text-xs">Es dinero apartado</span>
+          <span className="block text-[10px] text-[#6b7280]">
+            Para fondos retenidos por el banco o reservas ya comprometidas.
+            No cuentan en el total disponible.
+          </span>
+        </span>
+      </label>
+
       {error && <div className="text-[11px] text-red-400">{error}</div>}
       <div className="flex gap-2">
         <button type="button" onClick={onCancelar} className="flex-1 text-[11px] bg-[#2A3547] py-1.5 rounded-md">Cancelar</button>

@@ -20,7 +20,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle } from "lucide-react";
+import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw } from "lucide-react";
 import { fmt } from "./tesoreria/comun";
 import MapaFlujo from "./tesoreria/Mapa";
 import { ResumenTesoreria, MovimientosTesoreria } from "./tesoreria/Resumen";
@@ -75,7 +75,11 @@ function PanelTesoreria({ perfil, onCerrar }) {
   const [centros, setCentros] = useState([]);
   const [cuotas, setCuotas] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [actualizando, setActualizando] = useState(false);
   const [error, setError] = useState("");
+  // Cambiar esta versión remonta la pestaña visible, así cada pantalla
+  // vuelve a pedir sus datos sin tener que cerrar y abrir el módulo.
+  const [version, setVersion] = useState(0);
 
   const cargar = async () => {
     setCargando(true);
@@ -93,6 +97,28 @@ function PanelTesoreria({ perfil, onCerrar }) {
   };
   useEffect(() => { cargar(); }, []);
 
+  const refrescar = async () => {
+    setActualizando(true);
+    await cargar();
+    setVersion((v) => v + 1);
+    setActualizando(false);
+  };
+
+  // Al volver a la pestaña del navegador después de un rato, se refresca solo.
+  useEffect(() => {
+    let ocultaDesde = null;
+    const alCambiar = () => {
+      if (document.visibilityState === "hidden") {
+        ocultaDesde = Date.now();
+      } else if (ocultaDesde && Date.now() - ocultaDesde > 60000) {
+        ocultaDesde = null;
+        refrescar();
+      }
+    };
+    document.addEventListener("visibilitychange", alCambiar);
+    return () => document.removeEventListener("visibilitychange", alCambiar);
+  }, []);
+
   const total = bolsas.reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
 
   return (
@@ -103,7 +129,15 @@ function PanelTesoreria({ perfil, onCerrar }) {
             <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Interno</div>
             <div className="font-serif text-xl leading-tight">Tesorería</div>
           </div>
-          <button onClick={onCerrar} className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"><X size={20} /></button>
+          <div className="flex items-center gap-1">
+            <button onClick={refrescar} disabled={actualizando || cargando}
+              title="Actualizar desde la base de datos"
+              className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 disabled:opacity-40">
+              <RefreshCw size={17} className={actualizando ? "animate-spin" : ""} />
+            </button>
+            <button onClick={onCerrar} title="Cerrar"
+              className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"><X size={20} /></button>
+          </div>
         </div>
       </div>
 
@@ -119,6 +153,7 @@ function PanelTesoreria({ perfil, onCerrar }) {
 
         {error && <div className="text-xs text-red-400 bg-red-950/30 border border-red-800 rounded-md p-2.5 mb-4">{error}</div>}
 
+        <div key={`${tab}-${version}`}>
         {cargando ? (
           <div className="text-sm text-[#8A93A3]">Cargando...</div>
         ) : tab === "mapa" ? (
@@ -136,6 +171,7 @@ function PanelTesoreria({ perfil, onCerrar }) {
         ) : (
           <MovimientosTesoreria />
         )}
+        </div>
       </div>
     </div>
   );

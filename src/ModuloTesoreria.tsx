@@ -121,7 +121,13 @@ function PanelTesoreria({ perfil, onCerrar }) {
     return () => document.removeEventListener("visibilitychange", alCambiar);
   }, []);
 
-  const total = bolsas.reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
+  const libre = bolsas
+    .filter((b) => b.disponible_para_gasto !== false)
+    .reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
+  const apartado = bolsas
+    .filter((b) => b.disponible_para_gasto === false)
+    .reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
+  const total = libre + apartado;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#101826] text-[#EDE7D9] overflow-y-auto">
@@ -159,11 +165,11 @@ function PanelTesoreria({ perfil, onCerrar }) {
         {cargando ? (
           <div className="text-sm text-[#8A93A3]">Cargando...</div>
         ) : tab === "mapa" ? (
-          <MapaFlujo bolsas={bolsas} total={total} />
+          <MapaFlujo bolsas={bolsas} libre={libre} apartado={apartado} />
         ) : tab === "registrar" ? (
           <RegistrarMovimiento bolsas={bolsas} centros={centros} onGuardado={cargar} />
         ) : tab === "resumen" ? (
-          <ResumenTesoreria total={total} bolsas={bolsas} centros={centros} cuotas={cuotas} />
+          <ResumenTesoreria libre={libre} apartado={apartado} bolsas={bolsas} centros={centros} cuotas={cuotas} />
         ) : tab === "facturas" ? (
           <SubirFacturaTesoreria bolsas={bolsas} centros={centros} onRegistrada={cargar} />
         ) : tab === "pendientes" ? (

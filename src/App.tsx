@@ -1047,7 +1047,7 @@ function Login({ onIngreso }) {
         <div className="flex rounded-full bg-[#1A2333] p-1 text-xs mb-4">
           <button type="button" onClick={() => { setModo("cliente"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
           <button type="button" onClick={() => { setModo("staff"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "staff" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
-          <button type="button" onClick={() => { setModo("asesor"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "asesor" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Asesor</button>
+          <button type="button" onClick={() => { setModo("asesor"); setError(""); }} className={`flex-1 py-1.5 rounded-full transition ${modo === "asesor" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Socios</button>
         </div>
 
         {modo === "cliente" ? (

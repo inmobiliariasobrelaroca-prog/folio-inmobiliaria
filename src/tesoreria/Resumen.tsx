@@ -8,12 +8,18 @@ import { FileText, Upload } from "lucide-react";
 import { fmt, fmtDate, C_BOLSA } from "./comun";
 import { DocumentosDelGasto } from "./Documentos";
 
-export function ResumenTesoreria({ total, bolsas, centros, cuotas }) {
+export function ResumenTesoreria({ libre, apartado, bolsas, centros, cuotas }) {
   return (
     <div className="space-y-5">
       <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-        <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Disponible en todas las bolsas</div>
-        <div className="font-serif text-3xl text-[#C9A227] mt-1">{fmt(total)}</div>
+        <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Libre para gastar</div>
+        <div className="font-serif text-3xl text-[#C9A227] mt-1">{fmt(libre)}</div>
+        {apartado > 0 && (
+          <div className="text-[11px] text-[#8A93A3] mt-2 pt-2 border-t border-[#2A3547]">
+            Además hay <span className="font-mono">{fmt(apartado)}</span> apartados o retenidos
+            que no se pueden usar para obra.
+          </div>
+        )}
       </div>
 
       <div>
@@ -27,14 +33,20 @@ export function ResumenTesoreria({ total, bolsas, centros, cuotas }) {
                   {b.banco ? `${b.banco}${b.titular ? ` · ${b.titular}` : ""}` : "Sin cuenta asignada"}
                 </div>
               </div>
-              <div className={`font-mono text-sm shrink-0 ${b.tipo === "reserva" ? "text-[#C9A227]" : ""}`}>
-                {fmt(b.saldo_actual)}
+              <div className="text-right shrink-0">
+                <div className={`font-mono text-sm ${b.disponible_para_gasto === false ? "text-[#8A93A3]" : ""}`}>
+                  {fmt(b.saldo_actual)}
+                </div>
+                {b.disponible_para_gasto === false && (
+                  <div className="text-[9px] uppercase tracking-wide text-[#6b7280]">apartado</div>
+                )}
               </div>
             </div>
           ))}
         </div>
         <p className="text-[11px] text-[#6b7280] mt-2">
-          La reserva de servicio de deuda ya está apartada para las cuotas — no la uses para obra.
+          Lo marcado como apartado no cuenta en el total de arriba: son las cuotas ya
+          reservadas y el fondo que el banco todavía no libera.
         </p>
       </div>
 

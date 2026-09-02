@@ -87,18 +87,37 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
     }
   };
 
-  const selBolsa = (valor, set, label) => (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
-      <select value={valor} onChange={(e) => set(e.target.value)}
-        className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
-        <option value="">Elegí una bolsa</option>
-        {listaBolsas.map((b) => (
-          <option key={b.id} value={b.id}>{b.nombre} — {fmt(b.saldo_actual)}</option>
-        ))}
-      </select>
-    </label>
-  );
+  // Para un gasto no se ofrecen las bolsas apartadas: el fondo
+  // retenido no se puede tocar, y la reserva de cuotas solo sirve
+  // para deuda. Para traslados e ingresos siguen disponibles, que es
+  // como se libera ese dinero cuando corresponde.
+  const bolsasPara = (esOrigenDeGasto) =>
+    esOrigenDeGasto
+      ? listaBolsas.filter((b) => (b.uso_permitido || "libre") === "libre")
+      : listaBolsas;
+
+  const selBolsa = (valor, set, label, esOrigenDeGasto = false) => {
+    const opciones = bolsasPara(esOrigenDeGasto);
+    const ocultas = listaBolsas.length - opciones.length;
+    return (
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
+        <select value={valor} onChange={(e) => set(e.target.value)}
+          className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
+          <option value="">Elegí una bolsa</option>
+          {opciones.map((b) => (
+            <option key={b.id} value={b.id}>{b.nombre} — {fmt(b.saldo_actual)}</option>
+          ))}
+        </select>
+        {esOrigenDeGasto && ocultas > 0 && (
+          <span className="block text-[10px] text-[#6b7280] mt-1">
+            {ocultas === 1 ? "Hay una bolsa apartada que no" : `Hay ${ocultas} bolsas apartadas que no`}
+            {" "}aparece{ocultas === 1 ? "" : "n"} acá. Para usar ese dinero, trasladalo primero.
+          </span>
+        )}
+      </label>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -126,7 +145,7 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
       </div>
 
       {tipo === "ingreso" && selBolsa(destino, setDestino, "¿A qué bolsa entró?")}
-      {tipo === "egreso" && selBolsa(origen, setOrigen, "¿De qué bolsa salió?")}
+      {tipo === "egreso" && selBolsa(origen, setOrigen, "¿De qué bolsa salió?", true)}
       {tipo === "traslado" && (
         <div className="space-y-3">
           {selBolsa(origen, setOrigen, "Sale de")}
@@ -142,6 +161,8 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
       {nuevaBolsa && (
         <CrearBolsa onCancelar={() => setNuevaBolsa(false)}
           onCreada={(b) => {
+            // saldo_actual en 0 y sin banderas hasta que onGuardado recargue
+            // la lista completa desde v_saldos_bolsas.
             setListaBolsas([...listaBolsas, { ...b, saldo_actual: 0 }]);
             if (tipo === "ingreso" || tipo === "traslado") setDestino(b.id); else setOrigen(b.id);
             setNuevaBolsa(false);

@@ -30,6 +30,10 @@ import DocumentarGastos from "./tesoreria/Documentos";
 import Compromisos from "./tesoreria/Compromisos";
 import Permisos from "./tesoreria/Permisos";
 
+// Se muestra en el encabezado del módulo. Sirve para saber de un
+// vistazo qué versión quedó desplegada, sin abrir el repositorio.
+const VERSION = "v21";
+
 export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -134,7 +138,9 @@ function PanelTesoreria({ perfil, onCerrar }) {
       <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Interno</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
+              Interno · <span className="text-[#6b7280]">{VERSION}</span>
+            </div>
             <div className="font-serif text-xl leading-tight">Tesorería</div>
           </div>
           <div className="flex items-center gap-1">

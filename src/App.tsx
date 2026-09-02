@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
-import ModuloTesoreria from "./ModuloTesoreria";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
 import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";

@@ -32,7 +32,7 @@ import Permisos from "./tesoreria/Permisos";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v26";
+const VERSION = "v28";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -186,13 +186,20 @@ function PanelTesoreria({ perfil, onCerrar }) {
     .filter(Boolean)
     .join(" · ");
 
-  const libre = bolsas
-    .filter((b) => b.disponible_para_gasto !== false)
-    .reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
-  const apartado = bolsas
-    .filter((b) => b.disponible_para_gasto === false)
-    .reduce((s, b) => s + Number(b.saldo_actual || 0), 0);
-  const total = libre + apartado;
+  // Tres estados del dinero, no dos:
+  //   propio   — se puede gastar y lo maneja quien está viendo
+  //   delegado — se puede gastar, pero lo maneja otra persona
+  //   apartado — no se puede usar (retenido por el banco o ya comprometido)
+  const miRol = perfil?.usuario?.rol_id;
+  const suma = (filtro) =>
+    bolsas.filter(filtro).reduce((acc, b) => acc + Number(b.saldo_actual || 0), 0);
+
+  const esDelegada = (b) =>
+    b.delegada_a_rol_id && b.delegada_a_rol_id !== miRol;
+
+  const libre    = suma((b) => b.disponible_para_gasto !== false && !esDelegada(b));
+  const delegado = suma((b) => b.disponible_para_gasto !== false && esDelegada(b));
+  const apartado = suma((b) => b.disponible_para_gasto === false);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#101826] text-[#EDE7D9] overflow-y-auto">
@@ -248,11 +255,11 @@ function PanelTesoreria({ perfil, onCerrar }) {
         {cargando ? (
           <div className="text-sm text-[#8A93A3]">Cargando...</div>
         ) : tab === "mapa" ? (
-          <MapaFlujo bolsas={bolsas} libre={libre} apartado={apartado} />
+          <MapaFlujo bolsas={bolsas} libre={libre} delegado={delegado} apartado={apartado} />
         ) : tab === "registrar" ? (
           <RegistrarMovimiento bolsas={bolsas} centros={centros} onGuardado={cargar} />
         ) : tab === "resumen" ? (
-          <ResumenTesoreria libre={libre} apartado={apartado} bolsas={bolsas} centros={centros} cuotas={cuotas} />
+          <ResumenTesoreria libre={libre} delegado={delegado} apartado={apartado} bolsas={bolsas} centros={centros} cuotas={cuotas} />
         ) : tab === "facturas" ? (
           <SubirFacturaTesoreria bolsas={bolsas} centros={centros} onRegistrada={cargar} />
         ) : tab === "pendientes" ? (

@@ -1,27 +1,105 @@
-
 // ============================================================
-// ============================================================
-// MÓDULO DE TESORERÍA — autónomo
+// ModuloTesoreria.tsx — Grupo Sobre la Roca
 //
-// INTEGRACIÓN: una sola línea en App.tsx.
-// Dentro de AppInterno, junto a <AvisoCodigoPendiente />:
+// Archivo autónomo. Para actualizarlo, reemplazá este archivo
+// completo: no hay que tocar App.tsx nunca más.
 //
-//     <AvisoCodigoPendiente />
-//     <ModuloTesoreria perfil={perfil} />        <-- agregar esto
+// Se instaló una sola vez con dos líneas en App.tsx:
+//   1) arriba, junto a los demás imports:
+//        import ModuloTesoreria from "./ModuloTesoreria";
+//   2) dentro de AppInterno, junto a <AvisoCodigoPendiente />:
+//        <ModuloTesoreria perfil={perfil} />
 //
-// Nada más. No toca TopBar, ni PERMISOS_DISPONIBLES, ni ninguna
-// función, componente o pantalla existente.
-//
-// Reutiliza sin redefinir: Campo, CampoMoneda, fmt, fmtDate,
-// supabase, llamarFuncionSesion, y los íconos ya importados
-// (Calculator, X, Upload, FileText, CheckCircle2, AlertTriangle,
-// Sparkles, ChevronLeft).
-//
-// Pegar este bloque en cualquier parte del archivo, antes de
-// AppInterno. Sugerido: justo antes de "// ---------- App ----------".
+// Colores del mapa:
+//   verde  = de dónde vino el dinero
+//   dorado = dónde está asignado (bolsas)
+//   rojo   = en qué se convirtió (obras y gastos)
 // ============================================================
 
-function ModuloTesoreria({ perfil }) {
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
+import {
+  Calculator, Zap, Upload, FileText, X,
+  CheckCircle2, AlertTriangle, Sparkles,
+} from "lucide-react";
+
+// ---------- Helpers locales ----------
+// Duplicados a propósito de los de App.tsx: este archivo no depende
+// de nada exportado desde allá, así se puede reemplazar solo.
+
+const LOCALE_TES = "es-GT";
+
+const fmt = (n) =>
+  (isFinite(Number(n)) ? Number(n) : 0).toLocaleString(LOCALE_TES, {
+    style: "currency", currency: "GTQ", maximumFractionDigits: 2,
+  });
+
+const fmtDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return d.toLocaleDateString(LOCALE_TES, { day: "2-digit", month: "short", year: "numeric" });
+};
+
+async function llamarFuncionSesion(nombreFuncion, body) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const base = import.meta.env.VITE_SUPABASE_URL || "https://knquysqjhprnyztkgmwb.supabase.co";
+  const res = await fetch(`${base}/functions/v1/${nombreFuncion}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Error en el servidor");
+  return json;
+}
+
+function Campo({ label, ...props }) {
+  return (
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
+      <input {...props} className="w-full mt-1 bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+    </label>
+  );
+}
+
+function CampoMoneda({ label, value, onChange, placeholder, disabled }) {
+  const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString(LOCALE_TES, { maximumFractionDigits: 2 }) : "";
+  const [texto, setTexto] = useState(formatear(value));
+
+  const manejarCambio = (e) => {
+    let crudo = e.target.value.replace(/[^0-9.]/g, "");
+    const partes = crudo.split(".");
+    if (partes.length > 2) crudo = partes[0] + "." + partes.slice(1).join("");
+    let [enteroStr, decimalStr] = crudo.split(".");
+    if (decimalStr !== undefined) decimalStr = decimalStr.slice(0, 2);
+    const numero = crudo === "" || crudo === "." ? 0 : parseFloat(crudo.endsWith(".") ? crudo.slice(0, -1) : crudo) || 0;
+    const enteroFormateado = enteroStr === "" ? "" : parseInt(enteroStr || "0", 10).toLocaleString(LOCALE_TES);
+    setTexto(decimalStr !== undefined ? `${enteroFormateado}.${decimalStr}` : crudo.endsWith(".") ? `${enteroFormateado}.` : enteroFormateado);
+    onChange(numero);
+  };
+
+  return (
+    <label className="block">
+      <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{label}</span>
+      <div className="relative mt-1">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A93A3] text-sm">Q</span>
+        <input type="text" inputMode="decimal" value={texto} onChange={manejarCambio}
+          placeholder={placeholder} disabled={disabled}
+          className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-[#C9A227] disabled:opacity-40" />
+      </div>
+    </label>
+  );
+}
+
+// Paleta del mapa
+const C_ORIGEN = "#2E9E6B";
+const C_BOLSA  = "#C9A227";
+const C_GASTO  = "#C0392B";
+
+export default function ModuloTesoreria({ perfil }) {
   const [abierto, setAbierto] = useState(false);
 
   // Mismo criterio que la función es_admin_financiero() de la base:
@@ -722,24 +800,29 @@ function DocumentosDelGasto({ gasto, onCambio }) {
 
 // ---------- Mapa de flujo del dinero ----------
 //
-// Tres anillos: el centro es todo el dinero disponible, el primer
-// anillo son las bolsas, y el segundo las obras a donde se fue.
-// Al tocar una obra se abre el desglose por categoría abajo.
+// Tres anillos concéntricos, cada uno con su color:
+//   verde  (interior) — de dónde vino el dinero
+//   dorado (medio)    — las bolsas donde está asignado
+//   rojo   (exterior) — las obras donde se convirtió en gasto
+//
 // Todo en SVG, sin librerías externas.
 
 function MapaFlujo({ bolsas, total }) {
-  const [flujos, setFlujos] = useState([]);
+  const [origenes, setOrigenes] = useState([]);
+  const [gastos, setGastos] = useState([]);
   const [desglose, setDesglose] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [sel, setSel] = useState(null); // { nivel: 'bolsa'|'centro', id, nombre, monto }
+  const [sel, setSel] = useState(null); // { tipo, id, nombre, monto }
 
   useEffect(() => {
     (async () => {
-      const [{ data: f }, { data: d }] = await Promise.all([
+      const [{ data: o }, { data: g }, { data: d }] = await Promise.all([
+        supabase.from("v_flujo_origen_bolsa").select("*"),
         supabase.from("v_flujo_bolsa_centro").select("*"),
         supabase.from("v_flujo_centro_categoria").select("*"),
       ]);
-      setFlujos(f || []);
+      setOrigenes(o || []);
+      setGastos(g || []);
       setDesglose(d || []);
       setCargando(false);
     })();
@@ -747,164 +830,233 @@ function MapaFlujo({ bolsas, total }) {
 
   if (cargando) return <div className="text-sm text-[#8A93A3]">Armando el mapa...</div>;
 
-  const CX = 180, CY = 195, R1 = 82, R2 = 152;
-  const conSaldo = bolsas.filter((b) => Number(b.saldo_actual) > 0 || flujos.some((f) => f.bolsa_id === b.id));
-  const maxBolsa = Math.max(1, ...conSaldo.map((b) => Number(b.saldo_actual) || 0));
+  const CX = 180, CY = 200, R_ORI = 64, R_BOL = 122, R_GAS = 176;
 
-  // Anillo 1: bolsas repartidas en círculo
-  const nodosBolsa = conSaldo.map((b, i) => {
-    const ang = (-90 + (i * 360) / Math.max(1, conSaldo.length)) * (Math.PI / 180);
-    const salido = flujos.filter((f) => f.bolsa_id === b.id).reduce((s, f) => s + Number(f.total), 0);
-    return {
-      ...b,
-      ang,
-      x: CX + R1 * Math.cos(ang),
-      y: CY + R1 * Math.sin(ang),
-      r: 9 + 11 * Math.sqrt(Math.max(0, Number(b.saldo_actual)) / maxBolsa),
-      salido,
-    };
+  const enCirculo = (i, n, r, giro) => {
+    const ang = ((giro || -90) + (i * 360) / Math.max(1, n)) * (Math.PI / 180);
+    return { ang, x: CX + r * Math.cos(ang), y: CY + r * Math.sin(ang) };
+  };
+
+  // --- Nodos de origen (agrupados por nombre de origen) ---
+  const porOrigen = {};
+  origenes.forEach((o) => {
+    porOrigen[o.origen] = (porOrigen[o.origen] || 0) + Number(o.total);
   });
+  const listaOrigen = Object.entries(porOrigen).map(([nombre, monto]) => ({ nombre, monto }));
+  const maxOri = Math.max(1, ...listaOrigen.map((o) => o.monto));
+  const nodosOrigen = listaOrigen.map((o, i) => ({
+    ...o, ...enCirculo(i, listaOrigen.length, R_ORI, -90),
+    r: 6 + 7 * Math.sqrt(o.monto / maxOri),
+  }));
 
-  // Anillo 2: obras de la bolsa seleccionada
-  const bolsaSel = sel?.nivel === "bolsa" ? sel.id : sel?.nivel === "centro" ? sel.bolsaId : null;
-  const hijos = bolsaSel ? flujos.filter((f) => f.bolsa_id === bolsaSel) : [];
-  const nodoPadre = nodosBolsa.find((n) => n.id === bolsaSel);
-  const maxHijo = Math.max(1, ...hijos.map((h) => Number(h.total)));
+  // --- Nodos de bolsa ---
+  const visibles = bolsas.filter((b) =>
+    Number(b.saldo_actual) > 0 ||
+    gastos.some((g) => g.bolsa_id === b.id) ||
+    origenes.some((o) => o.bolsa_id === b.id));
+  const maxBol = Math.max(1, ...visibles.map((b) => Math.abs(Number(b.saldo_actual)) || 0));
+  const nodosBolsa = visibles.map((b, i) => ({
+    ...b, ...enCirculo(i, visibles.length, R_BOL, -90),
+    r: 9 + 11 * Math.sqrt(Math.max(0, Number(b.saldo_actual)) / maxBol),
+  }));
 
-  const nodosCentro = hijos.map((h, i) => {
-    const abanico = Math.min(120, 34 * Math.max(1, hijos.length)) * (Math.PI / 180);
-    const base = nodoPadre ? nodoPadre.ang : 0;
-    const ang = hijos.length === 1 ? base : base - abanico / 2 + (i * abanico) / (hijos.length - 1);
-    return {
-      ...h,
-      x: CX + R2 * Math.cos(ang),
-      y: CY + R2 * Math.sin(ang),
-      r: 7 + 9 * Math.sqrt(Number(h.total) / maxHijo),
-    };
+  // --- Nodos de gasto (obras) ---
+  const porCentro = {};
+  gastos.forEach((g) => {
+    const k = g.centro_id || "sin";
+    if (!porCentro[k]) porCentro[k] = { id: g.centro_id, nombre: g.centro, monto: 0 };
+    porCentro[k].monto += Number(g.total);
   });
+  const listaCentro = Object.values(porCentro);
+  const maxGas = Math.max(1, ...listaCentro.map((c) => c.monto));
+  const nodosGasto = listaCentro.map((c, i) => ({
+    ...c, ...enCirculo(i, listaCentro.length, R_GAS, -60),
+    r: 7 + 10 * Math.sqrt(c.monto / maxGas),
+  }));
+
+  const buscaBolsa = (id) => nodosBolsa.find((b) => b.id === id);
+  const buscaOrigen = (n) => nodosOrigen.find((o) => o.nombre === n);
+  const buscaGasto = (id) => nodosGasto.find((g) => g.id === id);
 
   const curva = (x1, y1, x2, y2) => {
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const cx = mx + (my - CY) * 0.18, cy = my - (mx - CX) * 0.18;
-    return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+    return `M ${x1} ${y1} Q ${mx + (my - CY) * 0.2} ${my - (mx - CX) * 0.2} ${x2} ${y2}`;
   };
 
   const corto = (t, n) => (t && t.length > n ? t.slice(0, n - 1) + "…" : t || "");
 
-  const catsDelCentro = sel?.nivel === "centro"
+  // ¿Qué está resaltado?
+  const activo = (tipo, id) => {
+    if (!sel) return true;
+    if (sel.tipo === "bolsa") {
+      if (tipo === "bolsa") return id === sel.id;
+      if (tipo === "origen") return origenes.some((o) => o.bolsa_id === sel.id && o.origen === id);
+      if (tipo === "gasto") return gastos.some((g) => g.bolsa_id === sel.id && g.centro_id === id);
+    }
+    if (sel.tipo === "origen") {
+      if (tipo === "origen") return id === sel.id;
+      if (tipo === "bolsa") return origenes.some((o) => o.origen === sel.id && o.bolsa_id === id);
+      return false;
+    }
+    if (sel.tipo === "gasto") {
+      if (tipo === "gasto") return id === sel.id;
+      if (tipo === "bolsa") return gastos.some((g) => g.centro_id === sel.id && g.bolsa_id === id);
+      return false;
+    }
+    return true;
+  };
+
+  const op = (tipo, id) => (activo(tipo, id) ? 1 : 0.18);
+
+  const catsSel = sel?.tipo === "gasto"
     ? desglose.filter((d) => d.centro_id === sel.id).sort((a, b) => Number(b.total) - Number(a.total))
     : [];
 
   return (
     <div>
-      <svg viewBox="0 0 360 390" className="w-full" style={{ maxHeight: "62vh" }}>
-        {/* Enlaces centro → bolsas */}
-        {nodosBolsa.map((n) => (
-          <path key={`l-${n.id}`} d={curva(CX, CY, n.x, n.y)} fill="none"
-            stroke={bolsaSel === n.id ? "#C9A227" : "#2A3547"}
-            strokeWidth={bolsaSel === n.id ? 2 : 1.2} />
-        ))}
+      <div className="flex justify-center gap-4 mb-1 text-[10px]">
+        <span className="flex items-center gap-1"><i className="w-2 h-2 rounded-full inline-block" style={{ background: C_ORIGEN }} /> Vino de</span>
+        <span className="flex items-center gap-1"><i className="w-2 h-2 rounded-full inline-block" style={{ background: C_BOLSA }} /> Asignado en</span>
+        <span className="flex items-center gap-1"><i className="w-2 h-2 rounded-full inline-block" style={{ background: C_GASTO }} /> Se gastó en</span>
+      </div>
 
-        {/* Enlaces bolsa → obras */}
-        {nodoPadre && nodosCentro.map((n, i) => (
-          <path key={`lc-${i}`} d={curva(nodoPadre.x, nodoPadre.y, n.x, n.y)} fill="none"
-            stroke={sel?.nivel === "centro" && sel.id === n.centro_id ? "#C9A227" : "#3a4864"}
-            strokeWidth={sel?.nivel === "centro" && sel.id === n.centro_id ? 2 : 1.2} />
-        ))}
-
-        {/* Obras */}
-        {nodosCentro.map((n, i) => {
-          const activo = sel?.nivel === "centro" && sel.id === n.centro_id;
-          return (
-            <g key={`c-${i}`} onClick={() => setSel({ nivel: "centro", id: n.centro_id, nombre: n.centro, monto: n.total, bolsaId: n.bolsa_id })} style={{ cursor: "pointer" }}>
-              <circle cx={n.x} cy={n.y} r={n.r} fill={activo ? "#C9A227" : "#1A2333"}
-                stroke={activo ? "#C9A227" : "#3a4864"} strokeWidth="1.5" />
-              <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="7.5"
-                fill={activo ? "#C9A227" : "#8A93A3"}>{corto(n.centro, 16)}</text>
-              <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill="#8A93A3">
-                {fmt(n.total)}
-              </text>
-            </g>
-          );
+      <svg viewBox="0 0 360 400" className="w-full" style={{ maxHeight: "60vh" }}>
+        {/* Enlaces origen → bolsa */}
+        {origenes.map((o, i) => {
+          const a = buscaOrigen(o.origen), b = buscaBolsa(o.bolsa_id);
+          if (!a || !b) return null;
+          const vivo = activo("origen", o.origen) && activo("bolsa", o.bolsa_id);
+          return <path key={`ob-${i}`} d={curva(a.x, a.y, b.x, b.y)} fill="none"
+            stroke={C_ORIGEN} strokeWidth={vivo ? 1.8 : 1} opacity={vivo ? 0.75 : 0.12} />;
         })}
+
+        {/* Enlaces bolsa → gasto */}
+        {gastos.map((g, i) => {
+          const b = buscaBolsa(g.bolsa_id), c = buscaGasto(g.centro_id);
+          if (!b || !c) return null;
+          const vivo = activo("bolsa", g.bolsa_id) && activo("gasto", g.centro_id);
+          return <path key={`bg-${i}`} d={curva(b.x, b.y, c.x, c.y)} fill="none"
+            stroke={C_GASTO} strokeWidth={vivo ? 1.8 : 1} opacity={vivo ? 0.75 : 0.12} />;
+        })}
+
+        {/* Gastos */}
+        {nodosGasto.map((n, i) => (
+          <g key={`g-${i}`} opacity={op("gasto", n.id)} style={{ cursor: "pointer" }}
+            onClick={() => setSel(sel?.tipo === "gasto" && sel.id === n.id ? null : { tipo: "gasto", id: n.id, nombre: n.nombre, monto: n.monto })}>
+            <circle cx={n.x} cy={n.y} r={n.r} fill="#2A1614" stroke={C_GASTO} strokeWidth="2" />
+            <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="7.5" fill={C_GASTO}>{corto(n.nombre, 15)}</text>
+            <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill="#8A93A3">{fmt(n.monto)}</text>
+          </g>
+        ))}
 
         {/* Bolsas */}
-        {nodosBolsa.map((n) => {
-          const activo = bolsaSel === n.id;
-          return (
-            <g key={n.id} onClick={() => setSel(activo && sel.nivel === "bolsa" ? null : { nivel: "bolsa", id: n.id, nombre: n.nombre, monto: n.saldo_actual })} style={{ cursor: "pointer" }}>
-              <circle cx={n.x} cy={n.y} r={n.r}
-                fill={n.tipo === "reserva" ? "#3a2f10" : activo ? "#C9A227" : "#161F2E"}
-                stroke={activo ? "#C9A227" : "#2A3547"} strokeWidth="2" />
-              <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="8"
-                fill={activo ? "#C9A227" : "#EDE7D9"}>{corto(n.nombre.split("—")[0].trim(), 14)}</text>
-              <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill="#8A93A3">
-                {fmt(n.saldo_actual)}
-              </text>
-            </g>
-          );
-        })}
+        {nodosBolsa.map((n) => (
+          <g key={n.id} opacity={op("bolsa", n.id)} style={{ cursor: "pointer" }}
+            onClick={() => setSel(sel?.tipo === "bolsa" && sel.id === n.id ? null : { tipo: "bolsa", id: n.id, nombre: n.nombre, monto: n.saldo_actual })}>
+            <circle cx={n.x} cy={n.y} r={n.r} fill="#161F2E" stroke={C_BOLSA} strokeWidth="2.5" />
+            <text x={n.x} y={n.y + n.r + 9} textAnchor="middle" fontSize="8" fill="#EDE7D9">
+              {corto(n.nombre.split("—")[0].trim(), 13)}
+            </text>
+            <text x={n.x} y={n.y + n.r + 17} textAnchor="middle" fontSize="7" fill={C_BOLSA}>{fmt(n.saldo_actual)}</text>
+          </g>
+        ))}
+
+        {/* Orígenes */}
+        {nodosOrigen.map((n, i) => (
+          <g key={`o-${i}`} opacity={op("origen", n.nombre)} style={{ cursor: "pointer" }}
+            onClick={() => setSel(sel?.tipo === "origen" && sel.id === n.nombre ? null : { tipo: "origen", id: n.nombre, nombre: n.nombre, monto: n.monto })}>
+            <circle cx={n.x} cy={n.y} r={n.r} fill="#0F2A1E" stroke={C_ORIGEN} strokeWidth="2" />
+            <text x={n.x} y={n.y - n.r - 4} textAnchor="middle" fontSize="7" fill={C_ORIGEN}>{corto(n.nombre, 14)}</text>
+          </g>
+        ))}
 
         {/* Centro */}
         <g onClick={() => setSel(null)} style={{ cursor: "pointer" }}>
-          <circle cx={CX} cy={CY} r="34" fill="#0C121C" stroke="#C9A227" strokeWidth="2" />
-          <text x={CX} y={CY - 3} textAnchor="middle" fontSize="9" fill="#8A93A3">Disponible</text>
-          <text x={CX} y={CY + 9} textAnchor="middle" fontSize="10" fill="#C9A227" fontWeight="600">
-            {fmt(total)}
-          </text>
+          <circle cx={CX} cy={CY} r="27" fill="#0C121C" stroke="#2A3547" strokeWidth="1.5" />
+          <text x={CX} y={CY - 2} textAnchor="middle" fontSize="7.5" fill="#8A93A3">Disponible</text>
+          <text x={CX} y={CY + 9} textAnchor="middle" fontSize="9" fill={C_BOLSA} fontWeight="600">{fmt(total)}</text>
         </g>
       </svg>
 
-      {/* Panel de detalle */}
+      {/* Detalle */}
       {!sel ? (
         <p className="text-[11px] text-[#8A93A3] text-center px-4">
-          Tocá una bolsa para ver a dónde se fue su dinero. Tocá el centro para volver.
+          Tocá cualquier círculo para seguir el rastro del dinero. Tocá el centro para ver todo otra vez.
         </p>
-      ) : sel.nivel === "bolsa" ? (
-        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
+      ) : (
+        <div className="bg-[#161F2E] border rounded-lg p-4"
+          style={{ borderColor: sel.tipo === "origen" ? C_ORIGEN : sel.tipo === "bolsa" ? C_BOLSA : C_GASTO }}>
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">
+            {sel.tipo === "origen" ? "Vino de" : sel.tipo === "bolsa" ? "Asignado en" : "Se gastó en"}
+          </div>
           <div className="font-serif text-lg">{sel.nombre}</div>
-          <div className="text-[11px] text-[#8A93A3] mt-0.5">Disponible {fmt(sel.monto)}</div>
-          {nodosCentro.length === 0 ? (
-            <div className="text-xs text-[#8A93A3] mt-3">Esta bolsa todavía no ha financiado ninguna obra.</div>
-          ) : (
-            <div className="mt-3 space-y-1.5">
-              {nodosCentro.map((n, i) => (
-                <button key={i}
-                  onClick={() => setSel({ nivel: "centro", id: n.centro_id, nombre: n.centro, monto: n.total, bolsaId: n.bolsa_id })}
-                  className="w-full flex justify-between items-baseline text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2 hover:border-[#C9A227]/50">
-                  <span className="truncate">{n.centro}</span>
-                  <span className="font-mono shrink-0 ml-2">{fmt(n.total)}</span>
+          <div className="font-mono text-sm mt-0.5"
+            style={{ color: sel.tipo === "origen" ? C_ORIGEN : sel.tipo === "bolsa" ? C_BOLSA : C_GASTO }}>
+            {fmt(sel.monto)}
+          </div>
+
+          {sel.tipo === "bolsa" && (
+            <div className="mt-3 space-y-3">
+              {origenes.filter((o) => o.bolsa_id === sel.id).length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">De dónde vino</div>
+                  {origenes.filter((o) => o.bolsa_id === sel.id).map((o, i) => (
+                    <div key={i} className="flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1">
+                      <span className="truncate">{o.origen}</span>
+                      <span className="font-mono ml-2 shrink-0" style={{ color: C_ORIGEN }}>{fmt(o.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">A dónde se fue</div>
+                {gastos.filter((g) => g.bolsa_id === sel.id).length === 0 ? (
+                  <div className="text-xs text-[#8A93A3]">Todavía no ha salido nada de esta bolsa.</div>
+                ) : gastos.filter((g) => g.bolsa_id === sel.id).map((g, i) => (
+                  <button key={i} onClick={() => setSel({ tipo: "gasto", id: g.centro_id, nombre: g.centro, monto: g.total })}
+                    className="w-full flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1 hover:border-[#C0392B]/60">
+                    <span className="truncate">{g.centro}</span>
+                    <span className="font-mono ml-2 shrink-0" style={{ color: C_GASTO }}>{fmt(g.total)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sel.tipo === "origen" && (
+            <div className="mt-3">
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">Entró a estas bolsas</div>
+              {origenes.filter((o) => o.origen === sel.id).map((o, i) => (
+                <button key={i} onClick={() => setSel({ tipo: "bolsa", id: o.bolsa_id, nombre: o.bolsa, monto: bolsas.find((b) => b.id === o.bolsa_id)?.saldo_actual })}
+                  className="w-full flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1 hover:border-[#C9A227]/60">
+                  <span className="truncate">{o.bolsa}</span>
+                  <span className="font-mono ml-2 shrink-0">{fmt(o.total)}</span>
                 </button>
               ))}
             </div>
           )}
-        </div>
-      ) : (
-        <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <div className="font-serif text-lg">{sel.nombre}</div>
-          <div className="text-[11px] text-[#8A93A3] mt-0.5">
-            Recibió {fmt(sel.monto)} de esta bolsa
-          </div>
-          {catsDelCentro.length === 0 ? (
-            <div className="text-xs text-[#8A93A3] mt-3">Sin desglose todavía.</div>
-          ) : (
-            <div className="mt-3 space-y-1.5">
-              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">En qué se gastó</div>
-              {catsDelCentro.map((c, i) => (
-                <div key={i} className="flex justify-between items-baseline text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2">
-                  <span className="truncate">
-                    {c.categoria}
-                    <span className="text-[#8A93A3]"> · {c.movimientos} mov.</span>
-                  </span>
-                  <span className="font-mono shrink-0 ml-2">{fmt(c.total)}</span>
+
+          {sel.tipo === "gasto" && (
+            <div className="mt-3">
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">En qué se gastó</div>
+              {catsSel.length === 0 ? (
+                <div className="text-xs text-[#8A93A3]">Sin desglose todavía.</div>
+              ) : catsSel.map((c, i) => (
+                <div key={i} className="flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1">
+                  <span className="truncate">{c.categoria}<span className="text-[#8A93A3]"> · {c.movimientos} mov.</span></span>
+                  <span className="font-mono ml-2 shrink-0" style={{ color: C_GASTO }}>{fmt(c.total)}</span>
                 </div>
+              ))}
+              <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mt-3 mb-1.5">Financiado por</div>
+              {gastos.filter((g) => g.centro_id === sel.id).map((g, i) => (
+                <button key={i} onClick={() => setSel({ tipo: "bolsa", id: g.bolsa_id, nombre: g.bolsa, monto: bolsas.find((b) => b.id === g.bolsa_id)?.saldo_actual })}
+                  className="w-full flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1 hover:border-[#C9A227]/60">
+                  <span className="truncate">{g.bolsa}</span>
+                  <span className="font-mono ml-2 shrink-0" style={{ color: C_BOLSA }}>{fmt(g.total)}</span>
+                </button>
               ))}
             </div>
           )}
-          <button onClick={() => setSel({ nivel: "bolsa", id: sel.bolsaId, nombre: bolsas.find((b) => b.id === sel.bolsaId)?.nombre, monto: bolsas.find((b) => b.id === sel.bolsaId)?.saldo_actual })}
-            className="mt-3 text-[11px] text-[#C9A227] underline">
-            Volver a la bolsa
-          </button>
         </div>
       )}
     </div>

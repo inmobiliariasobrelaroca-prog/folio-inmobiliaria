@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { fmt, fmtDate, C_ORIGEN, C_BOLSA, C_GASTO } from "./comun";
+import { DocumentosDelGasto } from "./Documentos";
 
 // ---------- Mapa de flujo del dinero ----------
 //
@@ -22,7 +23,11 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
   const [gastos, setGastos] = useState([]);
   const [desglose, setDesglose] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [sel, setSel] = useState(null); // { tipo:'origen'|'bolsa'|'gasto', id, nombre, monto }
+  const [sel, setSel] = useState(null);
+  const [catAbierta, setCatAbierta] = useState(null);
+
+  // Al moverse a otro nodo del mapa se cierra el desglose que estuviera abierto.
+  useEffect(() => { setCatAbierta(null); }, [sel?.id]); // { tipo:'origen'|'bolsa'|'gasto', id, nombre, monto }
 
   useEffect(() => {
     (async () => {
@@ -268,12 +273,26 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
               <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">En qué se gastó</div>
               {catsSel.length === 0 ? (
                 <div className="text-xs text-[#8A93A3]">Sin desglose todavía.</div>
-              ) : catsSel.map((c, i) => (
-                <div key={i} className="flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mb-1">
-                  <span className="truncate">{c.categoria}<span className="text-[#8A93A3]"> · {c.movimientos} mov.</span></span>
-                  <span className="font-mono ml-2 shrink-0" style={{ color: C_GASTO }}>{fmt(c.total)}</span>
-                </div>
-              ))}
+              ) : catsSel.map((c, i) => {
+                const clave = `${sel.id}-${c.categoria_id || "sin"}`;
+                const abierta = catAbierta === clave;
+                return (
+                  <div key={i} className="mb-1">
+                    <button type="button"
+                      onClick={() => setCatAbierta(abierta ? null : clave)}
+                      className="w-full flex justify-between text-xs bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5">
+                      <span className="truncate text-left">
+                        {c.categoria}
+                        <span className="text-[#8A93A3]"> · {c.movimientos} mov.</span>
+                      </span>
+                      <span className="font-mono ml-2 shrink-0" style={{ color: C_GASTO }}>{fmt(c.total)}</span>
+                    </button>
+                    {abierta && (
+                      <GastosDeCategoria centroId={sel.id} categoriaId={c.categoria_id} />
+                    )}
+                  </div>
+                );
+              })}
               <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mt-3 mb-1.5">Financiado por</div>
               {gastos.filter((g) => g.centro_id === sel.id).map((g, i) => (
                 <button key={i} onClick={() => setSel({ tipo: "bolsa", id: g.bolsa_id, nombre: g.bolsa, monto: bolsas.find((b) => b.id === g.bolsa_id)?.saldo_actual })}
@@ -290,6 +309,60 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Los gastos que hay detrás de un renglón del desglose, con sus
+// papeles. Se reutiliza el mismo bloque de documentos de la pestaña
+// Documentar, así que desde acá también se pueden adjuntar.
+function GastosDeCategoria({ centroId, categoriaId }) {
+  const [movs, setMovs] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [abierto, setAbierto] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setCargando(true);
+      let q = supabase
+        .from("movimientos")
+        .select("id, fecha, monto, descripcion, factura_pendiente, proveedores(nombre), bolsas:bolsa_origen_id(nombre)")
+        .eq("tipo", "egreso")
+        .eq("centro_costo_id", centroId)
+        .order("fecha", { ascending: false });
+      q = categoriaId ? q.eq("categoria_id", categoriaId) : q.is("categoria_id", null);
+      const { data } = await q;
+      setMovs(data || []);
+      setCargando(false);
+    })();
+  }, [centroId, categoriaId]);
+
+  if (cargando) return <div className="text-[11px] text-[#8A93A3] px-2.5 py-1.5">Cargando...</div>;
+
+  return (
+    <div className="mt-1 ml-2 pl-2 border-l border-[#2A3547] space-y-1">
+      {movs.map((m) => (
+        <div key={m.id} className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+          <button type="button" onClick={() => setAbierto(abierto === m.id ? null : m.id)}
+            className="w-full text-left">
+            <div className="flex justify-between gap-2">
+              <span className="text-[11px] truncate">{m.descripcion || "Sin descripción"}</span>
+              <span className="font-mono text-[11px] shrink-0" style={{ color: C_GASTO }}>{fmt(m.monto)}</span>
+            </div>
+            <div className="text-[10px] text-[#8A93A3] truncate">
+              {fmtDate(m.fecha)}
+              {m.proveedores?.nombre ? ` · ${m.proveedores.nombre}` : ""}
+              {m.bolsas?.nombre ? ` · ${m.bolsas.nombre}` : ""}
+            </div>
+            {m.factura_pendiente && (
+              <div className="text-[10px] text-amber-400 mt-0.5">Falta la factura</div>
+            )}
+          </button>
+          {abierto === m.id && (
+            <DocumentosDelGasto gasto={{ movimiento_id: m.id, pagado: m.monto }} />
+          )}
+        </div>
+      ))}
     </div>
   );
 }

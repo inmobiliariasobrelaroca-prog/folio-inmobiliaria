@@ -5643,7 +5643,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     actualizar((p) => {
       const fila = p.tabla[idx];
       const c = fila.comprobante;
-      c.fecha = `${fechaCorregida}T00:00:00.000Z`;
+      //c.fecha = `${fechaCorregida}T00:00:00.000Z`;
       c.fechaPagoReal = fechaCorregida;
       c.moraAlSubir = previewCorregido.moraAlSubir;
       c.montoRequerido = previewCorregido.montoRequerido;

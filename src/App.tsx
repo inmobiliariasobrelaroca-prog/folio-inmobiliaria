@@ -28,6 +28,12 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" });
 };
 
+// Mes sin abreviar, para los encabezados de cuota. No reemplaza a
+// fmtDate: en las tablas y en el PDF el mes largo no cabe.
+const fmtDateLargo = (iso) => {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "long", year: "numeric" });
+};
 const fmtDateTime = (iso) => {
   const d = new Date(iso);
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -4596,7 +4602,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                       return (
                         <div key={f.numero} className="flex justify-between font-mono">
                           <span className="font-sans">
-                            Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                            Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}{" "}
                             <span
                               onClick={(e) => { e.stopPropagation(); setExplicandoPago({ f, prop: p }); }}
                               className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium cursor-pointer ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -5130,7 +5136,7 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
           <div className="font-serif text-lg">Cómo se aplicó este pago</div>
           <button onClick={onCerrar} className="text-[#8A93A3] hover:text-[#EDE7D9]"><X size={20} /></button>
         </div>
-        <div className="text-xs text-[#8A93A3] mb-4">Cuota #{f.numero} · vence {fmtDate(f.fecha)}</div>
+        <div className="text-sm text-[#8A93A3] mb-4">Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}</div>
         <div className="space-y-4">
           {pasos.map((p, i) => (
             <div key={i} className="flex gap-3">
@@ -6141,7 +6147,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm font-mono">
                   <span className="font-sans">
-                    Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                    Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
                       className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -7187,7 +7193,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       <div key={idx} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs text-[#8A93A3] font-mono">Cuota #{f.numero} · {fmtDate(f.fecha)}</div>
+            <div className="text-sm text-[#EDE7D9] font-mono">Cuota #{f.numero} · {fmtDateLargo(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
             {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
@@ -7285,7 +7291,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
                   <div>
-                    Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
+                    Cuota #{f.numero} <span className="text-[#8A93A3] text-sm">· vence {fmtDateLargo(f.fecha)}</span>{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
                       className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -7426,7 +7432,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               </div>
               {historialMoras.map((r) => (
                 <div key={r.numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]">
-                  <div className="text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDate(r.fecha)}</div>
+                  <div className="text-sm text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDateLargo(r.fecha)}</div>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
                     <div><div className="text-[#8A93A3]">Generada</div><div className="font-mono break-words">{fmt(r.generada)}</div></div>
                     <div><div className="text-[#8A93A3]">Pagada</div><div className="font-mono break-words text-emerald-400">{fmt(r.pagada)}</div></div>

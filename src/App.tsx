@@ -434,6 +434,11 @@ function propiedadDesdeFila(row) {
     // todos los clientes. "adelantado": el cliente paga por adelantado, antes de usar el mes, así
     // que la cuota #1 cae el mismo día de la fecha base en vez de un mes después.
     sistemaPago: row.sistema_pago || "vencido",
+    // Un local en alquiler corre sobre la misma maquinaria que una venta
+    // financiada, pero su saldo es renta por devengar del contrato, no
+    // deuda del inquilino. Solo cambia rótulos: ningún cálculo depende
+    // de esto.
+    esRenta: !!row.es_renta,
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
     mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
@@ -1518,12 +1523,12 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
     ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
-    ["Fecha de adquisición", fmtDate(prop.fechaInicio)],
+    [prop.esRenta ? "Inicio del contrato" : "Fecha de adquisición", fmtDate(prop.fechaInicio)],
     ...(prop.tabla[0] ? [[prop.sistemaPago === "adelantado" ? "Primer pago (mes adelantado)" : "Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
     ea?.mensualidadReal && prop.sistemaAmortizacion !== "saldos"
       ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
       : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
-    ["Saldo actual", fmt(saldoActual)],
+    [prop.esRenta ? "Renta por devengar" : "Saldo actual", fmt(saldoActual)],
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
   ];
@@ -4591,11 +4596,11 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                     <span className="text-red-400">{fmt(totalParaPonerseAlDia)}</span>
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
-                    <span className="font-sans">Saldo</span>
+                    <span className="font-sans">{p.esRenta ? "Renta por devengar" : "Saldo"}</span>
                     <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</span>
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
-                    <span className="font-sans">Total adeudado</span>
+                    <span className="font-sans">{p.esRenta ? "Contrato + atrasos" : "Total adeudado"}</span>
                     <span className="text-red-400">{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia)}</span>
                   </div>
                 </div>
@@ -5151,7 +5156,7 @@ function DetalleFila({ f, mora, prop, hoy }) {
     <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4 mt-2.5 pt-2.5 border-t border-[#2A3547] text-[11px]">
       <div><div className="text-[#8A93A3]">Capital</div><div className="font-mono break-words">{fmt(f.capital)}</div></div>
       <div><div className="text-[#8A93A3]">Interés</div><div className="font-mono break-words">{fmt(f.interes)}</div></div>
-      <div><div className="text-[#8A93A3]">Saldo restante</div><div className="font-mono break-words">{fmt(f.saldoFinal)}</div></div>
+      <div><div className="text-[#8A93A3]">{prop?.esRenta ? "Renta restante" : "Saldo restante"}</div><div className="font-mono break-words">{fmt(f.saldoFinal)}</div></div>
       <div>
         <div className="text-[#8A93A3]">Mora</div>
         <div className={`font-mono break-words ${mora > 0 ? "text-red-400" : "text-emerald-400"}`}>{mora > 0 ? fmt(mora) : "Sin mora"}</div>
@@ -7033,8 +7038,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4">
-          <div className="text-[10px] uppercase text-[#8A93A3]">Saldo del crédito</div>
+          <div className="text-[10px] uppercase text-[#8A93A3]">{prop.esRenta ? "Renta por devengar" : "Saldo del crédito"}</div>
           <div className="font-mono text-xl mt-1">{fmt(saldoActual)}</div>
+          {prop.esRenta && (
+            <div className="text-[10px] text-[#8A93A3] mt-1 leading-snug">
+              Es la renta que falta del contrato, no una deuda tuya.
+            </div>
+          )}
           {prop.saldoAdicionalSinInteres > 0 && (
             <div className="mt-2 space-y-2 border-t border-[#2A3547] pt-2">
               <div>

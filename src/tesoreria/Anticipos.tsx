@@ -8,13 +8,14 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { Plus, CheckCircle2, Upload, FileText, X } from "lucide-react";
+import { Plus, CheckCircle2, Upload, FileText, X, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { fmt, fmtDate, llamarFuncionSesion, C_BOLSA, C_GASTO, Campo, CampoMoneda } from "./comun";
 
 export default function Anticipos({ bolsas, onCambio }) {
   const [cuentas, setCuentas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [panel, setPanel] = useState(null); // { centroId, modo }
+  const [abierta, setAbierta] = useState(null); // centro con la lista desplegada
 
   const cargar = async () => {
     setCargando(true);
@@ -27,6 +28,14 @@ export default function Anticipos({ bolsas, onCambio }) {
   const listo = () => {
     setPanel(null);
     cargar();
+    onCambio && onCambio();
+  };
+
+  // Recarga los totales sin mostrar "Cargando...", para que la lista
+  // de adelantos no se desmonte y se pierda el mensaje del borrado.
+  const refrescar = async () => {
+    const { data } = await supabase.from("v_anticipos").select("*");
+    setCuentas(data || []);
     onCambio && onCambio();
   };
 
@@ -93,19 +102,30 @@ export default function Anticipos({ bolsas, onCambio }) {
                   onCancelar={() => setPanel(null)} onListo={listo} />
               )
             ) : (
-              <div className="flex gap-2 mt-2.5">
-                <button
-                  onClick={() => setPanel({ centroId: c.centro_id, modo: "adelanto" })}
-                  className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-[#2A3547] py-2 rounded-md">
-                  <Plus size={12} /> Dar adelanto
-                </button>
-                <button
-                  onClick={() => setPanel({ centroId: c.centro_id, modo: "descuento" })}
-                  disabled={Number(c.por_recuperar) <= 0}
-                  className="flex-1 text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
-                  Descontar de una venta
-                </button>
-              </div>
+              <>
+                <div className="flex gap-2 mt-2.5">
+                  <button
+                    onClick={() => setPanel({ centroId: c.centro_id, modo: "adelanto" })}
+                    className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-[#2A3547] py-2 rounded-md">
+                    <Plus size={12} /> Dar adelanto
+                  </button>
+                  <button
+                    onClick={() => setPanel({ centroId: c.centro_id, modo: "descuento" })}
+                    disabled={Number(c.por_recuperar) <= 0}
+                    className="flex-1 text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
+                    Descontar de una venta
+                  </button>
+                </div>
+
+                {Number(c.adelantado) > 0 && (
+                  <ListaAdelantos
+                    centroId={c.centro_id}
+                    abierta={abierta === c.centro_id}
+                    onToggle={() => setAbierta(abierta === c.centro_id ? null : c.centro_id)}
+                    onBorrado={refrescar}
+                  />
+                )}
+              </>
             )}
           </div>
         );
@@ -348,5 +368,131 @@ function FormDescuento({ cuenta, onCancelar, onListo }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// ---------- Los adelantos uno por uno, y cómo deshacerlos ----------
+// Un adelanto registrado dos veces descuadra la bolsa en silencio.
+// El borrado va por eliminar_adelanto(), que verifica que sea de una
+// cuenta recuperable y que no se haya descontado ya de una venta.
+
+function ListaAdelantos({ centroId, abierta, onToggle, onBorrado }) {
+  const [movs, setMovs] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [confirmar, setConfirmar] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+  const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
+
+  const cargar = async () => {
+    setCargando(true);
+    const { data } = await supabase
+      .from("v_adelantos_detalle")
+      .select("*")
+      .eq("centro_id", centroId)
+      .order("created_at");
+    setMovs(data || []);
+    setCargando(false);
+  };
+
+  useEffect(() => { if (abierta) cargar(); }, [abierta, centroId]);
+
+  // Mismo monto y misma fecha más de una vez: casi siempre es el
+  // mismo adelanto registrado dos veces.
+  const repetido = (m) =>
+    movs.filter((o) => o.fecha === m.fecha && Number(o.monto) === Number(m.monto)).length > 1;
+
+  const borrar = async (id) => {
+    setError(""); setAviso(""); setBorrando(id);
+    try {
+      const { data, error: e } = await supabase.rpc("eliminar_adelanto", { p_movimiento: id });
+      if (e) throw new Error(e.message);
+      setConfirmar(null);
+      setAviso(data || "Adelanto eliminado.");
+      await cargar();
+      onBorrado && onBorrado();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBorrando(null);
+    }
+  };
+
+  return (
+    <>
+      <button onClick={onToggle}
+        className="w-full flex items-center justify-center gap-1 text-[10px] text-[#8A93A3] hover:text-[#EDE7D9] mt-2 py-1">
+        {abierta ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        {abierta ? "Ocultar los adelantos" : "Ver y corregir los adelantos"}
+      </button>
+
+      {abierta && (
+        <div className="space-y-1.5 mt-1">
+          {cargando && <div className="text-[10px] text-[#8A93A3]">Cargando...</div>}
+
+          {aviso && <div className="text-[10px] text-emerald-400">{aviso}</div>}
+          {error && <div className="text-[10px] text-red-400">{error}</div>}
+
+          {!cargando && movs.length === 0 && (
+            <div className="text-[10px] text-[#8A93A3]">Sin adelantos registrados.</div>
+          )}
+
+          {movs.map((m) => (
+            <div key={m.movimiento_id}
+              className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] truncate">{m.descripcion}</div>
+                  <div className="text-[10px] text-[#8A93A3]">
+                    {fmtDate(m.fecha)} · {m.bolsa || "sin bolsa"} ·{" "}
+                    {Number(m.documentos) > 0 ? (
+                      <span className="text-emerald-400">con voucher</span>
+                    ) : (
+                      <span className="text-amber-400">sin voucher</span>
+                    )}
+                  </div>
+                  {repetido(m) && (
+                    <div className="text-[10px] text-amber-400 mt-0.5">
+                      Mismo monto y fecha que otro. Puede ser un duplicado.
+                    </div>
+                  )}
+                </div>
+                <div className="font-mono text-[11px] shrink-0" style={{ color: C_GASTO }}>
+                  {fmt(m.monto)}
+                </div>
+                {confirmar !== m.movimiento_id && (
+                  <button
+                    onClick={() => { setConfirmar(m.movimiento_id); setError(""); setAviso(""); }}
+                    className="text-[#8A93A3] hover:text-red-400 shrink-0 mt-0.5">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+
+              {confirmar === m.movimiento_id && (
+                <div className="mt-2 pt-2 border-t border-[#2A3547]">
+                  <div className="text-[10px] text-amber-400 mb-1.5">
+                    {fmt(m.monto)} regresan a {m.bolsa || "su bolsa"}.
+                    {Number(m.documentos) > 0 &&
+                      " El voucher no se borra: queda suelto en Documentar."}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setConfirmar(null)}
+                      className="flex-1 text-[10px] bg-[#2A3547] py-1.5 rounded">
+                      No, dejarlo
+                    </button>
+                    <button onClick={() => borrar(m.movimiento_id)}
+                      disabled={borrando === m.movimiento_id}
+                      className="flex-1 text-[10px] bg-[#C0392B] disabled:opacity-40 py-1.5 rounded font-medium">
+                      {borrando === m.movimiento_id ? "Borrando..." : "Sí, eliminar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

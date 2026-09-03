@@ -615,6 +615,9 @@ async function cargarComprobantesConEnlaces() {
     const comprobanteObj = {
       id: row.id,
       imagen: urlPorRuta[row.imagen_url] || null,
+      // La ruta tal cual quedo guardada. Si empieza con http es un enlace
+      // externo (Drive, por ejemplo) y el cliente no lo puede abrir.
+      imagenUrlCruda: row.imagen_url || null,
       fecha: row.created_at,
       estado: row.estado,
       montoDepositado: Number(row.monto_depositado),
@@ -5266,6 +5269,85 @@ function VisorGaleria({ galeria, setGaleria }) {
 
 // Caja para que la inmobiliaria deje su propia nota sobre un comprobante (aparte de la nota
 // que haya escrito el cliente). Se guarda directo en la base de datos al presionar Guardar.
+// Una boleta que quedo como enlace externo (Drive, WhatsApp) o que nunca
+// se subio: el cliente no la puede abrir, porque la imagen no vive en el
+// almacenamiento de la app. Esto la mete adentro sin tocar el pago.
+function AdjuntarBoleta({ f, propiedadId, actualizar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const comp = f.comprobante;
+  if (!comp || !comp.id) return null;
+  const esExterna = comp.imagenUrlCruda
+    ? /^https?:\/\//i.test(comp.imagenUrlCruda)
+    : !comp.imagen;
+  if (!esExterna) return null;
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+      const path = `${propiedadId}/${crypto.randomUUID()}-${Date.now()}.${ext}`;
+      const { error: e1 } = await supabase.storage
+        .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
+      if (e1) throw new Error(e1.message);
+      const { error: e2 } = await supabase.from("comprobantes")
+        .update({ imagen_url: path }).eq("id", comp.id);
+      if (e2) throw new Error(e2.message);
+      setAbierto(false); setArchivo(null);
+      actualizar && actualizar();
+    } catch (e) {
+      setError(e.message); setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547]">
+      <div className="text-[11px] text-amber-400 mb-1.5">
+        La boleta de esta cuota no está dentro de la app, así que el cliente no puede verla.
+      </div>
+      {!abierto ? (
+        <button onClick={() => setAbierto(true)}
+          className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
+          <Upload size={11} /> Subirla a la app
+        </button>
+      ) : (
+        <div className="space-y-2">
+          {archivo ? (
+            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <FileText size={13} className="text-[#C9A227] shrink-0" />
+              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
+              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0">
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
+              <Upload size={12} /> Elegir la imagen
+              <input type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+            </label>
+          )}
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => { setAbierto(false); setArchivo(null); setError(""); }}
+              disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">
+              Cancelar
+            </button>
+            <button onClick={guardar} disabled={!archivo || guardando}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded">
+              {guardando ? "Subiendo..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotaInmobiliaria({ comprobante, actualizar }) {
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState(comprobante.notaInmobiliaria || "");
@@ -5788,6 +5870,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         )}
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
+
+        <AdjuntarBoleta f={f} propiedadId={prop.id} actualizar={actualizar} />
 
         {est === "revision" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">

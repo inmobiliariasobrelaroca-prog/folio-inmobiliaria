@@ -8,8 +8,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { Plus, CheckCircle2 } from "lucide-react";
-import { fmt, fmtDate, C_BOLSA, C_GASTO, Campo, CampoMoneda } from "./comun";
+import { Plus, CheckCircle2, Upload, FileText, X } from "lucide-react";
+import { fmt, fmtDate, llamarFuncionSesion, C_BOLSA, C_GASTO, Campo, CampoMoneda } from "./comun";
 
 export default function Anticipos({ bolsas, onCambio }) {
   const [cuentas, setCuentas] = useState([]);
@@ -122,6 +122,9 @@ function FormAdelanto({ cuenta, bolsas, onCancelar, onListo }) {
   const [monto, setMonto] = useState(Number(cuenta.anticipo_mensual) || 0);
   const [bolsa, setBolsa] = useState("");
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [descripcion, setDescripcion] = useState("");
+  const [archivo, setArchivo] = useState(null);
+  const [paso, setPaso] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
@@ -138,17 +141,65 @@ function FormAdelanto({ cuenta, bolsas, onCancelar, onListo }) {
         .from("categorias").select("id")
         .eq("nombre", "Adelanto a cuenta de comisión").maybeSingle();
 
-      const { error: e } = await supabase.from("movimientos").insert({
+      const quien = cuenta.responsable || cuenta.nombre;
+      const { data: mov, error: e } = await supabase.from("movimientos").insert({
         tipo: "egreso",
         fecha,
         monto: Number(monto),
         bolsa_origen_id: bolsa,
         centro_costo_id: cuenta.centro_id,
         categoria_id: cat?.id ?? null,
-        descripcion: `Adelanto a cuenta de comisión — ${cuenta.responsable || cuenta.nombre}`,
+        descripcion: descripcion.trim()
+          ? `Adelanto ${quien} — ${descripcion.trim()}`
+          : `Adelanto a cuenta de comisión — ${quien}`,
         factura_pendiente: false,
-      });
+      }).select("id").single();
       if (e) throw new Error(e.message);
+
+      // El voucher del depósito. Si falla, el adelanto igual queda
+      // registrado: perder el movimiento sería peor que perder la foto.
+      if (archivo && mov?.id) {
+        try {
+          setPaso("Subiendo el voucher...");
+          const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+          const d = new Date();
+          const carpeta = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+          const path = `${carpeta}/${crypto.randomUUID()}.${ext}`;
+
+          const { error: errUp } = await supabase.storage
+            .from("facturas").upload(path, archivo, { contentType: archivo.type });
+          if (errUp) throw new Error(errUp.message);
+
+          const { data: nueva, error: errIns } = await supabase
+            .from("facturas")
+            .insert({ storage_path: path, archivo_url: path, tipo_documento: "voucher" })
+            .select("id").single();
+          if (errIns) throw new Error(errIns.message);
+
+          setPaso("Leyendo el voucher...");
+          await llamarFuncionSesion("lector-facturas", { factura_id: nueva.id });
+
+          const { data: leida } = await supabase
+            .from("facturas").select("monto_total").eq("id", nueva.id).single();
+          const aplicar = Math.min(Number(leida?.monto_total) || Number(monto), Number(monto));
+
+          const { error: errLink } = await supabase.from("factura_movimientos").insert({
+            factura_id: nueva.id, movimiento_id: mov.id, monto_aplicado: aplicar,
+          });
+          if (errLink) throw new Error(errLink.message);
+
+          await supabase.from("facturas")
+            .update({ movimiento_id: mov.id, centro_costo_id: cuenta.centro_id })
+            .eq("id", nueva.id);
+        } catch (errDoc) {
+          setPaso("");
+          setError(`El adelanto se guardó, pero el voucher no: ${errDoc.message}`);
+          setGuardando(false);
+          return;
+        }
+      }
+
+      setPaso("");
       onListo();
     } catch (e) {
       setError(e.message);
@@ -180,13 +231,32 @@ function FormAdelanto({ cuenta, bolsas, onCancelar, onListo }) {
 
       <Campo label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
 
+      <Campo label="Descripción o referencia (opcional)" value={descripcion}
+        onChange={(e) => setDescripcion(e.target.value)} />
+
+      {/* El voucher del depósito que se le hizo */}
+      {archivo ? (
+        <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+          <FileText size={14} style={{ color: C_BOLSA }} className="shrink-0" />
+          <span className="text-[11px] truncate flex-1">{archivo.name}</span>
+          <button type="button" onClick={() => setArchivo(null)}
+            className="text-[#8A93A3] hover:text-[#EDE7D9] shrink-0"><X size={14} /></button>
+        </div>
+      ) : (
+        <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
+          <Upload size={12} /> Adjuntar el voucher del depósito
+          <input type="file" accept="image/*,application/pdf" className="hidden"
+            onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+        </label>
+      )}
+
       {error && <div className="text-[11px] text-red-400">{error}</div>}
 
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 text-[11px] bg-[#2A3547] py-2 rounded-md">Cancelar</button>
         <button onClick={guardar} disabled={!bolsa || Number(monto) <= 0 || !alcanza || guardando}
           className="flex-1 text-[11px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
-          {guardando ? "Guardando..." : "Registrar adelanto"}
+          {guardando ? (paso || "Guardando...") : "Registrar adelanto"}
         </button>
       </div>
     </div>

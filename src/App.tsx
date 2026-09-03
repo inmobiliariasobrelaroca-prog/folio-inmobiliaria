@@ -1511,9 +1511,11 @@ async function construirPdfCotizacion(d) {
 // a partir del modelo local — usado tanto por la vista de inmobiliaria como por la del
 // cliente, para no repetir esta preparación de datos en los dos lados.
 function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
-  // El encabezado y los saldos se calculan siempre con la tabla completa;
-  // solo se recortan las filas que se imprimen.
-  if (desde) prop = { ...prop, tabla: prop.tabla.filter((f) => f.fecha >= desde) };
+  // Solo se recortan las FILAS que se imprimen. El encabezado se calcula
+  // siempre con prop.tabla completa: engancheAjustado() lee tabla[0] para
+  // detectar abonos iniciales, asi que con la tabla recortada creia que el
+  // monto financiado era el saldo de la primera fila visible.
+  const tablaImpresa = desde ? prop.tabla.filter((f) => f.fecha >= desde) : prop.tabla;
   const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
   const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const ea = engancheAjustado(prop);
@@ -1531,7 +1533,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     // muestra el plazo real y arriba, tachado, el que decia el contrato.
     (() => {
       const contrato = Math.round((prop.plazoAnios || 0) * 12);
-      const real = prop.tabla.length;
+      const real = prop.tabla.length;   // el total, aunque se impriman menos filas
       const fin = prop.tabla[real - 1]?.fecha;
       return contrato > 0 && real !== contrato
         ? ["Plazo", `${real} cuotas · termina ${fmtDate(fin)}`, `${fmtNum(prop.plazoAnios)} años · ${contrato} cuotas`]
@@ -1565,7 +1567,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
   });
 
   const columnas = ["#", "Fecha", "Fecha real de pago", "Capital", "Interés", "Cuota", "Abono", "Mora", ...(prop.aplicaLuz ? ["Luz"] : []), "Saldo", "Estado"];
-  const filasTabla = prop.tabla.map((f) => {
+  const filasTabla = tablaImpresa.map((f) => {
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
     const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
     const luzMora = prop.aplicaLuz ? calcularMoraLuzCuota(f, hoy, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
@@ -5998,6 +6000,23 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         </div>
       )}
 
+      {prop.clienteVeDesde && (
+        <div className="mb-3 border border-[#2A3547] bg-[#0C121C] rounded-lg p-2.5 text-[11px] text-[#8A93A3]">
+          <span className="text-[#C9A227]">Vista del cliente acotada.</span>{" "}
+          Solo ve sus cuotas desde {fmtDate(prop.clienteVeDesde)}
+          {(() => {
+            const ocultas = prop.tabla.filter((f) => f.fecha < prop.clienteVeDesde);
+            const mora = ocultas.reduce(
+              (a, f) => a + calcularMoraGenerada(f, hoy, prop.diasGracia, prop.moraDiaria), 0);
+            return (
+              <> ({ocultas.length} cuotas anteriores ocultas
+                {mora > 0 ? `, con ${fmt(mora)} de mora generada que tampoco ve` : ""}).</>
+            );
+          })()}{" "}
+          El saldo y el encabezado que ve son los reales, calculados sobre toda la tabla.
+        </div>
+      )}
+
       <PanelAEvaluar propiedadId={prop.id} />
 
       <PanelClientesPropiedad propiedadId={prop.id} />
@@ -6226,7 +6245,23 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                 </div>
               )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
-              <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
+              {(() => {
+                // El trato original manda en la etiqueta; el efecto de los
+                // abonos va abajo, sin pisar lo que se pacto.
+                const contrato = Math.round((prop.plazoAnios || 0) * 12);
+                const real = prop.tabla.length;
+                const fin = prop.tabla[real - 1]?.fecha;
+                return contrato > 0 && real !== contrato ? (
+                  <>
+                    <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${contrato} cuotas)`} />
+                    <div className="text-[11px] text-emerald-400 text-right -mt-1">
+                      Con los abonos a capital son {real} cuotas · termina {fmtDate(fin)}
+                    </div>
+                  </>
+                ) : (
+                  <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${real} cuotas)`} />
+                );
+              })()}
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2
                 label="Mensualidad"
@@ -6960,6 +6995,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const [explicandoPago, setExplicandoPago] = useState(null);
   const [tab, setTab] = useState("tabla");
   const [generandoPdf, setGenerandoPdf] = useState(false);
+  // El cliente subia su comprobante y despues no podia volver a verlo.
+  const [galeriaCliente, setGaleriaCliente] = useState(null);
 
   if (!prop) return <div className="text-center text-[#8A93A3] mt-16 text-sm">No hay propiedades registradas.</div>;
 
@@ -6993,6 +7030,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const notifsCliente = (prop.notificaciones || []).filter((n) => n.para === "cliente");
 
   const historialMoras = prop.tabla
+    .filter((f) => !prop.clienteVeDesde || f.fecha >= prop.clienteVeDesde)
     .map((f) => ({
       numero: f.numero,
       fecha: f.fecha,
@@ -7004,6 +7042,12 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     .filter((r) => r.generada > 0 || r.pagada > 0 || r.condonada > 0);
   const totalPagadaHist = historialMoras.reduce((s, r) => s + r.pagada, 0);
   const totalCondonadaHist = historialMoras.reduce((s, r) => s + r.condonada, 0);
+  // Mora que se le muestra al cliente: solo la de las cuotas dentro de su
+  // ventana. La anterior existe y la inmobiliaria la ve entera, pero no se
+  // le expone mientras no se decida si se cobra.
+  const moraVisible = prop.clienteVeDesde
+    ? historialMoras.reduce((acc, r) => acc + r.pendiente, 0)
+    : moraTotal;
 
   const subirComprobante = async (idx, datos) => {
     setSubiendoIdx(idx);
@@ -7080,6 +7124,32 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           </div>
         )}
         {est === "revision" && <div className="mt-3 text-[11px] text-amber-400 flex items-center gap-1.5"><Upload size={12} /> Tu comprobante está en revisión por la inmobiliaria.</div>}
+
+        {/* Su propio comprobante, mientras se revisa y despues de aprobado.
+            Si subio varios para la misma cuota, se abren todos. */}
+        {(() => {
+          const lista = (f.comprobantesHistorial && f.comprobantesHistorial.length > 0)
+            ? f.comprobantesHistorial
+            : (f.comprobante ? [f.comprobante] : []);
+          const conImagen = lista.filter((c) => c && c.imagen);
+          if (conImagen.length === 0) return null;
+          return (
+            <div className="mt-3 pt-3 border-t border-[#2A3547]">
+              <div className="text-[11px] text-[#8A93A3] mb-1.5">
+                {conImagen.length > 1 ? `Los ${conImagen.length} comprobantes que enviaste` : "El comprobante que enviaste"}
+              </div>
+              <div className="flex gap-2 overflow-x-auto">
+                {conImagen.map((c, i) => (
+                  <button key={i} onClick={() => setGaleriaCliente({ imagenes: conImagen, indice: i })}
+                    className="shrink-0" title={fmtDate(c.fechaPagoReal || c.fecha)}>
+                    <img src={c.imagen} alt="Comprobante"
+                      className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -7113,7 +7183,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <Bell size={18} className="text-red-400 mt-0.5 shrink-0" />
           <div className="text-sm">
             <div className="font-medium text-red-300">Tienes {vencidas.length} pago{vencidas.length > 1 ? "s" : ""} vencido{vencidas.length > 1 ? "s" : ""}</div>
-            <div className="text-red-400/80 text-xs mt-0.5">Se está generando un cargo por mora de {fmt(moraTotal)}. Ponte al corriente para evitar que siga creciendo.</div>
+            <div className="text-red-400/80 text-xs mt-0.5">Se está generando un cargo por mora de {fmt(moraVisible)}. Ponte al corriente para evitar que siga creciendo.</div>
           </div>
         </div>
       )}
@@ -7268,7 +7338,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <div className="grid grid-cols-3 gap-2 mb-1">
                 <Stat label="Mora pagada (histórico)" value={fmt(totalPagadaHist)} />
                 <Stat label="Mora condonada (histórico)" value={fmt(totalCondonadaHist)} />
-                <Stat label="Mora pendiente hoy" value={fmt(moraTotal)} warn={moraTotal > 0} />
+                <Stat label="Mora pendiente hoy" value={fmt(moraVisible)} warn={moraVisible > 0} />
               </div>
               {historialMoras.map((r) => (
                 <div key={r.numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]">
@@ -7327,7 +7397,23 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                 </div>
               )}
               <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
-              <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${prop.tabla.length} cuotas)`} />
+              {(() => {
+                // El trato original manda en la etiqueta; el efecto de los
+                // abonos va abajo, sin pisar lo que se pacto.
+                const contrato = Math.round((prop.plazoAnios || 0) * 12);
+                const real = prop.tabla.length;
+                const fin = prop.tabla[real - 1]?.fecha;
+                return contrato > 0 && real !== contrato ? (
+                  <>
+                    <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${contrato} cuotas)`} />
+                    <div className="text-[11px] text-emerald-400 text-right -mt-1">
+                      Con los abonos a capital son {real} cuotas · termina {fmtDate(fin)}
+                    </div>
+                  </>
+                ) : (
+                  <Fila2 label="Plazo" value={`${fmtNum(prop.plazoAnios)} años (${real} cuotas)`} />
+                );
+              })()}
               <Fila2 label="Sistema de amortización" value={prop.sistemaAmortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"} />
               <Fila2
                 label="Mensualidad"
@@ -7354,11 +7440,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
         </div>
       )}
 
-      <div className="text-[11px] text-[#8A93A3] mt-6 text-center leading-relaxed">
-        Los avisos automáticos por SMS, WhatsApp o correo no se envían desde esta vista de demostración — requieren conectar un servicio como Twilio o un proveedor de email al backend.
-      </div>
-
       {explicandoPago && <ModalExplicacionPago f={explicandoPago} prop={prop} hoy={hoy} onCerrar={() => setExplicandoPago(null)} />}
+      {galeriaCliente && <VisorGaleria galeria={galeriaCliente} setGaleria={setGaleriaCliente} />}
     </div>
   );
 }

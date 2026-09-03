@@ -2,6 +2,7 @@ import './index.css';
 import './movil.css';
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import GuardiaSesion from "./GuardiaSesion";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
@@ -2591,6 +2592,7 @@ function AppInterno({ perfil, cerrarSesion }) {
       <AvisoCodigoPendiente />
       <ModuloTesoreria perfil={perfil} />
       <CambiarClave />
+      <GuardiaSesion />
       <div className="min-h-screen bg-[#101826] text-[#EDE7D9] font-sans print:hidden">
         <TopBar
           modo={modo}

@@ -1576,6 +1576,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
   });
 
   const columnas = ["#", "Fecha", "Fecha real de pago", "Capital", "Interés", "Cuota", "Abono", "Mora", ...(prop.aplicaLuz ? ["Luz"] : []), "Saldo", "Estado"];
+  const hayMoraCondonada = tablaImpresa.some((f) => Number(f.moraCondonada || 0) > 0);
   const filasTabla = tablaImpresa.map((f) => {
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
     const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
@@ -1588,7 +1589,9 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       fmt(f.interes),
       fmt(f.pago),
       f.abono > 0 ? fmt(f.abono) : "-",
-      mora > 0 ? fmt(mora) : "-",
+      // Condonada se imprime igual, para que el cliente vea que existio,
+      // pero marcada: didParseCell la tacha en rojo.
+      mora > 0 ? fmt(mora) : (Number(f.moraCondonada || 0) > 0 ? `${fmt(f.moraCondonada)}~` : "-"),
     ];
     if (prop.aplicaLuz) {
       fila.push(f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
@@ -1623,6 +1626,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
     columnas,
     filasTabla,
+    hayMoraCondonada,
   };
 }
 
@@ -1812,6 +1816,7 @@ async function construirPdfTablaPagos(d) {
   y += 3;
 
   const colEstado = d.columnas.length - 1;
+  const colMora = d.columnas.indexOf("Mora");
   autoTable(doc, {
     startY: y,
     head: [d.columnas],
@@ -1828,8 +1833,36 @@ async function construirPdfTablaPagos(d) {
         data.cell.styles.textColor = [220, 38, 38];
         data.cell.styles.fontStyle = "bold";
       }
+      // Mora condonada: viene marcada con "~" al final. Se quita la marca
+      // y la celda queda en rojo; el tachado lo dibuja didDrawCell.
+      if (data.section === "body" && data.column.index === colMora) {
+        const crudo = String(data.cell.raw ?? "");
+        if (crudo.endsWith("~")) {
+          data.cell.text = [crudo.slice(0, -1)];
+          data.cell.styles.textColor = [220, 38, 38];
+          data.cell.__condonada = true;
+        }
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section === "body" && data.cell.__condonada) {
+        const { x, y, width, height } = data.cell;
+        doc.setDrawColor(220, 38, 38);
+        doc.setLineWidth(0.25);
+        doc.line(x + 1, y + height / 2, x + width - 1, y + height / 2);
+      }
     },
   });
+
+  if (d.hayMoraCondonada) {
+    const yy = (doc.lastAutoTable?.finalY ?? y) + 4;
+    doc.setFont(undefined, "normal"); doc.setFontSize(7); doc.setTextColor(220, 38, 38);
+    doc.text(
+      pdfSafe(
+        "La mora que aparece tachada fue condonada y no se cobra: se generó antes de que el " +
+        "comprador tuviera acceso al sistema, por lo que no pudo conocerla en su momento."),
+      xIzq, yy, { maxWidth: 182 });
+  }
 
   return doc;
 }

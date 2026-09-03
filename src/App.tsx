@@ -434,6 +434,9 @@ function propiedadDesdeFila(row) {
     // todos los clientes. "adelantado": el cliente paga por adelantado, antes de usar el mes, así
     // que la cuota #1 cae el mismo día de la fecha base en vez de un mes después.
     sistemaPago: row.sistema_pago || "vencido",
+    // Ventana de lo que ve el cliente. Solo recorta la vista: el saldo y
+    // la mora se siguen calculando sobre la tabla completa.
+    clienteVeDesde: row.cliente_ve_desde || null,
     // Un local en alquiler corre sobre la misma maquinaria que una venta
     // financiada, pero su saldo es renta por devengar del contrato, no
     // deuda del inquilino. Solo cambia rótulos: ningún cálculo depende
@@ -1507,7 +1510,10 @@ async function construirPdfCotizacion(d) {
 // Junta todo lo que necesita el PDF de "Tabla de pagos" (estado de cuenta de una propiedad)
 // a partir del modelo local — usado tanto por la vista de inmobiliaria como por la del
 // cliente, para no repetir esta preparación de datos en los dos lados.
-function datosPdfTablaPagos(prop, proyecto, hoy) {
+function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
+  // El encabezado y los saldos se calculan siempre con la tabla completa;
+  // solo se recortan las filas que se imprimen.
+  if (desde) prop = { ...prop, tabla: prop.tabla.filter((f) => f.fecha >= desde) };
   const saldoActual = prop.tabla.find((f) => f.estado !== "pagado")?.saldoInicial ?? 0;
   const { vencidas, totalParaPonerseAlDia } = resumenProp(prop, hoy);
   const ea = engancheAjustado(prop);
@@ -1521,7 +1527,16 @@ function datosPdfTablaPagos(prop, proyecto, hoy) {
       ? ["Monto financiado", fmt(ea.montoFinanciadoReal), fmt(ea.montoFinanciadoOriginal)]
       : ["Monto financiado", fmt(Math.max(0, prop.precio - prop.enganche))],
     ["Tasa anual", `${fmtNum(prop.tasaAnual)}%`],
-    ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${prop.tabla.length} cuotas`],
+    // Con abonos a capital el prestamo termina antes de lo pactado: se
+    // muestra el plazo real y arriba, tachado, el que decia el contrato.
+    (() => {
+      const contrato = Math.round((prop.plazoAnios || 0) * 12);
+      const real = prop.tabla.length;
+      const fin = prop.tabla[real - 1]?.fecha;
+      return contrato > 0 && real !== contrato
+        ? ["Plazo", `${real} cuotas · termina ${fmtDate(fin)}`, `${fmtNum(prop.plazoAnios)} años · ${contrato} cuotas`]
+        : ["Plazo", `${fmtNum(prop.plazoAnios)} años · ${real} cuotas`];
+    })(),
     ["Sistema", prop.sistemaAmortizacion === "saldos" ? "Sobre saldos (decreciente)" : "Cuota nivelada"],
     [prop.esRenta ? "Inicio del contrato" : "Fecha de adquisición", fmtDate(prop.fechaInicio)],
     ...(prop.tabla[0] ? [[prop.sistemaPago === "adelantado" ? "Primer pago (mes adelantado)" : "Primer pago (mes vencido)", fmtDate(prop.tabla[0].fecha)]] : []),
@@ -6955,7 +6970,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const descargarPdfTablaPagos = async () => {
     setGenerandoPdf(true);
     try {
-      const doc = await construirPdfTablaPagos(datosPdfTablaPagos(prop, proyecto, hoy));
+      const doc = await construirPdfTablaPagos(datosPdfTablaPagos(prop, proyecto, hoy, prop.clienteVeDesde));
       const nombreCliente = (prop.cliente || "estado-de-cuenta").trim().replace(/[^\p{L}\p{N}]+/gu, "_");
       doc.save(`${nombreCliente}-tabla-de-pagos-${hoy.replaceAll("-", "")}.pdf`);
     } catch (e) {
@@ -6968,7 +6983,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
   const ea = engancheAjustado(prop);
   const comparativaAbono = calcularComparativaAbono(prop);
   const alDia = vencidas.length === 0;
-  const ventana = useVentana(prop.tabla);
+  // La inmobiliaria ve todo; al cliente se le puede acotar con
+  // clienteVeDesde. indexOf sigue apuntando a la tabla completa, asi que
+  // subir un comprobante cae en la cuota correcta.
+  const tablaVisible = prop.clienteVeDesde
+    ? prop.tabla.filter((f) => f.fecha >= prop.clienteVeDesde)
+    : prop.tabla;
+  const ventana = useVentana(tablaVisible);
   const notifsCliente = (prop.notificaciones || []).filter((n) => n.para === "cliente");
 
   const historialMoras = prop.tabla

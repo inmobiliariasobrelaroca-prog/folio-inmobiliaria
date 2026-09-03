@@ -5983,6 +5983,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         </div>
       )}
 
+      <PanelAEvaluar propiedadId={prop.id} />
+
       <PanelClientesPropiedad propiedadId={prop.id} />
 
       <div className="grid grid-cols-3 gap-3 mb-2">
@@ -6538,6 +6540,106 @@ function ModalEditarDatosPropiedad({ prop, onCancelar, onGuardar }) {
 }
 
 // Panel para asignar el titular y los codueños de una propiedad, desde el directorio de clientes.
+// Hallazgos que necesitan una decision antes de darse por buenos. Solo
+// lado inmobiliaria: el cliente nunca ve esto. Nacio del caso Cipreces
+// Casa 2, que llego con siete anios de historia en una hoja de calculo.
+function PanelAEvaluar({ propiedadId }) {
+  const [items, setItems] = useState([]);
+  const [abierto, setAbierto] = useState(null);
+  const [resolviendo, setResolviendo] = useState(null);
+  const [texto, setTexto] = useState("");
+
+  const cargar = async () => {
+    const { data } = await supabase.from("evaluaciones")
+      .select("*").eq("propiedad_id", propiedadId).order("orden");
+    setItems(data || []);
+  };
+  useEffect(() => { cargar(); }, [propiedadId]);
+
+  const resolver = async (id) => {
+    await supabase.from("evaluaciones").update({
+      estado: "resuelto",
+      resolucion: texto.trim() || null,
+      resuelto_en: new Date().toISOString(),
+    }).eq("id", id);
+    setResolviendo(null); setTexto(""); cargar();
+  };
+
+  if (items.length === 0) return null;
+  const pendientes = items.filter((e) => e.estado === "pendiente");
+
+  return (
+    <div className="mb-3 border border-amber-700/60 bg-amber-950/20 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+        <span className="text-[11px] uppercase tracking-wide text-amber-400">
+          A evaluar
+        </span>
+        <span className="text-[10px] text-[#8A93A3]">
+          {pendientes.length} sin resolver de {items.length}
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        {items.map((e) => (
+          <div key={e.id}
+            className={`bg-[#0C121C] border rounded-md ${e.estado === "resuelto" ? "border-[#2A3547] opacity-60" : "border-amber-800/50"}`}>
+            <button onClick={() => setAbierto(abierto === e.id ? null : e.id)}
+              className="w-full text-left p-2 flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px]">{e.titulo}</div>
+                {e.estado === "resuelto" && (
+                  <div className="text-[10px] text-emerald-400">Resuelto</div>
+                )}
+              </div>
+              {e.monto != null && (
+                <span className="font-mono text-[11px] text-amber-400 shrink-0">
+                  {fmt(e.monto)}
+                </span>
+              )}
+            </button>
+
+            {abierto === e.id && (
+              <div className="px-2 pb-2">
+                <div className="text-[11px] text-[#C9CEDA] whitespace-pre-wrap leading-relaxed border-t border-[#2A3547] pt-2">
+                  {e.detalle}
+                </div>
+                {e.resolucion && (
+                  <div className="text-[10px] text-emerald-400 mt-2 whitespace-pre-wrap">
+                    Resolucion: {e.resolucion}
+                  </div>
+                )}
+                {e.estado === "pendiente" && (
+                  resolviendo === e.id ? (
+                    <div className="mt-2 space-y-1.5">
+                      <textarea value={texto} onChange={(ev) => setTexto(ev.target.value)}
+                        rows={2} placeholder="Que se decidio y por que"
+                        className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+                      <div className="flex gap-2">
+                        <button onClick={() => { setResolviendo(null); setTexto(""); }}
+                          className="flex-1 text-[10px] bg-[#2A3547] py-1.5 rounded">Cancelar</button>
+                        <button onClick={() => resolver(e.id)}
+                          className="flex-1 text-[10px] bg-[#C9A227] text-[#101826] font-medium py-1.5 rounded">
+                          Marcar resuelto
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setResolviendo(e.id)}
+                      className="text-[10px] text-[#8A93A3] hover:text-[#EDE7D9] mt-2">
+                      Marcar como resuelto
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PanelClientesPropiedad({ propiedadId }) {
   const [asignados, setAsignados] = useState([]);
   const [todosClientes, setTodosClientes] = useState([]);

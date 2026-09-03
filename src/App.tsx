@@ -4606,7 +4606,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                 </div>
               ) : (
                 <div className="flex gap-5 mt-3 text-xs font-mono">
-                  <div><div className="text-[#8A93A3]">Saldo</div><div>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</div></div>
+                  <div><div className="text-[#8A93A3]">{p.esRenta ? "Renta por devengar" : "Saldo"}</div><div>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</div></div>
                   {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
                   {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
                 </div>
@@ -5987,7 +5987,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
       <div className="grid grid-cols-3 gap-3 mb-2">
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
-          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Saldo</div>
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">{prop.esRenta ? "Renta por devengar" : "Saldo"}</div>
           <div className="font-mono text-sm mt-0.5">{fmt(saldoActual)}</div>
           {prop.saldoAdicionalSinInteres > 0 && (
             <div className="mt-1.5 space-y-1.5 border-t border-[#2A3547] pt-1.5">

@@ -5264,6 +5264,10 @@ function DetalleFila({ f, mora, prop, hoy }) {
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
 // Visor de comprobantes con flechas para pasar de uno a otro sin cerrar y volver a abrir.
+// Detecta si el comprobante es un PDF. Se mira la ruta guardada, no la
+// URL firmada, porque esa lleva parametros y termina en cualquier cosa.
+const esPdf = (c) => /\.pdf($|\?)/i.test(c?.imagenUrlCruda || "");
+
 function VisorGaleria({ galeria, setGaleria }) {
   const { imagenes, indice } = galeria;
   const actual = imagenes[indice];
@@ -5282,7 +5286,16 @@ function VisorGaleria({ galeria, setGaleria }) {
   return (
     <div onClick={() => setGaleria(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
       <div className="text-center max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
-        <img src={actual.imagen} alt="Comprobante ampliado" className={`max-w-full max-h-[80vh] rounded-md ${actual.estado === "rechazado" ? "opacity-60 ring-2 ring-red-700" : ""}`} />
+        {esPdf(actual) ? (
+          <a href={actual.imagen} target="_blank" rel="noopener noreferrer"
+            className="flex flex-col items-center gap-2 bg-[#161F2E] border border-[#2A3547] rounded-lg px-10 py-12 hover:border-[#C9A227]/60">
+            <FileText size={40} className="text-[#C9A227]" />
+            <span className="text-sm text-[#EDE7D9]">Comprobante en PDF</span>
+            <span className="text-xs text-[#8A93A3]">Tocá para abrirlo</span>
+          </a>
+        ) : (
+          <img src={actual.imagen} alt="Comprobante ampliado" className={`max-w-full max-h-[80vh] rounded-md ${actual.estado === "rechazado" ? "opacity-60 ring-2 ring-red-700" : ""}`} />
+        )}
         {actual.estado === "rechazado" && <div className="text-xs font-medium text-red-400 bg-red-950/60 px-2 py-1 rounded">Comprobante rechazado</div>}
         <div className="text-xs text-white/80">
           {fmt(actual.montoDepositado)} · {fmtDate(actual.fechaPagoReal || actual.fecha)}
@@ -5916,7 +5929,14 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3">
               <button onClick={() => setGaleriaAmpliada({ imagenes: f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante], indice: (f.comprobantesHistorial && f.comprobantesHistorial.length > 1) ? f.comprobantesHistorial.length - 1 : 0 })} className="shrink-0">
-                <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
+                {esPdf(f.comprobante) ? (
+                  <div className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 rounded-md border border-[#2A3547] bg-[#0C121C]">
+                    <FileText size={20} className="text-[#C9A227]" />
+                    <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                  </div>
+                ) : (
+                  <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
+                )}
               </button>
               <div className="flex-1">
                 <div className="text-[11px] text-[#8A93A3] mb-1">Comprobante subido {fmtDateTime(f.comprobante.fecha)}</div>
@@ -6018,7 +6038,14 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="flex items-center gap-3 flex-wrap">
               {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i, lista) => (
                 <button key={i} onClick={() => setGaleriaAmpliada({ imagenes: lista, indice: i })} className="shrink-0 relative" title={`${c.estado === "rechazado" ? "Rechazado — " : ""}${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
-                  <img src={c.imagen} alt="Recibo" className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`} />
+                  {esPdf(c) ? (
+                    <div className={`w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-md border bg-[#0C121C] ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`}>
+                      <FileText size={18} className="text-[#C9A227]" />
+                      <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                    </div>
+                  ) : (
+                    <img src={c.imagen} alt="Recibo" className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`} />
+                  )}
                   {c.estado === "rechazado" && (
                     <span className="absolute -top-1.5 -right-1.5 bg-red-800 text-white text-[8px] font-medium px-1 py-0.5 rounded leading-none">Rechazado</span>
                   )}
@@ -6060,7 +6087,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                     {subiendoReciboIdx === idx ? "Subiendo..." : "Elegir archivo del recibo"}
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,application/pdf"
                       className="hidden"
                       disabled={subiendoReciboIdx === idx}
                       onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0], Number(montoReciboValor))}
@@ -7098,8 +7125,8 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       )}
 
       <label className="flex items-center justify-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
-        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar foto del depósito"}
-        <input type="file" accept="image/*" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
+        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar el depósito (foto o PDF)"}
+        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
       </label>
 
       <button disabled={!puedeEnviar || subiendo} onClick={enviar} className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
@@ -7265,8 +7292,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                 {conImagen.map((c, i) => (
                   <button key={i} onClick={() => setGaleriaCliente({ imagenes: conImagen, indice: i })}
                     className="shrink-0" title={fmtDate(c.fechaPagoReal || c.fecha)}>
-                    <img src={c.imagen} alt="Comprobante"
-                      className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`} />
+                    {esPdf(c) ? (
+                      <div className={`w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-md border bg-[#0C121C] ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`}>
+                        <FileText size={18} className="text-[#C9A227]" />
+                        <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                      </div>
+                    ) : (
+                      <img src={c.imagen} alt="Comprobante"
+                        className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`} />
+                    )}
                   </button>
                 ))}
               </div>

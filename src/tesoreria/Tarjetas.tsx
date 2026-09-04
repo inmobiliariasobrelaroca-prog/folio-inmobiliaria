@@ -230,7 +230,9 @@ function Corte({ c, bolsas, pagando, onPagar, onCancelar, onListo }) {
             <select value={bolsa} onChange={(e) => setBolsa(e.target.value)}
               className="w-full bg-[#0C121C] border border-[#2A3547] rounded-md p-2 text-[11px]">
               <option value="">Elegir...</option>
-              {(bolsas || []).filter((b) => b.uso_permitido !== "ninguno" && b.uso_permitido !== "solo_deuda")
+              {/* La reserva sí aparece: sirve para garantizar cualquier
+                  obligación, y el pago de tarjeta es una. */}
+              {(bolsas || []).filter((b) => b.uso_permitido !== "ninguno")
                 .map((b) => (
                   <option key={b.id} value={b.id}>{b.nombre}</option>
                 ))}

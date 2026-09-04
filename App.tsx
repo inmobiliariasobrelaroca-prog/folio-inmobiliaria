@@ -28,6 +28,12 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" });
 };
 
+// Mes sin abreviar, para los encabezados de cuota. No reemplaza a
+// fmtDate: en las tablas y en el PDF el mes largo no cabe.
+const fmtDateLargo = (iso) => {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "long", year: "numeric" });
+};
 const fmtDateTime = (iso) => {
   const d = new Date(iso);
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -544,6 +550,8 @@ function cuotaDesdeFila(row) {
     moraPagada: Number(row.mora_pagada || 0),
     moraCondonada: Number(row.mora_condonada || 0),
     moraGeneradaFinal: row.mora_generada_final != null ? Number(row.mora_generada_final) : null,
+    // Ingreso ya registrado en tesorería antes de que llegue la boleta.
+    ingresoMovimientoId: row.ingreso_movimiento_id || null,
     moraAplicada: Number(row.mora_pagada || 0),
     abono: Number(row.abono || 0),
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
@@ -1570,6 +1578,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
   });
 
   const columnas = ["#", "Fecha", "Fecha real de pago", "Capital", "Interés", "Cuota", "Abono", "Mora", ...(prop.aplicaLuz ? ["Luz"] : []), "Saldo", "Estado"];
+  const hayMoraCondonada = tablaImpresa.some((f) => Number(f.moraCondonada || 0) > 0);
   const filasTabla = tablaImpresa.map((f) => {
     const mora = calcularMoraCredito(f, hoy, prop.diasGracia, prop.moraDiaria);
     const est = f.estado === "pagado" ? "pagado" : estadoReal(f, hoy, prop.diasGracia);
@@ -1582,7 +1591,9 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       fmt(f.interes),
       fmt(f.pago),
       f.abono > 0 ? fmt(f.abono) : "-",
-      mora > 0 ? fmt(mora) : "-",
+      // Condonada se imprime igual, para que el cliente vea que existio,
+      // pero marcada: didParseCell la tacha en rojo.
+      mora > 0 ? fmt(mora) : (Number(f.moraCondonada || 0) > 0 ? `${fmt(f.moraCondonada)}~` : "-"),
     ];
     if (prop.aplicaLuz) {
       fila.push(f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
@@ -1617,6 +1628,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
     columnas,
     filasTabla,
+    hayMoraCondonada,
   };
 }
 
@@ -1806,6 +1818,7 @@ async function construirPdfTablaPagos(d) {
   y += 3;
 
   const colEstado = d.columnas.length - 1;
+  const colMora = d.columnas.indexOf("Mora");
   autoTable(doc, {
     startY: y,
     head: [d.columnas],
@@ -1822,8 +1835,36 @@ async function construirPdfTablaPagos(d) {
         data.cell.styles.textColor = [220, 38, 38];
         data.cell.styles.fontStyle = "bold";
       }
+      // Mora condonada: viene marcada con "~" al final. Se quita la marca
+      // y la celda queda en rojo; el tachado lo dibuja didDrawCell.
+      if (data.section === "body" && data.column.index === colMora) {
+        const crudo = String(data.cell.raw ?? "");
+        if (crudo.endsWith("~")) {
+          data.cell.text = [crudo.slice(0, -1)];
+          data.cell.styles.textColor = [220, 38, 38];
+          data.cell.__condonada = true;
+        }
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section === "body" && data.cell.__condonada) {
+        const { x, y, width, height } = data.cell;
+        doc.setDrawColor(220, 38, 38);
+        doc.setLineWidth(0.25);
+        doc.line(x + 1, y + height / 2, x + width - 1, y + height / 2);
+      }
     },
   });
+
+  if (d.hayMoraCondonada) {
+    const yy = (doc.lastAutoTable?.finalY ?? y) + 4;
+    doc.setFont(undefined, "normal"); doc.setFontSize(7); doc.setTextColor(220, 38, 38);
+    doc.text(
+      pdfSafe(
+        "La mora que aparece tachada fue condonada y no se cobra: se generó antes de que el " +
+        "comprador tuviera acceso al sistema, por lo que no pudo conocerla en su momento."),
+      xIzq, yy, { maxWidth: 182 });
+  }
 
   return doc;
 }
@@ -4596,7 +4637,7 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                       return (
                         <div key={f.numero} className="flex justify-between font-mono">
                           <span className="font-sans">
-                            Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                            Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}{" "}
                             <span
                               onClick={(e) => { e.stopPropagation(); setExplicandoPago({ f, prop: p }); }}
                               className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium cursor-pointer ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -5130,7 +5171,7 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
           <div className="font-serif text-lg">Cómo se aplicó este pago</div>
           <button onClick={onCerrar} className="text-[#8A93A3] hover:text-[#EDE7D9]"><X size={20} /></button>
         </div>
-        <div className="text-xs text-[#8A93A3] mb-4">Cuota #{f.numero} · vence {fmtDate(f.fecha)}</div>
+        <div className="text-sm text-[#8A93A3] mb-4">Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}</div>
         <div className="space-y-4">
           {pasos.map((p, i) => (
             <div key={i} className="flex gap-3">
@@ -5225,6 +5266,10 @@ function DetalleFila({ f, mora, prop, hoy }) {
 // ---------- Vista Inmobiliaria: detalle de propiedad ----------
 
 // Visor de comprobantes con flechas para pasar de uno a otro sin cerrar y volver a abrir.
+// Detecta si el comprobante es un PDF. Se mira la ruta guardada, no la
+// URL firmada, porque esa lleva parametros y termina en cualquier cosa.
+const esPdf = (c) => /\.pdf($|\?)/i.test(c?.imagenUrlCruda || "");
+
 function VisorGaleria({ galeria, setGaleria }) {
   const { imagenes, indice } = galeria;
   const actual = imagenes[indice];
@@ -5243,7 +5288,16 @@ function VisorGaleria({ galeria, setGaleria }) {
   return (
     <div onClick={() => setGaleria(null)} className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
       <div className="text-center max-w-full max-h-full flex flex-col items-center gap-2" onClick={(e) => e.stopPropagation()}>
-        <img src={actual.imagen} alt="Comprobante ampliado" className={`max-w-full max-h-[80vh] rounded-md ${actual.estado === "rechazado" ? "opacity-60 ring-2 ring-red-700" : ""}`} />
+        {esPdf(actual) ? (
+          <a href={actual.imagen} target="_blank" rel="noopener noreferrer"
+            className="flex flex-col items-center gap-2 bg-[#161F2E] border border-[#2A3547] rounded-lg px-10 py-12 hover:border-[#C9A227]/60">
+            <FileText size={40} className="text-[#C9A227]" />
+            <span className="text-sm text-[#EDE7D9]">Comprobante en PDF</span>
+            <span className="text-xs text-[#8A93A3]">Tocá para abrirlo</span>
+          </a>
+        ) : (
+          <img src={actual.imagen} alt="Comprobante ampliado" className={`max-w-full max-h-[80vh] rounded-md ${actual.estado === "rechazado" ? "opacity-60 ring-2 ring-red-700" : ""}`} />
+        )}
         {actual.estado === "rechazado" && <div className="text-xs font-medium text-red-400 bg-red-950/60 px-2 py-1 rounded">Comprobante rechazado</div>}
         <div className="text-xs text-white/80">
           {fmt(actual.montoDepositado)} · {fmtDate(actual.fechaPagoReal || actual.fecha)}
@@ -5272,6 +5326,103 @@ function VisorGaleria({ galeria, setGaleria }) {
 // Una boleta que quedo como enlace externo (Drive, WhatsApp) o que nunca
 // se subio: el cliente no la puede abrir, porque la imagen no vive en el
 // almacenamiento de la app. Esto la mete adentro sin tocar el pago.
+// El cliente deposita al banco; la notificación llega al instante y el
+// monto dice de quién es porque las cuotas no se parecen. El dinero ya
+// está disponible aunque la boleta llegue días después por WhatsApp.
+//
+// Esto registra ese ingreso en tesorería SIN cerrar la cuota: si se
+// cerrara, el cliente la vería pagada, no subiría su boleta y podría
+// terminar subiendo la del mes siguiente sobre la cuota equivocada.
+// Cuando después suba la suya y se apruebe, el comprobante se pega a
+// este mismo movimiento en vez de crear otro.
+function IngresoDeCuota({ f, prop, hoy, actualizar, puede }) {
+  const [abierto, setAbierto] = useState(false);
+  const [monto, setMonto] = useState(0);
+  const [fecha, setFecha] = useState(hoy);
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  if (!puede || !puede("aprobar_rechazar_pagos")) return null;
+  if (!f.id) return null;
+
+  const yaRegistrado = !!f.ingresoMovimientoId || ok;
+
+  if (yaRegistrado) {
+    return (
+      <div className="mt-3 pt-3 border-t border-[#2A3547] text-[11px] text-emerald-400">
+        {ok || "El dinero de esta cuota ya está registrado en tesorería. Falta la boleta del cliente."}
+      </div>
+    );
+  }
+  if (f.estado === "pagado") return null;
+
+  const sugerido = Number(f.pago || 0) + (prop.aplicaLuz && !f.luzPagado
+    ? Number(prop.montoLuzMensual || 0) : 0);
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const { data, error: e } = await supabase.rpc("registrar_ingreso_cuota", {
+        p_cuota: f.id, p_monto: Number(monto),
+        p_fecha: fecha, p_nota: nota.trim() || null,
+      });
+      if (e) throw new Error(e.message);
+      setOk(data);
+      setAbierto(false);
+      actualizar && actualizar((p) => p);
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547]">
+      {!abierto ? (
+        <button
+          onClick={() => { setAbierto(true); setMonto(sugerido); setError(""); }}
+          title="El depósito ya cayó al banco. Registra el ingreso en tesorería sin cerrar la cuota, para que el cliente igual suba su boleta."
+          className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
+          <Download size={11} /> Ya cayó al banco
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[10px] text-[#8A93A3] leading-relaxed">
+            Entra el dinero a tesorería pero la cuota queda abierta, para que el
+            cliente suba su boleta como siempre. Al aprobarla no se duplica.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Cuánto depositó</span>
+              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px] font-mono" />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Fecha del depósito</span>
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+            </label>
+          </div>
+          <input value={nota} onChange={(e) => setNota(e.target.value)}
+            placeholder="Banco o referencia (opcional)"
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">Cancelar</button>
+            <button onClick={guardar} disabled={guardando || Number(monto) <= 0}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded">
+              {guardando ? "Guardando..." : "Registrar el ingreso"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdjuntarBoleta({ f, propiedadId, actualizar }) {
   const [abierto, setAbierto] = useState(false);
   const [archivo, setArchivo] = useState(null);
@@ -5871,13 +6022,22 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
 
+        <IngresoDeCuota f={f} prop={prop} hoy={hoy} actualizar={actualizar} puede={puede} />
+
         <AdjuntarBoleta f={f} propiedadId={prop.id} actualizar={actualizar} />
 
         {est === "revision" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3">
               <button onClick={() => setGaleriaAmpliada({ imagenes: f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante], indice: (f.comprobantesHistorial && f.comprobantesHistorial.length > 1) ? f.comprobantesHistorial.length - 1 : 0 })} className="shrink-0">
-                <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
+                {esPdf(f.comprobante) ? (
+                  <div className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 rounded-md border border-[#2A3547] bg-[#0C121C]">
+                    <FileText size={20} className="text-[#C9A227]" />
+                    <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                  </div>
+                ) : (
+                  <img src={f.comprobante.imagen} alt="Comprobante" className="w-16 h-16 object-cover rounded-md border border-[#2A3547]" />
+                )}
               </button>
               <div className="flex-1">
                 <div className="text-[11px] text-[#8A93A3] mb-1">Comprobante subido {fmtDateTime(f.comprobante.fecha)}</div>
@@ -5979,7 +6139,14 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             <div className="flex items-center gap-3 flex-wrap">
               {(f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante]).map((c, i, lista) => (
                 <button key={i} onClick={() => setGaleriaAmpliada({ imagenes: lista, indice: i })} className="shrink-0 relative" title={`${c.estado === "rechazado" ? "Rechazado — " : ""}${fmt(c.montoDepositado)} · ${fmtDate(c.fechaPagoReal || c.fecha)}`}>
-                  <img src={c.imagen} alt="Recibo" className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`} />
+                  {esPdf(c) ? (
+                    <div className={`w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-md border bg-[#0C121C] ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`}>
+                      <FileText size={18} className="text-[#C9A227]" />
+                      <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                    </div>
+                  ) : (
+                    <img src={c.imagen} alt="Recibo" className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-700 opacity-50" : "border-[#2A3547]"}`} />
+                  )}
                   {c.estado === "rechazado" && (
                     <span className="absolute -top-1.5 -right-1.5 bg-red-800 text-white text-[8px] font-medium px-1 py-0.5 rounded leading-none">Rechazado</span>
                   )}
@@ -6021,7 +6188,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                     {subiendoReciboIdx === idx ? "Subiendo..." : "Elegir archivo del recibo"}
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,application/pdf"
                       className="hidden"
                       disabled={subiendoReciboIdx === idx}
                       onChange={(e) => e.target.files[0] && subirReciboHistorico(idx, e.target.files[0], Number(montoReciboValor))}
@@ -6141,7 +6308,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm font-mono">
                   <span className="font-sans">
-                    Cuota #{f.numero} · vence {fmtDate(f.fecha)}{" "}
+                    Cuota #{f.numero} · vence {fmtDateLargo(f.fecha)}{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
                       className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -7059,8 +7226,8 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       )}
 
       <label className="flex items-center justify-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
-        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar foto del depósito"}
-        <input type="file" accept="image/*" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
+        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar el depósito (foto o PDF)"}
+        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
       </label>
 
       <button disabled={!puedeEnviar || subiendo} onClick={enviar} className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
@@ -7187,7 +7354,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       <div key={idx} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs text-[#8A93A3] font-mono">Cuota #{f.numero} · {fmtDate(f.fecha)}</div>
+            <div className="text-sm text-[#EDE7D9] font-mono">Cuota #{f.numero} · {fmtDateLargo(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
             {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
@@ -7226,8 +7393,15 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                 {conImagen.map((c, i) => (
                   <button key={i} onClick={() => setGaleriaCliente({ imagenes: conImagen, indice: i })}
                     className="shrink-0" title={fmtDate(c.fechaPagoReal || c.fecha)}>
-                    <img src={c.imagen} alt="Comprobante"
-                      className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`} />
+                    {esPdf(c) ? (
+                      <div className={`w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-md border bg-[#0C121C] ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`}>
+                        <FileText size={18} className="text-[#C9A227]" />
+                        <span className="text-[7px] text-[#8A93A3]">PDF</span>
+                      </div>
+                    ) : (
+                      <img src={c.imagen} alt="Comprobante"
+                        className={`w-14 h-14 object-cover rounded-md border ${c.estado === "rechazado" ? "border-red-800 opacity-60" : "border-[#2A3547]"}`} />
+                    )}
                   </button>
                 ))}
               </div>
@@ -7285,7 +7459,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               return (
                 <div key={f.numero} className="flex justify-between items-baseline text-sm">
                   <div>
-                    Cuota #{f.numero} <span className="text-[#8A93A3] text-xs">· vence {fmtDate(f.fecha)}</span>{" "}
+                    Cuota #{f.numero} <span className="text-[#8A93A3] text-sm">· vence {fmtDateLargo(f.fecha)}</span>{" "}
                     <button
                       onClick={() => setExplicandoPago(f)}
                       className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium ${esParcial ? "border-blue-700 bg-blue-950/30 text-blue-300 hover:bg-blue-950/60" : "border-red-800 bg-red-950/30 text-red-300 hover:bg-red-950/60"}`}
@@ -7426,7 +7600,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               </div>
               {historialMoras.map((r) => (
                 <div key={r.numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 text-[11px]">
-                  <div className="text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDate(r.fecha)}</div>
+                  <div className="text-sm text-[#8A93A3] font-mono mb-1.5">Cuota #{r.numero} · {fmtDateLargo(r.fecha)}</div>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
                     <div><div className="text-[#8A93A3]">Generada</div><div className="font-mono break-words">{fmt(r.generada)}</div></div>
                     <div><div className="text-[#8A93A3]">Pagada</div><div className="font-mono break-words text-emerald-400">{fmt(r.pagada)}</div></div>

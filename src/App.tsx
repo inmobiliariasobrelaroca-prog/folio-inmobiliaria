@@ -550,6 +550,8 @@ function cuotaDesdeFila(row) {
     moraPagada: Number(row.mora_pagada || 0),
     moraCondonada: Number(row.mora_condonada || 0),
     moraGeneradaFinal: row.mora_generada_final != null ? Number(row.mora_generada_final) : null,
+    // Ingreso ya registrado en tesorería antes de que llegue la boleta.
+    ingresoMovimientoId: row.ingreso_movimiento_id || null,
     moraAplicada: Number(row.mora_pagada || 0),
     abono: Number(row.abono || 0),
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
@@ -5324,6 +5326,103 @@ function VisorGaleria({ galeria, setGaleria }) {
 // Una boleta que quedo como enlace externo (Drive, WhatsApp) o que nunca
 // se subio: el cliente no la puede abrir, porque la imagen no vive en el
 // almacenamiento de la app. Esto la mete adentro sin tocar el pago.
+// El cliente deposita al banco; la notificación llega al instante y el
+// monto dice de quién es porque las cuotas no se parecen. El dinero ya
+// está disponible aunque la boleta llegue días después por WhatsApp.
+//
+// Esto registra ese ingreso en tesorería SIN cerrar la cuota: si se
+// cerrara, el cliente la vería pagada, no subiría su boleta y podría
+// terminar subiendo la del mes siguiente sobre la cuota equivocada.
+// Cuando después suba la suya y se apruebe, el comprobante se pega a
+// este mismo movimiento en vez de crear otro.
+function IngresoDeCuota({ f, prop, hoy, actualizar, puede }) {
+  const [abierto, setAbierto] = useState(false);
+  const [monto, setMonto] = useState(0);
+  const [fecha, setFecha] = useState(hoy);
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  if (!puede || !puede("aprobar_rechazar_pagos")) return null;
+  if (!f.id) return null;
+
+  const yaRegistrado = !!f.ingresoMovimientoId || ok;
+
+  if (yaRegistrado) {
+    return (
+      <div className="mt-3 pt-3 border-t border-[#2A3547] text-[11px] text-emerald-400">
+        {ok || "El dinero de esta cuota ya está registrado en tesorería. Falta la boleta del cliente."}
+      </div>
+    );
+  }
+  if (f.estado === "pagado") return null;
+
+  const sugerido = Number(f.pago || 0) + (prop.aplicaLuz && !f.luzPagado
+    ? Number(prop.montoLuzMensual || 0) : 0);
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const { data, error: e } = await supabase.rpc("registrar_ingreso_cuota", {
+        p_cuota: f.id, p_monto: Number(monto),
+        p_fecha: fecha, p_nota: nota.trim() || null,
+      });
+      if (e) throw new Error(e.message);
+      setOk(data);
+      setAbierto(false);
+      actualizar && actualizar((p) => p);
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547]">
+      {!abierto ? (
+        <button
+          onClick={() => { setAbierto(true); setMonto(sugerido); setError(""); }}
+          title="El depósito ya cayó al banco. Registra el ingreso en tesorería sin cerrar la cuota, para que el cliente igual suba su boleta."
+          className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
+          <Download size={11} /> Ya cayó al banco
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[10px] text-[#8A93A3] leading-relaxed">
+            Entra el dinero a tesorería pero la cuota queda abierta, para que el
+            cliente suba su boleta como siempre. Al aprobarla no se duplica.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Cuánto depositó</span>
+              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px] font-mono" />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Fecha del depósito</span>
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+            </label>
+          </div>
+          <input value={nota} onChange={(e) => setNota(e.target.value)}
+            placeholder="Banco o referencia (opcional)"
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">Cancelar</button>
+            <button onClick={guardar} disabled={guardando || Number(monto) <= 0}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded">
+              {guardando ? "Guardando..." : "Registrar el ingreso"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdjuntarBoleta({ f, propiedadId, actualizar }) {
   const [abierto, setAbierto] = useState(false);
   const [archivo, setArchivo] = useState(null);
@@ -5922,6 +6021,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         )}
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
+
+        <IngresoDeCuota f={f} prop={prop} hoy={hoy} actualizar={actualizar} puede={puede} />
 
         <AdjuntarBoleta f={f} propiedadId={prop.id} actualizar={actualizar} />
 

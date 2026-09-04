@@ -62,8 +62,19 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
     setArchivo(null); setTipoDoc("factura"); setPaso("");
   };
 
+  // Antes se dejaba llegar hasta el final y era el trigger de la base el
+  // que rechazaba. Se avisa acá para no llenar obra, categoría y proveedor
+  // en balde. La base sigue validando: esto es comodidad, no seguridad.
+  const bolsaOrigen = listaBolsas.find((b) => b.id === origen);
+  const saldoOrigen = bolsaOrigen ? Number(bolsaOrigen.saldo_actual) : null;
+  const saleDeBolsa = tipo === "egreso" || tipo === "traslado";
+  const sinSaldo = saleDeBolsa && bolsaOrigen && saldoOrigen <= 0;
+  const noAlcanza = saleDeBolsa && bolsaOrigen && saldoOrigen > 0 &&
+    Number(monto) > saldoOrigen;
+
   const listo =
     Number(monto) > 0 &&
+    !sinSaldo && !noAlcanza &&
     (tipo === "ingreso" ? destino : tipo === "egreso" ? origen : origen && destino && origen !== destino);
 
   const guardar = async () => {
@@ -164,10 +175,25 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         <select value={valor} onChange={(e) => set(e.target.value)}
           className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]">
           <option value="">Elegí una bolsa</option>
-          {opciones.map((b) => (
-            <option key={b.id} value={b.id}>{b.nombre} — {fmt(b.saldo_actual)}</option>
-          ))}
+          {opciones.map((b) => {
+            const vacia = esOrigenDeGasto && Number(b.saldo_actual) <= 0;
+            return (
+              <option key={b.id} value={b.id} disabled={vacia}>
+                {b.nombre} — {vacia ? "sin saldo" : fmt(b.saldo_actual)}
+              </option>
+            );
+          })}
         </select>
+        {esOrigenDeGasto && sinSaldo && (
+          <span className="block text-[11px] text-red-400 mt-1">
+            Esa bolsa está en cero. Elegí otra, o trasladá dinero hacia ella antes de registrar el gasto.
+          </span>
+        )}
+        {esOrigenDeGasto && noAlcanza && (
+          <span className="block text-[11px] text-red-400 mt-1">
+            En esa bolsa hay {fmt(saldoOrigen)} y el gasto es de {fmt(monto)}. Faltan {fmt(Number(monto) - saldoOrigen)}.
+          </span>
+        )}
         {esOrigenDeGasto && ocultas > 0 && (
           <span className="block text-[10px] text-[#6b7280] mt-1">
             {ocultas === 1 ? "Hay una bolsa apartada que no" : `Hay ${ocultas} bolsas apartadas que no`}
@@ -229,7 +255,13 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
           }} />
       )}
 
-      {tipo === "egreso" && (
+      {tipo === "egreso" && (sinSaldo || noAlcanza) && (
+        <p className="text-[11px] text-[#8A93A3] text-center py-2">
+          Resolvé lo de la bolsa y seguimos con la obra y la categoría.
+        </p>
+      )}
+
+      {tipo === "egreso" && !sinSaldo && !noAlcanza && (
         <>
           <div className="flex items-end gap-2">
             <label className="block flex-1">
@@ -256,11 +288,11 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         </>
       )}
 
-      {tipo !== "traslado" && (
+      {tipo !== "traslado" && !sinSaldo && !noAlcanza && (
         <SelectorCategoria tipo={tipo === "ingreso" ? "ingreso" : "egreso"} valor={categoria} onChange={setCategoria} />
       )}
 
-      {tipo === "egreso" && (
+      {tipo === "egreso" && !sinSaldo && !noAlcanza && (
         <div>
           <div className="flex items-end gap-2">
             <label className="block flex-1">

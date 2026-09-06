@@ -607,7 +607,11 @@ async function cargarComprobantesConEnlaces() {
 
   const urlPorRuta = {};
   if (filas.length > 0) {
-    const rutas = filas.map((row) => row.imagen_url);
+    // Las boletas extra del mismo pago tambien hay que firmarlas, o
+    // llegarian sin URL y no se verian.
+    const rutas = filas
+      .flatMap((row) => [row.imagen_url, ...(row.imagenes_extra || [])])
+      .filter((r) => r && !/^https?:\/\//i.test(r));
     const { data: firmados, error: errFirmas } = await supabase.storage
       .from("comprobantes").createSignedUrls(rutas, 3600);
     if (errFirmas) {
@@ -626,6 +630,10 @@ async function cargarComprobantesConEnlaces() {
       // La ruta tal cual quedo guardada. Si empieza con http es un enlace
       // externo (Drive, por ejemplo) y el cliente no lo puede abrir.
       imagenUrlCruda: row.imagen_url || null,
+      // Las demas boletas del mismo pago, ya resueltas a URL firmada.
+      imagenesExtra: (row.imagenes_extra || [])
+        .map((r) => ({ imagen: urlPorRuta[r] || null, imagenUrlCruda: r, estado: row.estado }))
+        .filter((x) => x.imagen),
       fecha: row.created_at,
       estado: row.estado,
       montoDepositado: Number(row.monto_depositado),
@@ -662,23 +670,36 @@ async function sincronizarCuotas(propiedadId, tabla) {
 
 // ---------- Comprobantes de pago: subida real a Supabase Storage + tabla `comprobantes` ----------
 
-async function subirImagenComprobante(propiedadId, cuotaNumero, file) {
+// Un mismo pago puede venir en varias boletas: el cliente deposita en dos
+// partidas y manda las dos fotos. Se suben todas y quedan bajo un solo
+// comprobante; crear uno por foto duplicaría el monto.
+async function subirImagenComprobante(propiedadId, cuotaNumero, files) {
+  const lista = Array.isArray(files) ? files : [files];
+  if (lista.length === 0) return null;
+
   const { data: cuotaRow, error: errCuota } = await supabase
     .from("cuotas").select("id").eq("propiedad_id", propiedadId).eq("numero", cuotaNumero).single();
   if (errCuota || !cuotaRow) { console.error("No se encontró la cuota en Supabase:", errCuota); return null; }
 
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${propiedadId}/${cuotaRow.id}-${Date.now()}.${ext}`;
-  const { error: errUpload } = await supabase.storage.from("comprobantes").upload(path, file, { upsert: true });
-  if (errUpload) { console.error("Error subiendo comprobante a Storage:", errUpload); return null; }
+  const rutas = [];
+  for (let i = 0; i < lista.length; i++) {
+    const file = lista[i];
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `${propiedadId}/${cuotaRow.id}-${Date.now()}-${i}.${ext}`;
+    const { error: errUpload } = await supabase.storage
+      .from("comprobantes").upload(path, file, { upsert: true });
+    if (errUpload) { console.error("Error subiendo comprobante a Storage:", errUpload); return null; }
+    rutas.push(path);
+  }
 
-  return { cuotaId: cuotaRow.id, path };
+  return { cuotaId: cuotaRow.id, path: rutas[0], extras: rutas.slice(1) };
 }
 
-async function guardarComprobanteEnBD(cuotaId, path, datos) {
+async function guardarComprobanteEnBD(cuotaId, path, datos, extras) {
   const { error } = await supabase.from("comprobantes").insert({
     cuota_id: cuotaId,
     imagen_url: path,
+    imagenes_extra: (extras && extras.length > 0) ? extras : null,
     monto_depositado: datos.montoDepositado,
     mora_al_subir: datos.moraAlSubir,
     monto_requerido: datos.montoRequerido,
@@ -6029,7 +6050,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         {est === "revision" && f.comprobante && (
           <div className="mt-3 pt-3 border-t border-[#2A3547]">
             <div className="flex items-center gap-3">
-              <button onClick={() => setGaleriaAmpliada({ imagenes: f.comprobantesHistorial && f.comprobantesHistorial.length > 1 ? f.comprobantesHistorial : [f.comprobante], indice: (f.comprobantesHistorial && f.comprobantesHistorial.length > 1) ? f.comprobantesHistorial.length - 1 : 0 })} className="shrink-0">
+              <button onClick={() => {
+                const base = (f.comprobantesHistorial && f.comprobantesHistorial.length > 1)
+                  ? f.comprobantesHistorial : [f.comprobante];
+                // Cada comprobante puede traer varias boletas del mismo pago
+                const todas = base.flatMap((c) => c ? [c, ...(c.imagenesExtra || [])] : []);
+                setGaleriaAmpliada({ imagenes: todas, indice: Math.max(0, todas.length - 1) });
+              }} className="shrink-0">
                 {esPdf(f.comprobante) ? (
                   <div className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 rounded-md border border-[#2A3547] bg-[#0C121C]">
                     <FileText size={20} className="text-[#C9A227]" />
@@ -7152,7 +7179,9 @@ function Badge({ estado }) {
 function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const [monto, setMonto] = useState(0);
   const [destino, setDestino] = useState(null);
-  const [archivo, setArchivo] = useState(null);
+  // Varias boletas del mismo pago: el cliente puede depositar en dos
+  // partidas y mandar las dos fotos.
+  const [archivos, setArchivos] = useState([]);
   const [fechaPagoReal, setFechaPagoReal] = useState(hoy);
   const [notaCliente, setNotaCliente] = useState("");
 
@@ -7162,12 +7191,12 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const excedente = montoNum > 0 ? Math.max(0, montoNum - montoRequerido) : 0;
   const faltante = montoNum > 0 ? Math.max(0, montoRequerido - montoNum) : 0;
   const necesitaDestino = excedente > 0.009 && aTiempo;
-  const puedeEnviar = montoNum > 0 && archivo && fechaPagoReal && (!necesitaDestino || destino);
+  const puedeEnviar = montoNum > 0 && archivos.length > 0 && fechaPagoReal && (!necesitaDestino || destino);
 
   const enviar = () => {
     const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
     onEnviar({
-      archivo,
+      archivo: archivos,
       montoDepositado: montoNum,
       moraAlSubir: moraPendiente,
       montoRequerido,
@@ -7225,10 +7254,34 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
         <div className="text-[11px] text-[#8A93A3]">Como este pago llega después de los días de gracia, el excedente de {fmt(excedente)} se guardará como crédito para tu siguiente cuota.</div>
       )}
 
+      {archivos.length > 0 && (
+        <div className="space-y-1">
+          {archivos.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <FileText size={13} className="text-[#C9A227] shrink-0" />
+              <span className="text-[11px] truncate flex-1">{a.name}</span>
+              <button type="button" onClick={() => setArchivos(archivos.filter((_, j) => j !== i))}
+                className="text-[#8A93A3] hover:text-[#EDE7D9] shrink-0"><X size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <label className="flex items-center justify-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md cursor-pointer">
-        <Upload size={13} /> {archivo ? archivo.name : "Adjuntar el depósito (foto o PDF)"}
-        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
+        <Upload size={13} />
+        {archivos.length === 0 ? "Adjuntar el depósito (foto o PDF)" : "Agregar otra boleta"}
+        <input type="file" accept="image/*,application/pdf" multiple className="hidden"
+          onChange={(e) => {
+            const nuevos = Array.from(e.target.files || []);
+            if (nuevos.length) setArchivos([...archivos, ...nuevos]);
+            e.target.value = "";
+          }} />
       </label>
+      {archivos.length > 1 && (
+        <div className="text-[11px] text-[#8A93A3]">
+          Las {archivos.length} boletas quedan juntas como un solo pago de {fmt(montoNum)}.
+        </div>
+      )}
 
       <button disabled={!puedeEnviar || subiendo} onClick={enviar} className="w-full text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded-md">
         {subiendo ? "Enviando..." : "Enviar comprobante"}
@@ -7304,12 +7357,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
     setSubiendoIdx(idx);
     try {
       const numero = prop.tabla[idx].numero;
-      const base64 = await fileToBase64(datos.archivo);
+      const archivos = Array.isArray(datos.archivo) ? datos.archivo : [datos.archivo];
+      const base64 = await fileToBase64(archivos[0]);
 
       // Sube la imagen real a Supabase Storage y registra el comprobante en la base de datos.
-      const subido = await subirImagenComprobante(prop.id, numero, datos.archivo);
+      const subido = await subirImagenComprobante(prop.id, numero, archivos);
       if (subido) {
-        await guardarComprobanteEnBD(subido.cuotaId, subido.path, datos);
+        await guardarComprobanteEnBD(subido.cuotaId, subido.path, datos, subido.extras);
       } else {
         console.error("No se pudo respaldar el comprobante en la nube; se guarda solo localmente por ahora.");
       }
@@ -7382,7 +7436,10 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           const lista = (f.comprobantesHistorial && f.comprobantesHistorial.length > 0)
             ? f.comprobantesHistorial
             : (f.comprobante ? [f.comprobante] : []);
-          const conImagen = lista.filter((c) => c && c.imagen);
+          // Cada comprobante puede traer varias boletas del mismo pago.
+          const conImagen = lista
+            .flatMap((c) => c ? [c, ...(c.imagenesExtra || [])] : [])
+            .filter((c) => c && c.imagen);
           if (conImagen.length === 0) return null;
           return (
             <div className="mt-3 pt-3 border-t border-[#2A3547]">

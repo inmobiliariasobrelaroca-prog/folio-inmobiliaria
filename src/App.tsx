@@ -2158,9 +2158,37 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     linkVentas: LINK_SITIO_VENTAS.replace("https://", ""),
   });
 
+  // Cada cotización que sale queda registrada: quién, sobre qué lote, con
+  // qué números y a quién. Si el asesor puso nombre y teléfono, van también.
+  // Falla en silencio a propósito: si el registro no entra, la cotización
+  // igual se envía. No se le va a arruinar una venta por la bitácora.
+  const registrarCotizacion = (accion) => {
+    supabase.from("cotizaciones").insert({
+      asesor_id: asesor?.id || null,
+      asesor_nombre: asesor?.nombre || null,
+      propiedad_venta_id: propiedad.id,
+      propiedad_nombre: propiedad.nombre,
+      lote_id: lote?.id || null,
+      lote_numero: lote?.numero || null,
+      cliente_nombre: cliente.trim() || null,
+      cliente_telefono: whatsapp.trim() || null,
+      precio: precioNum || null,
+      enganche: engancheNum || null,
+      tasa_anual: tasaNum || null,
+      plazo_anios: Number(anios) || null,
+      cuota: cuota || null,
+      sistema,
+      accion,
+      bajo_precio_lista: !!precioNecesitaAutorizacion,
+    }).then(({ error }) => {
+      if (error) console.error("No se registró la cotización:", error);
+    });
+  };
+
   const descargarPdf = async () => {
     setErrorPdf("");
     setGenerandoPdf(true);
+    registrarCotizacion("pdf");
     try {
       const doc = await construirPdfCotizacion(armarDatosPdf());
       doc.save(nombreArchivoPdf());
@@ -2178,6 +2206,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // de ventas (ver linkPropiedadVenta). "Descargar PDF" se deja aparte, como
   // botón independiente, por si alguna vez se necesita a mano.
   const enviarPorWhatsApp = () => {
+    registrarCotizacion("whatsapp");
     window.open(urlWhatsapp, "_blank", "noopener");
   };
 
@@ -2296,7 +2325,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <button type="button" disabled={generandoPdf} onClick={descargarPdf} className="w-full border border-[#2A3547] text-[#EDE7D9] disabled:opacity-40 py-3 rounded-md text-sm">
                 {generandoPdf ? "Preparando PDF..." : "Descargar PDF"}
               </button>
-              <button type="button" onClick={() => window.print()} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
+              <button type="button" onClick={() => { registrarCotizacion("impresion"); window.print(); }} className="w-full text-[11px] text-[#8A93A3] py-1.5">Imprimir directamente</button>
               {errorPdf && <div className="text-[11px] text-red-400 text-center">{errorPdf}</div>}
               <p className="text-[10px] text-[#8A93A3] text-center leading-relaxed">
                 "Enviar por WhatsApp" abre el chat con el mensaje de texto de siempre, con toda la información de la propiedad y el link para ver esa casa en el sitio de ventas. "Descargar PDF" genera aparte un PDF con la tabla de pagos completa, por si lo necesitas adjuntar a mano. Si usas "Imprimir directamente", recuerda desactivar "Encabezados y pies de página" en el diálogo de impresión — si no, el navegador agrega la dirección web de esta página al pie de cada hoja.
@@ -4234,6 +4263,183 @@ function PantallaAsesoresVenta({ onVolver }) {
   );
 }
 
+// Bitácora del cotizador: cuántas cotizaciones hace cada asesor, sobre qué
+// lotes, y quiénes dejaron su nombre y teléfono. Los interesados son lo más
+// valioso de aquí: son las personas a las que se les puede dar seguimiento.
+function ReporteCotizaciones() {
+  const [porAsesor, setPorAsesor] = useState([]);
+  const [porLote, setPorLote] = useState([]);
+  const [interesados, setInteresados] = useState([]);
+  const [ultimas, setUltimas] = useState([]);
+  const [vista, setVista] = useState("asesor");
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [a, l, i, u] = await Promise.all([
+        supabase.from("v_cotiz_por_asesor").select("*").order("cotizaciones", { ascending: false }),
+        supabase.from("v_cotiz_por_lote").select("*").order("veces_cotizado", { ascending: false }),
+        supabase.from("v_cotiz_interesados").select("*").order("ultima", { ascending: false }),
+        supabase.from("cotizaciones").select("*").order("created_at", { ascending: false }).limit(40),
+      ]);
+      setPorAsesor(a.data || []); setPorLote(l.data || []);
+      setInteresados(i.data || []); setUltimas(u.data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando el reporte...</div>;
+
+  const total = porAsesor.reduce((s, r) => s + Number(r.cotizaciones), 0);
+  if (total === 0) {
+    return (
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 text-sm text-[#8A93A3]">
+        Todavía no se ha hecho ninguna cotización. En cuanto un asesor envíe la
+        primera, aquí vas a ver cuántas lleva y sobre qué lotes.
+      </div>
+    );
+  }
+
+  const conCliente = porAsesor.reduce((s, r) => s + Number(r.con_cliente), 0);
+  const conDescuento = porAsesor.reduce((s, r) => s + Number(r.con_descuento), 0);
+  const fechaCorta = (iso) =>
+    new Date(iso).toLocaleString("es-GT", { dateStyle: "medium", timeStyle: "short" });
+
+  return (
+    <div className="mb-2">
+      <h2 className="font-serif text-lg mb-1.5">Cotizaciones</h2>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <TarjetaCotiz rotulo="Cotizaciones" valor={total} />
+        <TarjetaCotiz rotulo="Con datos del interesado" valor={conCliente}
+                 pie={total ? `${Math.round(conCliente / total * 100)}% del total` : null} />
+        <TarjetaCotiz rotulo="Bajo precio de lista" valor={conDescuento}
+                 alerta={conDescuento > 0} />
+      </div>
+
+      <div className="flex gap-1.5 mb-2.5">
+        {[["asesor", "Por asesor"], ["lote", "Por lote"],
+          ["interesados", `Interesados (${interesados.length})`], ["ultimas", "Últimas"]].map(([k, t]) => (
+          <button key={k} onClick={() => setVista(k)}
+            className={`text-[11px] px-2.5 py-1.5 rounded-md ${
+              vista === k ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {vista === "asesor" && (
+        <div className="space-y-1.5">
+          {porAsesor.map((r) => (
+            <div key={r.asesor} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm">{r.asesor}</div>
+                <div className="font-mono text-sm">{r.cotizaciones}</div>
+              </div>
+              <div className="text-[11px] text-[#8A93A3]">
+                {r.lotes_distintos} lote{r.lotes_distintos === 1 ? "" : "s"} distinto
+                {r.lotes_distintos === 1 ? "" : "s"} · {r.con_cliente} con datos del interesado
+                {Number(r.con_descuento) > 0 && (
+                  <span className="text-amber-400"> · {r.con_descuento} bajo precio de lista</span>
+                )}
+              </div>
+              {r.ultima && <div className="text-[10px] text-[#6b7280] mt-0.5">Última: {fechaCorta(r.ultima)}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {vista === "lote" && (
+        <div className="space-y-1.5">
+          {porLote.map((r) => (
+            <div key={r.lote_numero} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-md bg-[#0C121C] border border-[#2A3547] flex items-center justify-center font-mono text-sm shrink-0">
+                {r.lote_numero}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px]">
+                  Sector {r.sector || "?"} · {r.estado_lote || "sin estado"}
+                </div>
+                <div className="text-[10px] text-[#8A93A3]">
+                  {r.asesores} asesor{r.asesores === 1 ? "" : "es"} · {r.con_cliente} con datos
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-mono text-sm">{r.veces_cotizado}</div>
+                <div className="text-[10px] text-[#8A93A3]">veces</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {vista === "interesados" && (
+        interesados.length === 0 ? (
+          <div className="text-[11px] text-[#8A93A3] p-3">
+            Ninguna cotización trae nombre del interesado todavía. Vale la pena
+            pedirle al asesor que lo llene: es la lista a la que se le da seguimiento.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {interesados.map((r, i) => (
+              <div key={i} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm truncate">{r.cliente_nombre}</div>
+                  {r.cliente_telefono && (
+                    <a href={`https://wa.me/502${String(r.cliente_telefono).replace(/\D/g, "")}`}
+                       target="_blank" rel="noopener noreferrer"
+                       className="text-[11px] text-[#C9A227] shrink-0">{r.cliente_telefono}</a>
+                  )}
+                </div>
+                <div className="text-[11px] text-[#8A93A3]">
+                  {r.cotizaciones} cotización{r.cotizaciones === 1 ? "" : "es"}
+                  {r.lotes ? ` · lote${r.lotes.includes(",") ? "s" : ""} ${r.lotes}` : ""}
+                  {r.asesor ? ` · con ${r.asesor}` : ""}
+                </div>
+                <div className="text-[10px] text-[#6b7280] mt-0.5">
+                  Mejor precio ofrecido {fmt(r.mejor_precio)} · última {fechaCorta(r.ultima)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {vista === "ultimas" && (
+        <div className="space-y-1.5">
+          {ultimas.map((c) => (
+            <div key={c.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] truncate">
+                  {c.asesor_nombre || "Sin identificar"}
+                  {c.lote_numero ? ` · lote ${c.lote_numero}` : ""}
+                  {c.cliente_nombre ? ` · ${c.cliente_nombre}` : ""}
+                </div>
+                <div className="font-mono text-[11px] shrink-0">{fmt(c.precio)}</div>
+              </div>
+              <div className="text-[10px] text-[#8A93A3]">
+                {{ whatsapp: "Enviada por WhatsApp", pdf: "Descargó el PDF", impresion: "Imprimió" }[c.accion]}
+                {" · "}{fechaCorta(c.created_at)}
+                {c.bajo_precio_lista && <span className="text-amber-400"> · descuento sin autorizar</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TarjetaCotiz({ rotulo, valor, pie, alerta }) {
+  return (
+    <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] leading-tight">{rotulo}</div>
+      <div className={`font-mono text-xl mt-0.5 ${alerta ? "text-amber-400" : ""}`}>{valor}</div>
+      {pie && <div className="text-[10px] text-[#6b7280]">{pie}</div>}
+    </div>
+  );
+}
+
 function PantallaActividadVenta({ onVolver }) {
   const [solicitudes, setSolicitudes] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -4253,6 +4459,9 @@ function PantallaActividadVenta({ onVolver }) {
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Actividad</h1>
       </div>
+      <ReporteCotizaciones />
+
+      <h2 className="font-serif text-lg mt-8 mb-1.5">Solicitudes desde el sitio</h2>
       <p className="text-xs text-[#8A93A3] mb-5">Cada vez que alguien elige un asesor en el sitio y envía sus preguntas, queda registrado aquí (más reciente primero).</p>
 
       {cargando ? (

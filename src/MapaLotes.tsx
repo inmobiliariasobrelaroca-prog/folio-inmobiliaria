@@ -32,7 +32,9 @@ const ROTULO = {
 const fmtQ = (n) =>
   "Q " + Number(n || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, asesorId }) {
+// verConteos: el asesor externo no necesita saber cuántos van vendidos ni
+// apartados. Le basta el color de cada lote. La inmobiliaria sí lo ve.
+export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, asesorId, verConteos = false }) {
   const [lotes, setLotes] = useState([]);
   const [apartados, setApartados] = useState([]);
   const [sel, setSel] = useState(null);
@@ -62,7 +64,7 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
         {["disponible", "apartado", "vendido", "no_disponible"].map((e) => (
           <span key={e} className="flex items-center gap-1.5">
             <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR[e] }} />
-            {ROTULO[e]} · {cuenta(e)}
+            {ROTULO[e]}{verConteos ? ` · ${cuenta(e)}` : ""}
           </span>
         ))}
       </div>

@@ -1298,6 +1298,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   const puedeVerLista = !!permisos.ver_precio_lista;
   const puedeCotizar = !!permisos.cotizar;
   const puedeEnviar = !!permisos.enviar_cotizacion;
+  const [seccion, setSeccion] = useState("propiedades");
 
   const [propiedades, setPropiedades] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -1349,6 +1350,22 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
       </div>
 
       <div className="max-w-2xl mx-auto p-5 pb-24">
+        <div className="flex gap-1.5 mb-4">
+          <button onClick={() => setSeccion("propiedades")}
+            className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "propiedades"
+              ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+            Tus propiedades
+          </button>
+          <button onClick={() => setSeccion("reporte")}
+            className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "reporte"
+              ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+            Tu reporte
+          </button>
+        </div>
+
+        {seccion === "reporte" && <MiReporte asesor={usuario} />}
+
+        {seccion === "propiedades" && (<>
         <h1 className="font-serif text-2xl mb-1">Tus propiedades</h1>
         <p className="text-xs text-[#8A93A3] mb-5">Las que la inmobiliaria te asignó para vender.</p>
 
@@ -1389,6 +1406,97 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
             </button>
           ))}
         </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+// El asesor ve su propio desempeño: cuántas cotizaciones lleva, sobre qué
+// lotes y a quiénes. Es la misma bitácora que ve la inmobiliaria, pero RLS
+// solo le devuelve las suyas.
+function MiReporte({ asesor }) {
+  const [filas, setFilas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("cotizaciones")
+        .select("*").order("created_at", { ascending: false }).limit(200);
+      setFilas(data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando tu reporte...</div>;
+
+  if (filas.length === 0) {
+    return (
+      <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-4 text-sm text-[#8A93A3]">
+        Todavía no has enviado ninguna cotización. En cuanto envíes la primera,
+        aquí vas a ver cuántas llevas, sobre qué lotes y a quiénes.
+      </div>
+    );
+  }
+
+  const conDatos = filas.filter((f) => f.cliente_nombre && f.cliente_nombre.trim()).length;
+  const lotes = new Set(filas.filter((f) => f.lote_numero).map((f) => f.lote_numero));
+  const hoy = new Date().toISOString().slice(0, 10);
+  const deHoy = filas.filter((f) => String(f.created_at).slice(0, 10) === hoy).length;
+  const mes = hoy.slice(0, 7);
+  const delMes = filas.filter((f) => String(f.created_at).slice(0, 7) === mes).length;
+
+  const fecha = (iso) =>
+    new Date(iso).toLocaleString("es-GT", { dateStyle: "medium", timeStyle: "short" });
+
+  return (
+    <div>
+      <h1 className="font-serif text-2xl mb-1">Tu reporte</h1>
+      <p className="text-xs text-[#8A93A3] mb-4">
+        Todo lo que has cotizado. Solo vos y la inmobiliaria lo ven.
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <TarjetaCotiz rotulo="En total" valor={filas.length} />
+        <TarjetaCotiz rotulo="Este mes" valor={delMes} pie={deHoy > 0 ? `${deHoy} hoy` : null} />
+        <TarjetaCotiz rotulo="Lotes distintos" valor={lotes.size} />
+        <TarjetaCotiz rotulo="Con datos del cliente" valor={conDatos}
+          pie={`${Math.round(conDatos / filas.length * 100)}% de las tuyas`}
+          alerta={conDatos < filas.length / 2} />
+      </div>
+
+      {conDatos < filas.length && (
+        <div className="text-[11px] text-[#C9A227] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 mb-4">
+          {filas.length - conDatos} de tus cotizaciones salieron sin nombre ni
+          teléfono. Esas ya no se pueden seguir: no queda a quién llamar.
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {filas.map((f) => (
+          <div key={f.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm truncate">
+                {f.cliente_nombre || <span className="text-[#6b7280] italic">Sin nombre</span>}
+              </div>
+              <div className="font-mono text-sm shrink-0">{fmt(f.precio)}</div>
+            </div>
+            <div className="text-[11px] text-[#8A93A3]">
+              {f.lote_numero ? `Lote ${f.lote_numero} · ` : ""}
+              {f.propiedad_nombre}
+              {f.cliente_telefono ? ` · ${f.cliente_telefono}` : ""}
+            </div>
+            <div className="text-[10px] text-[#6b7280] mt-0.5">
+              {fecha(f.created_at)}
+              {f.enganche ? ` · enganche ${fmt(f.enganche)}` : ""}
+              {f.plazo_anios ? ` · ${f.plazo_anios} años` : ""}
+              {f.cuota ? ` · cuota ${fmt(f.cuota)}` : ""}
+              {f.bajo_precio_lista && (
+                <span className="text-amber-400"> · bajo precio de lista</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2233,6 +2341,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                   proyectoVentaId={propiedad.proyecto_venta_id}
                   asesorId={asesor?.id}
                   puedeApartar={true}
+                  verConteos={asesor?.tipo !== "asesor_externo"}
                   onCotizar={(l) => { setLote(l); setVerMapa(false); }}
                 />
               )}
@@ -2249,6 +2358,13 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
             <Campo label="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5555 5555" />
           </div>
+          {(!cliente.trim() || !whatsapp.trim()) && (
+            <div className="text-[11px] text-[#C9A227] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 -mt-1">
+              Llená el nombre y el teléfono. Es lo que después te deja volver a
+              buscar a esa persona: sin eso la cotización se va y no queda a
+              quién llamar. Tu reporte también los cuenta.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
             {precioNecesitaAutorizacion && (

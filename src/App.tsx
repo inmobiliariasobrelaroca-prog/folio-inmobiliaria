@@ -2168,10 +2168,17 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
   const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
 
+  // Al asesor externo se le muestra el techo pero no el piso. Si conoce el
+  // mínimo, el descuento deja de ser algo que se autoriza y pasa a ser su
+  // punto de partida en cada negociación.
+  const verPiso = sinRestriccionDeRango || asesor?.tipo !== "asesor_externo";
+
   const precioHint = (precioMin != null || precioMax != null)
-    ? (puedeVerMinimo
+    ? (verPiso && puedeVerMinimo
         ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
-        : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
+        : (precioFueraDeRango
+            ? "Ese precio no se puede cotizar. Consultalo con la inmobiliaria."
+            : (precioMax != null ? `Precio de lista: ${fmt(precioMax)}` : null)))
     : null;
   const engancheHint = engancheMin != null ? `${sinRestriccionDeRango ? "Sugerido" : "Mínimo"}: ${fmt(engancheMin)}` : null;
   const tasaHint = (tasaMin != null || tasaMax != null)
@@ -2352,7 +2359,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <Dato k="Tasa sugerida" v={cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar"} />
               <Dato k="Enganche desde" v={engancheMin != null ? fmt(engancheMin) : "sin mínimo"} />
               <Dato k="Plazo máximo" v={propiedad.financiamiento_plazo_max_anios ? `${propiedad.financiamiento_plazo_max_anios} años` : "sin tope"} />
-              {puedeVerMinimo && (precioMin != null || precioMax != null) && (
+              {verPiso && puedeVerMinimo && (precioMin != null || precioMax != null) && (
                 <Dato k="Rango de precio"
                       v={`${precioMin != null ? fmt(precioMin) : "—"} a ${precioMax != null ? fmt(precioMax) : "—"}`} />
               )}

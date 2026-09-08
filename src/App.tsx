@@ -12,7 +12,8 @@ import autoTable from "jspdf-autotable";
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
+  Tag
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -2109,6 +2110,16 @@ function linkPropiedadVenta(propiedad) {
   return codigo ? `${LINK_SITIO_VENTAS}/#/casa/${encodeURIComponent(codigo)}` : `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
 }
 
+// Un par etiqueta/valor de una línea, para la ficha de datos guardados.
+function Dato({ k, v }) {
+  return (
+    <div className="flex justify-between gap-2 min-w-0">
+      <span className="text-[#8A93A3] shrink-0">{k}</span>
+      <span className="font-mono truncate text-right">{v}</span>
+    </div>
+  );
+}
+
 function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
@@ -2330,6 +2341,48 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
         </div>
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
+          {/* Lo que está guardado para esta casa. Sirve de referencia sin
+              tener que salir a buscarlo al catálogo. */}
+          <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
+            <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
+              Lo que está guardado para esta casa
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+              <Dato k="Precio de lista" v={propiedad.precio != null ? fmt(propiedad.precio) : "sin cargar"} />
+              <Dato k="Tasa sugerida" v={cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar"} />
+              <Dato k="Enganche desde" v={engancheMin != null ? fmt(engancheMin) : "sin mínimo"} />
+              <Dato k="Plazo máximo" v={propiedad.financiamiento_plazo_max_anios ? `${propiedad.financiamiento_plazo_max_anios} años` : "sin tope"} />
+              {puedeVerMinimo && (precioMin != null || precioMax != null) && (
+                <Dato k="Rango de precio"
+                      v={`${precioMin != null ? fmt(precioMin) : "—"} a ${precioMax != null ? fmt(precioMax) : "—"}`} />
+              )}
+              {(tasaMin != null || tasaMax != null) && (
+                <Dato k="Rango de tasa"
+                      v={`${tasaMin != null ? fmtNum(tasaMin) : "—"}% a ${tasaMax != null ? fmtNum(tasaMax) : "—"}%`} />
+              )}
+              {propiedad.aplica_luz && (
+                <Dato k="Luz" v={`${fmt(propiedad.monto_luz_mensual || 0)} al mes`} />
+              )}
+              {propiedad.aplica_mantenimiento && (
+                <Dato k="Mantenimiento" v={`${fmt(propiedad.monto_mantenimiento_mensual || 0)} al mes`} />
+              )}
+              {propiedad.metros_construccion && (
+                <Dato k="Construcción" v={`${propiedad.metros_construccion} m²`} />
+              )}
+              {propiedad.metros_terreno && (
+                <Dato k="Terreno" v={`${propiedad.metros_terreno} m²`} />
+              )}
+              {propiedad.habitaciones && <Dato k="Habitaciones" v={propiedad.habitaciones} />}
+              {propiedad.banos && <Dato k="Baños" v={propiedad.banos} />}
+            </div>
+            {sinRestriccionDeRango && (
+              <div className="text-[10px] text-[#6b7280] mt-2">
+                Como interno podés salirte de estos rangos; son la referencia,
+                no un límite para vos.
+              </div>
+            )}
+          </div>
+
           {propiedad.proyecto_venta_id && (
             <div className="space-y-2">
               <button type="button" onClick={() => setVerMapa(!verMapa)}
@@ -3026,7 +3079,7 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           {/* Acceso directo al cotizador, sin pasar por el catálogo */}
           {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
             <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Calculator size={16} />
+              <Tag size={16} />
             </button>
           )}
 <BotonTesoreria perfil={perfil} />

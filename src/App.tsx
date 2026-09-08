@@ -2885,6 +2885,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           onEquipo={() => setPantalla("equipo")}
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
+          onCotizar={() => setPantalla("cotizadorDirecto")}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
@@ -2907,6 +2908,13 @@ function AppInterno({ perfil, cerrarSesion }) {
           />
         )}
 
+        {modo === "inmobiliaria" && pantalla === "cotizadorDirecto" && (
+          <PantallaCotizadorDirecto
+            usuario={perfil.usuario}
+            onVolver={() => setPantalla("proyectos")}
+          />
+        )}
+
         {modo === "inmobiliaria" && pantalla === "catalogoActividad" && (
           <PantallaActividadVenta onVolver={() => setPantalla("catalogoVentas")} />
         )}
@@ -2923,6 +2931,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           <PantallaDetallePropiedadVenta
             propiedadId={catalogoPropiedadSel}
             onVolver={() => setPantalla("catalogoPropiedades")}
+            usuario={perfil.usuario}
           />
         )}
 
@@ -2981,7 +2990,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -3012,6 +3021,12 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           {puedeVerCatalogo && modo === "inmobiliaria" && (
             <button onClick={onCatalogo} title="Catálogo de ventas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Globe size={16} />
+            </button>
+          )}
+          {/* Acceso directo al cotizador, sin pasar por el catálogo */}
+          {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
+            <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Calculator size={16} />
             </button>
           )}
 <BotonTesoreria perfil={perfil} />
@@ -4051,7 +4066,7 @@ function CondicionesVentaPrivadas({ propiedadId }) {
   );
 }
 
-function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
+function PantallaDetallePropiedadVenta({ propiedadId, onVolver, usuario }) {
   const [p, setP] = useState(null);
   const [proyecto, setProyecto] = useState(null);
   const [fotos, setFotos] = useState([]);
@@ -4060,10 +4075,17 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
   const [nuevaCaract, setNuevaCaract] = useState("");
+  // El cotizador es el mismo que usa el asesor. Desde aquí se abre sin
+  // límites de rango, porque quien entra por el catálogo es la inmobiliaria.
+  const [cotizando, setCotizando] = useState(false);
+  const [condiciones, setCondiciones] = useState(null);
 
   const cargar = async () => {
     setCargando(true);
     const { data: prop } = await supabase.from("propiedades_venta").select("*").eq("id", propiedadId).maybeSingle();
+    const { data: cond } = await supabase.from("propiedades_venta_condiciones")
+      .select("*").eq("propiedad_venta_id", propiedadId).maybeSingle();
+    setCondiciones(cond || null);
     const { data: fs } = await supabase.from("fotos_propiedad_venta").select("*").eq("propiedad_venta_id", propiedadId).order("orden");
     let proy = null;
     if (prop?.proyecto_venta_id) {
@@ -4168,11 +4190,30 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver }) {
 
   const fotosOrdenadas = [...fotos].sort((a, b) => a.orden - b.orden);
 
+  // El cotizador espera la propiedad con sus condiciones adentro, igual que
+  // se la arma la pantalla del asesor. Se entra como interno, así que no hay
+  // tope de rango: la inmobiliaria puede cotizar el precio que decida.
+  if (cotizando) {
+    return (
+      <CotizadorAsesor
+        propiedad={{ ...p, condiciones: condiciones || {} }}
+        puedeEnviar={true}
+        puedeVerMinimo={true}
+        asesor={{ ...(usuario || {}), tipo: "asesor_interno" }}
+        onVolver={() => setCotizando(false)}
+      />
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
       <div className="flex items-center gap-2 mb-5">
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
-        <h1 className="font-serif text-2xl">{p.nombre || "Propiedad"}</h1>
+        <h1 className="font-serif text-2xl flex-1">{p.nombre || "Propiedad"}</h1>
+        <button onClick={() => setCotizando(true)}
+          className="text-[11px] bg-[#C9A227] text-[#101826] font-medium px-3 py-1.5 rounded-md shrink-0">
+          Cotizar
+        </button>
       </div>
 
       <div className="space-y-4">
@@ -4552,6 +4593,79 @@ function TarjetaCotiz({ rotulo, valor, pie, alerta }) {
       <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] leading-tight">{rotulo}</div>
       <div className={`font-mono text-xl mt-0.5 ${alerta ? "text-amber-400" : ""}`}>{valor}</div>
       {pie && <div className="text-[10px] text-[#6b7280]">{pie}</div>}
+    </div>
+  );
+}
+
+// Acceso directo al cotizador desde el TopBar, sin pasar por el catálogo.
+// Muestra las casas a la venta y al elegir una abre el mismo cotizador que
+// usa el asesor, pero como interno: sin tope de rango.
+function PantallaCotizadorDirecto({ usuario, onVolver }) {
+  const [casas, setCasas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [sel, setSel] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("propiedades_venta")
+        .select("*, proyectos_venta(nombre), propiedades_venta_condiciones(*)")
+        .order("orden");
+      setCasas(data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  if (sel) {
+    return (
+      <CotizadorAsesor
+        propiedad={{ ...sel, condiciones: sel.propiedades_venta_condiciones?.[0] || {} }}
+        puedeEnviar={true}
+        puedeVerMinimo={true}
+        asesor={{ ...(usuario || {}), tipo: "asesor_interno" }}
+        onVolver={() => setSel(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto p-5 pb-24">
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+        <h1 className="font-serif text-2xl">Cotizador</h1>
+      </div>
+      <p className="text-xs text-[#8A93A3] mb-5">
+        Elegí la casa y armá la cotización. Desde aquí no hay tope de precio
+        ni de enganche: los rangos son para los asesores.
+      </p>
+
+      {cargando && <div className="text-sm text-[#8A93A3]">Cargando...</div>}
+      {!cargando && casas.length === 0 && (
+        <div className="text-sm text-[#8A93A3]">
+          No hay casas cargadas en el catálogo de ventas todavía.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {casas.map((c) => (
+          <button key={c.id} onClick={() => setSel(c)}
+            className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 hover:border-[#C9A227] transition">
+            <div className="text-sm font-medium">
+              {c.nombre}
+              {c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}
+            </div>
+            <div className="text-[11px] text-[#8A93A3] mb-1.5">{c.proyectos_venta?.nombre}</div>
+            {c.precio != null && (
+              <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
+            )}
+            <div className="text-[10px] text-[#6b7280] mt-0.5">
+              {c.estado === "vendida" ? "Vendida" : "Disponible"}
+              {c.financiamiento_enganche_desde
+                ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

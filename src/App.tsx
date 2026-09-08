@@ -3,6 +3,7 @@ import './movil.css';
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import GuardiaSesion from "./GuardiaSesion";
+import MapaLotes from "./MapaLotes";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
@@ -2011,6 +2012,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [sistema, setSistema] = useState("nivelada");
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [errorPdf, setErrorPdf] = useState("");
+  // Lote elegido en el plano. La casa es la misma; lo que cambia es el
+  // terreno, y en este proyecto hay lotes de 112 y de 128 m².
+  const [lote, setLote] = useState(null);
+  const [verMapa, setVerMapa] = useState(false);
 
   const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
   const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
@@ -2032,6 +2037,14 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const sinRestriccionDeRango = asesor?.tipo === "asesor_interno";
 
   const precioFueraDeRango = !sinRestriccionDeRango && precioNum > 0 && ((precioMin != null && precioNum < precioMin) || (precioMax != null && precioNum > precioMax));
+
+  // Bajar del precio de lista sí se permite hasta el mínimo, pero es un
+  // descuento: se cotiza y se envía, sólo que queda advertido que todavía
+  // no está autorizado. Distinto de estar fuera de rango, que sí bloquea.
+  const precioDeLista = propiedad.precio != null ? Number(propiedad.precio) : null;
+  const precioNecesitaAutorizacion =
+    !sinRestriccionDeRango && !precioFueraDeRango &&
+    precioDeLista != null && precioNum > 0 && precioNum < precioDeLista;
   const engancheFueraDeRango = !sinRestriccionDeRango && engancheMin != null && engancheNum < engancheMin;
   const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
   const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
@@ -2180,12 +2193,42 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
         </div>
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
+          {propiedad.proyecto_venta_id && (
+            <div className="space-y-2">
+              <button type="button" onClick={() => setVerMapa(!verMapa)}
+                className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
+                {verMapa ? "Ocultar el plano" : (lote ? `Lote ${lote.numero} · cambiar` : "Ver el plano y elegir lote")}
+              </button>
+              {verMapa && (
+                <MapaLotes
+                  proyectoVentaId={propiedad.proyecto_venta_id}
+                  asesorId={asesor?.id}
+                  puedeApartar={true}
+                  onCotizar={(l) => { setLote(l); setVerMapa(false); }}
+                />
+              )}
+              {lote && !verMapa && (
+                <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+                  Cotizando sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
+                  {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
             <Campo label="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5555 5555" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
+            {precioNecesitaAutorizacion && (
+              <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2 -mt-1">
+                Este precio está {fmt(precioDeLista - precioNum)} abajo del precio de lista
+                de {fmt(precioDeLista)}. Podés cotizarlo, pero el descuento
+                todavía tiene que autorizarse antes de cerrar la venta.
+              </div>
+            )}
             <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} hint={engancheHint} invalid={engancheFueraDeRango} />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -2234,6 +2277,12 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               {fueraDeRango && (
                 <div className="text-[11px] text-red-400 border-t border-red-900 pt-2">
                   Hay valores fuera del rango permitido para esta propiedad — ajústalos arriba para poder enviar o imprimir.
+                </div>
+              )}
+              {precioNecesitaAutorizacion && !fueraDeRango && (
+                <div className="text-[11px] text-amber-400 border-t border-amber-900 pt-2">
+                  Ojo: esta cotización lleva un descuento de {fmt(precioDeLista - precioNum)} sobre
+                  el precio de lista y todavía falta autorizarlo.
                 </div>
               )}
             </div>

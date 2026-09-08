@@ -20,7 +20,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard } from "lucide-react";
+import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard, Home } from "lucide-react";
 import { fmt } from "./tesoreria/comun";
 import MapaFlujo from "./tesoreria/Mapa";
 import { ResumenTesoreria, MovimientosTesoreria } from "./tesoreria/Resumen";
@@ -32,10 +32,11 @@ import Permisos from "./tesoreria/Permisos";
 import Anticipos from "./tesoreria/Anticipos";
 import Rentas from "./tesoreria/Rentas";
 import Tarjetas from "./tesoreria/Tarjetas";
+import Fuentes from "./tesoreria/Fuentes";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v48";
+const VERSION = "v51";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -124,6 +125,7 @@ function PanelTesoreria({ perfil, onCerrar }) {
     ["anticipos", "Adelantos", Users, esSuper],
     ["rentas", "Rentas", Store, puede("finanzas_registrar")],
     ["tarjetas", "Tarjetas", CreditCard, esSuper],
+    ["fuentes", "Fuentes", Home, esSuper],
     ["movimientos", "Movimientos", FileText, true],
     ["permisos", "Permisos", Shield, esSuper],
   ].filter((p) => p[3]);
@@ -278,6 +280,8 @@ function PanelTesoreria({ perfil, onCerrar }) {
           <Rentas onCambio={cargar} />
         ) : tab === "tarjetas" ? (
           <Tarjetas bolsas={bolsas} onCambio={cargar} />
+        ) : tab === "fuentes" ? (
+          <Fuentes onCambio={cargar} />
         ) : tab === "permisos" ? (
           <Permisos />
         ) : (

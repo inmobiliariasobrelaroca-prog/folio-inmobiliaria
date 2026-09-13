@@ -7111,6 +7111,19 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
               <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {/* Deuda pactada aparte del crédito: obra extra, mejoras. Va
+                  junto al monto financiado porque es parte de lo que se debe,
+                  aunque no forme parte del préstamo ni genere intereses. */}
+              {prop.cargoExtraMonto > 0 && (
+                <>
+                  <Fila2 label={prop.cargoExtraConcepto || "Cargo adicional"}
+                         value={fmt(prop.cargoExtraMonto)} />
+                  <div className="text-[11px] text-[#C9A227] text-right -mt-1">
+                    Sin intereses ni mora
+                    {prop.cargoExtraVence ? ` · a pagar antes del ${fmtDate(prop.cargoExtraVence)}` : ""}
+                  </div>
+                </>
+              )}
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
@@ -8313,6 +8326,19 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
               <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {/* Deuda pactada aparte del crédito: obra extra, mejoras. Va
+                  junto al monto financiado porque es parte de lo que se debe,
+                  aunque no forme parte del préstamo ni genere intereses. */}
+              {prop.cargoExtraMonto > 0 && (
+                <>
+                  <Fila2 label={prop.cargoExtraConcepto || "Cargo adicional"}
+                         value={fmt(prop.cargoExtraMonto)} />
+                  <div className="text-[11px] text-[#C9A227] text-right -mt-1">
+                    Sin intereses ni mora
+                    {prop.cargoExtraVence ? ` · a pagar antes del ${fmtDate(prop.cargoExtraVence)}` : ""}
+                  </div>
+                </>
+              )}
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.

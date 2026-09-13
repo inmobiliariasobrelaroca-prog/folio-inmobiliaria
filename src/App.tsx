@@ -1696,7 +1696,7 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     // y no toca el monto financiado, por eso va en su propio campo y no en
     // saldoAdicionalSinInteres, que la app lee como enganche por recibir.
     ...(Number(prop.cargoExtraMonto || 0) > 0
-      ? [[prop.cargoExtraConcepto || "Cargo adicional sin interés", fmt(prop.cargoExtraMonto)],
+      ? [["Cargo adicional sin interés", fmt(prop.cargoExtraMonto)],
          ["Total adeudado", fmt(saldoActual + Number(prop.cargoExtraMonto))]]
       : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
@@ -1764,7 +1764,13 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     proyectoNombre: proyecto?.nombre || "",
     fechaGenerado: fmtDate(hoy),
     tarjetas,
-    notaCargoPendiente: ea?.cargo > 0 ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
+    notaCargoPendiente: ea?.cargo > 0
+      ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.`
+      : (Number(prop.cargoExtraMonto || 0) > 0
+          // El rótulo del encabezado va corto para que quepa; el concepto
+          // completo se explica aquí, donde el texto sí se acomoda solo.
+          ? `Nota: el cargo adicional de ${fmt(prop.cargoExtraMonto)} corresponde a ${prop.cargoExtraConcepto || "un concepto pactado aparte"}. No genera interés ni mora${prop.cargoExtraVence ? ` y debe quedar pagado antes del ${fmtDate(prop.cargoExtraVence)}` : ""}.`
+          : null),
     abonosProgramados: abonosProgramadosTexto,
     vencidas: vencidasTexto,
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
@@ -5027,6 +5033,13 @@ function mensualidadVigente(tabla) {
   return tabla[0]?.pago ?? 0;
 }
 
+// Todo lo que se debe aparte del crédito y no genera interés: enganche
+// que falta por recibir, más obra extra o mejoras pactadas. Se suman los
+// dos porque una propiedad puede tener ambos.
+function deudaAparte(p) {
+  return Number(p?.saldoAdicionalSinInteres || 0) + Number(p?.cargoExtraMonto || 0);
+}
+
 function engancheAjustado(prop) {
   const cargo = Number(prop.saldoAdicionalSinInteres || 0);
   const mensualidadManual = Number(prop.mensualidadAjustada || 0);
@@ -5238,16 +5251,28 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
                     <span className="font-sans">{p.esRenta ? "Renta por devengar" : "Saldo"}</span>
-                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</span>
+                    <span>{fmt(saldoActual + deudaAparte(p))}</span>
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
                     <span className="font-sans">{p.esRenta ? "Contrato + atrasos" : "Total adeudado"}</span>
-                    <span className="text-red-400">{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia)}</span>
+                    <span className="text-red-400">{fmt(saldoActual + deudaAparte(p) + totalParaPonerseAlDia)}</span>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-5 mt-3 text-xs font-mono">
-                  <div><div className="text-[#8A93A3]">{p.esRenta ? "Renta por devengar" : "Saldo"}</div><div>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</div></div>
+                  <div><div className="text-[#8A93A3]">{p.esRenta ? "Renta por devengar" : "Saldo"}</div><div>{fmt(saldoActual)}</div></div>
+                  {deudaAparte(p) > 0 && (
+                    <div>
+                      <div className="text-[#C9A227]">Aparte</div>
+                      <div className="text-[#C9A227]">{fmt(deudaAparte(p))}</div>
+                    </div>
+                  )}
+                  {deudaAparte(p) > 0 && (
+                    <div>
+                      <div className="text-[#8A93A3]">Total</div>
+                      <div>{fmt(saldoActual + deudaAparte(p))}</div>
+                    </div>
+                  )}
                   {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
                   {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
                 </div>
@@ -6862,15 +6887,30 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
           <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">{prop.esRenta ? "Renta por devengar" : "Saldo"}</div>
           <div className="font-mono text-sm mt-0.5">{fmt(saldoActual)}</div>
-          {prop.saldoAdicionalSinInteres > 0 && (
+          {deudaAparte(prop) > 0 && (
             <div className="mt-1.5 space-y-1.5 border-t border-[#2A3547] pt-1.5">
+              {prop.saldoAdicionalSinInteres > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">+ Enganche por recibir</div>
+                  <div className="font-mono text-sm mt-0.5">{fmt(prop.saldoAdicionalSinInteres)}</div>
+                </div>
+              )}
+              {prop.cargoExtraMonto > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#C9A227] leading-tight">
+                    + {prop.cargoExtraConcepto || "Cargo adicional"}
+                  </div>
+                  <div className="font-mono text-sm mt-0.5 text-[#C9A227]">{fmt(prop.cargoExtraMonto)}</div>
+                  {prop.cargoExtraVence && (
+                    <div className="text-[10px] text-[#8A93A3]">
+                      Sin interés · vence {fmtDate(prop.cargoExtraVence)}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">+ Construcción extra</div>
-                <div className="font-mono text-sm mt-0.5">{fmt(prop.saldoAdicionalSinInteres)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Total</div>
-                <div className="font-mono text-sm mt-0.5 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Total adeudado</div>
+                <div className="font-mono text-sm mt-0.5 text-[#EDE7D9]">{fmt(saldoActual + deudaAparte(prop))}</div>
               </div>
             </div>
           )}

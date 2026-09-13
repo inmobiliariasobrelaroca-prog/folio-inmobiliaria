@@ -452,6 +452,10 @@ function propiedadDesdeFila(row) {
     esRenta: !!row.es_renta,
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
+    // Deuda aparte del crédito, sin intereses. Distinta del enganche.
+    cargoExtraMonto: Number(row.cargo_extra_monto || 0),
+    cargoExtraConcepto: row.cargo_extra_concepto || null,
+    cargoExtraVence: row.cargo_extra_vence || null,
     mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
     contratoTranscrito: row.contrato_transcrito || "",
     clienteUserId: row.cliente_user_id,
@@ -1688,12 +1692,12 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
       : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
     [prop.esRenta ? "Renta por devengar" : "Saldo actual", fmt(saldoActual)],
-    // Deuda pactada aparte del crédito, sin intereses: mejoras, ampliaciones
-    // y demás. Va en el encabezado para que nadie lea el saldo del crédito
-    // creyendo que es todo lo que se debe.
-    ...(Number(prop.saldoAdicionalSinInteres || 0) > 0
-      ? [["Cargo adicional sin interés", fmt(prop.saldoAdicionalSinInteres)],
-         ["Total adeudado", fmt(saldoActual + Number(prop.saldoAdicionalSinInteres))]]
+    // Deuda pactada aparte del crédito: obra extra, mejoras. No es enganche
+    // y no toca el monto financiado, por eso va en su propio campo y no en
+    // saldoAdicionalSinInteres, que la app lee como enganche por recibir.
+    ...(Number(prop.cargoExtraMonto || 0) > 0
+      ? [[prop.cargoExtraConcepto || "Cargo adicional sin interés", fmt(prop.cargoExtraMonto)],
+         ["Total adeudado", fmt(saldoActual + Number(prop.cargoExtraMonto))]]
       : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
@@ -8108,15 +8112,28 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               Es la renta que falta del contrato, no una deuda tuya.
             </div>
           )}
-          {prop.saldoAdicionalSinInteres > 0 && (
+          {(prop.saldoAdicionalSinInteres > 0 || prop.cargoExtraMonto > 0) && (
             <div className="mt-2 space-y-2 border-t border-[#2A3547] pt-2">
               <div>
-                <div className="text-[10px] uppercase text-[#8A93A3]">+ Construcción extra</div>
-                <div className="font-mono text-xl mt-1">{fmt(prop.saldoAdicionalSinInteres)}</div>
+                <div className="text-[10px] uppercase text-[#8A93A3]">
+                  + {prop.cargoExtraMonto > 0
+                      ? (prop.cargoExtraConcepto || "Cargo adicional")
+                      : "Construcción extra"}
+                </div>
+                <div className="font-mono text-xl mt-1">
+                  {fmt(prop.cargoExtraMonto > 0 ? prop.cargoExtraMonto : prop.saldoAdicionalSinInteres)}
+                </div>
+                {prop.cargoExtraVence && (
+                  <div className="text-[10px] text-[#8A93A3] mt-0.5">
+                    Sin intereses. A pagar antes del {fmtDate(prop.cargoExtraVence)}.
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-[10px] uppercase text-[#8A93A3]">Total</div>
-                <div className="font-mono text-xl mt-1 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+                <div className="font-mono text-xl mt-1 text-[#EDE7D9]">
+                  {fmt(saldoActual + (prop.cargoExtraMonto || 0) + (prop.saldoAdicionalSinInteres || 0))}
+                </div>
               </div>
             </div>
           )}

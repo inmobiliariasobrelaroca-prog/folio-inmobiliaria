@@ -1688,6 +1688,13 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
       : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
     [prop.esRenta ? "Renta por devengar" : "Saldo actual", fmt(saldoActual)],
+    // Deuda pactada aparte del crédito, sin intereses: mejoras, ampliaciones
+    // y demás. Va en el encabezado para que nadie lea el saldo del crédito
+    // creyendo que es todo lo que se debe.
+    ...(Number(prop.saldoAdicionalSinInteres || 0) > 0
+      ? [["Cargo adicional sin interés", fmt(prop.saldoAdicionalSinInteres)],
+         ["Total adeudado", fmt(saldoActual + Number(prop.saldoAdicionalSinInteres))]]
+      : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
   ];

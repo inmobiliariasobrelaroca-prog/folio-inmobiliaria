@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import GuardiaSesion from "./GuardiaSesion";
 import MapaLotes from "./MapaLotes";
+import BoletasBandeja from "./BoletasBandeja";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
@@ -13,7 +14,7 @@ import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
   FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
-  Tag
+  Tag, Inbox
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -2963,6 +2964,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
           onCotizar={() => setPantalla("cotizadorDirecto")}
+          onBoletas={() => setPantalla("bandejaBoletas")}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
@@ -2983,6 +2985,16 @@ function AppInterno({ perfil, cerrarSesion }) {
             onAsesores={() => setPantalla("catalogoAsesores")}
             onActividad={() => setPantalla("catalogoActividad")}
           />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "bandejaBoletas" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <div className="flex items-center gap-2 mb-4">
+              <button onClick={() => setPantalla("proyectos")} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+              <h1 className="font-serif text-2xl">Boletas por asignar</h1>
+            </div>
+            <BoletasBandeja onCambio={() => {}} />
+          </div>
         )}
 
         {modo === "inmobiliaria" && pantalla === "cotizadorDirecto" && (
@@ -3067,7 +3079,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -3104,6 +3116,13 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
             <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Tag size={16} />
+            </button>
+          )}
+          {/* Bandeja de boletas: para cuando llegan muchas juntas y de casas
+              distintas. La de una casa puntual se sube desde su cuota. */}
+          {modo === "inmobiliaria" && onBoletas && (
+            <button onClick={onBoletas} title="Boletas por asignar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Inbox size={16} />
             </button>
           )}
 <BotonTesoreria perfil={perfil} />
@@ -5940,6 +5959,134 @@ function VisorGaleria({ galeria, setGaleria }) {
 // terminar subiendo la del mes siguiente sobre la cuota equivocada.
 // Cuando después suba la suya y se apruebe, el comprobante se pega a
 // este mismo movimiento en vez de crear otro.
+// Subir la boleta de una cuota pendiente desde el lado de la inmobiliaria.
+// Hasta ahora esto solo existía en el portal del cliente, así que cuando el
+// cliente mandaba la foto por WhatsApp no había dónde meterla.
+//
+// Se apoya en asignar_boleta(), la misma función que usa la bandeja, para
+// que el reparto entre mora, luz y cuota sea idéntico por los dos caminos.
+function SubirBoletaCuota({ f, prop, actualizar, puede }) {
+  const [abierto, setAbierto] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+  const [monto, setMonto] = useState("");
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [paso, setPaso] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  if (!puede || !puede("aprobar_rechazar_pagos")) return null;
+  if (!f.id || f.estado === "pagado") return null;
+
+  const sugerido =
+    Number(f.pago || 0) - Number(f.montoPagadoAcumulado || 0) +
+    (prop.aplicaLuz && !f.luzPagado ? Number(prop.montoLuzMensual || 0) : 0);
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      setPaso("Subiendo la boleta...");
+      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+      const path = `${prop.id}/${crypto.randomUUID()}-${Date.now()}.${ext}`;
+      const { error: e1 } = await supabase.storage
+        .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
+      if (e1) throw new Error(e1.message);
+
+      setPaso("Registrando...");
+      const { data: b, error: e2 } = await supabase.from("boletas_sueltas").insert({
+        storage_path: path, nombre_archivo: archivo.name,
+        monto: Number(monto), fecha, estado_lectura: "leida",
+        nota: "Subida desde la cuota, sin pasar por la bandeja.",
+      }).select("id").single();
+      if (e2) throw new Error(e2.message);
+
+      const { data: msg, error: e3 } = await supabase.rpc("asignar_boleta", {
+        p_boleta: b.id, p_cuota: f.id, p_cubre_luz: true,
+        p_nota: nota.trim() || null,
+      });
+      if (e3) throw new Error(e3.message);
+
+      setOk(msg || "Pago registrado.");
+      setAbierto(false);
+      actualizar && actualizar((p) => p);
+    } catch (e) {
+      setError(e.message); setPaso("");
+    } finally { setGuardando(false); }
+  };
+
+  if (ok) {
+    return (
+      <div className="mt-3 pt-3 border-t border-[#2A3547] text-[11px] text-emerald-400">
+        {ok}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547]">
+      {!abierto ? (
+        <button
+          onClick={() => { setAbierto(true); setMonto(String(Math.round(sugerido * 100) / 100)); setError(""); }}
+          title="Registrar el pago con su boleta, sin esperar a que el cliente la suba."
+          className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
+          <Upload size={11} /> Subir la boleta y registrar el pago
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[10px] text-[#8A93A3] leading-relaxed">
+            Se cubre primero la mora, después la luz y el resto va a la cuota.
+            La mora se calcula a la fecha del depósito, no a la de hoy.
+          </p>
+
+          {archivo ? (
+            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <FileText size={13} className="text-[#C9A227] shrink-0" />
+              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
+              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0">
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
+              <Upload size={12} /> Elegir la boleta
+              <input type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+            </label>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Cuánto depositó</span>
+              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px] font-mono" />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Fecha del depósito</span>
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+            </label>
+          </div>
+          <input value={nota} onChange={(e) => setNota(e.target.value)}
+            placeholder="Banco, referencia o nota (opcional)"
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-2 rounded">Cancelar</button>
+            <button onClick={guardar} disabled={!archivo || guardando || !(Number(monto) > 0)}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded">
+              {guardando ? (paso || "Guardando...") : "Registrar el pago"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IngresoDeCuota({ f, prop, hoy, actualizar, puede }) {
   const [abierto, setAbierto] = useState(false);
   const [monto, setMonto] = useState(0);
@@ -6626,6 +6773,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         )}
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
+
+        <SubirBoletaCuota f={f} prop={prop} actualizar={actualizar} puede={puede} />
 
         <IngresoDeCuota f={f} prop={prop} hoy={hoy} actualizar={actualizar} puede={puede} />
 

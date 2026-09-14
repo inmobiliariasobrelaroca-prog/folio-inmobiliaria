@@ -455,6 +455,10 @@ function propiedadDesdeFila(row) {
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
     // Deuda aparte del crédito, sin intereses. Distinta del enganche.
     cargoExtraMonto: Number(row.cargo_extra_monto || 0),
+    // Tasa anterior, para mostrarla tachada junto a la vigente.
+    tasaAnterior: row.tasa_anterior != null ? Number(row.tasa_anterior) : null,
+    // Al cliente se le muestra un solo monto, sin desglosar cuota y luz.
+    cuotaUnificada: !!row.cuota_unificada,
     cargoExtraConcepto: row.cargo_extra_concepto || null,
     cargoExtraVence: row.cargo_extra_vence || null,
     mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
@@ -6743,7 +6747,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           <div>
             <div className="text-xs text-[#8A93A3] font-mono">#{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
-            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
+            {prop.aplicaLuz && (
+              prop.cuotaUnificada
+                // Un solo monto: al cliente no le aporta ver el desglose, y
+                // la inmobiliaria lo tiene en la tabla y en el PDF.
+                ? <div className="text-[10px] text-[#8A93A3]">Pago mensual {fmt(Number(f.pago) + Number(prop.montoLuzMensual || 0))}</div>
+                : <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>
+            )}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
               <div className="text-[11px] text-red-400/80">último comprobante rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}</div>
             )}
@@ -7283,7 +7293,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                   Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
-              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`}
+                     tachado={prop.tasaAnterior != null && Math.abs(prop.tasaAnterior - prop.tasaAnual) > 0.001
+                              ? `${fmtNum(prop.tasaAnterior)}%` : null} />
               {(() => {
                 // El trato original manda en la etiqueta; el efecto de los
                 // abonos va abajo, sin pisar lo que se pacto.
@@ -8171,7 +8183,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div>
             <div className="text-sm text-[#EDE7D9] font-mono">Cuota #{f.numero} · {fmtDateLargo(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
-            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
+            {prop.aplicaLuz && (
+              prop.cuotaUnificada
+                // Un solo monto: al cliente no le aporta ver el desglose, y
+                // la inmobiliaria lo tiene en la tabla y en el PDF.
+                ? <div className="text-[10px] text-[#8A93A3]">Pago mensual {fmt(Number(f.pago) + Number(prop.montoLuzMensual || 0))}</div>
+                : <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>
+            )}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
               <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}, sube uno nuevo</div>
             )}
@@ -8498,7 +8516,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                   Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
-              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`}
+                     tachado={prop.tasaAnterior != null && Math.abs(prop.tasaAnterior - prop.tasaAnual) > 0.001
+                              ? `${fmtNum(prop.tasaAnterior)}%` : null} />
               {(() => {
                 // El trato original manda en la etiqueta; el efecto de los
                 // abonos va abajo, sin pisar lo que se pacto.

@@ -118,6 +118,13 @@ export default function Reportes() {
   const [abierto, setAbierto] = useState(null);
   const [docs, setDocs] = useState({});
   const [conImagenes, setConImagenes] = useState(false);
+  // Qué entra al archivo que se baja. Por defecto todo; se pueden sacar
+  // grupos (bolsas, obras...) y secciones, por ejemplo para mandarle a un
+  // tercero solo lo que le corresponde ver.
+  const [panelBajar, setPanelBajar] = useState(false);
+  const [excluidos, setExcluidos] = useState(new Set());
+  const [conResumen, setConResumen] = useState(true);
+  const [conDetalle, setConDetalle] = useState(true);
   const [armando, setArmando] = useState("");
 
   useEffect(() => {
@@ -133,6 +140,7 @@ export default function Reportes() {
       setMovs(data || []);
       setCargando(false);
       setAbierto(null);
+      setExcluidos(new Set());
       setDocs(await cargarDocumentos(data || []));
     })();
   }, [desde, hasta]);
@@ -197,23 +205,36 @@ export default function Reportes() {
 
   // ---------- Exportar ----------
 
+  // Lo que se va a bajar: solo los grupos marcados, con sus propios totales.
+  const sel = grupos.filter((g) => !excluidos.has(g.grupo));
+  const selE = sel.reduce((a, g) => a + g.entra, 0);
+  const selS = sel.reduce((a, g) => a + g.sale, 0);
+  const parcial = sel.length < grupos.length;
+  const notaParcial = parcial
+    ? `Incluye ${sel.length} de ${grupos.length} ${tituloAgrupar.toLowerCase()}: ${sel.map((g) => nombreGrupo(g.grupo)).join(", ")}.`
+    : "";
+
   const bajarExcel = () => {
     // CSV con BOM: Excel lo abre con tildes y columnas bien separadas.
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const filas = [
       [`Reporte de tesorería por ${tituloAgrupar.toLowerCase()}`],
       [`Período: ${periodo}`],
+      ...(parcial ? [[notaParcial]] : []),
       [],
-      [tituloAgrupar, etqEntra, etqSale, "Neto", "Movimientos"],
-      ...grupos.map((g) => [nombreGrupo(g.grupo), g.entra.toFixed(2), g.sale.toFixed(2),
-                            (g.entra - g.sale).toFixed(2), g.n]),
-      ["TOTAL", totEntra.toFixed(2), totSale.toFixed(2), (totEntra - totSale).toFixed(2),
-       grupos.reduce((a, g) => a + g.n, 0)],
-      [],
+      ...(conResumen ? [
+        [tituloAgrupar, etqEntra, etqSale, "Neto", "Movimientos"],
+        ...sel.map((g) => [nombreGrupo(g.grupo), g.entra.toFixed(2), g.sale.toFixed(2),
+                              (g.entra - g.sale).toFixed(2), g.n]),
+        ["TOTAL", selE.toFixed(2), selS.toFixed(2), (selE - selS).toFixed(2),
+         sel.reduce((a, g) => a + g.n, 0)],
+        [],
+      ] : []),
+      ...(conDetalle ? [
       ["DETALLE"],
       [tituloAgrupar, "Fecha", "Tipo", "Descripción", "Notas", etqEntra, etqSale,
        "Bolsa origen", "Bolsa destino", "Tipo de gasto", "Obra", "Proveedor", "Documentos"],
-      ...grupos.flatMap((g) => g.lineas.map((l) => {
+      ...sel.flatMap((g) => g.lineas.map((l) => {
         const ds = docs[l.m.id] || [];
         return [
           nombreGrupo(g.grupo), l.m.fecha, l.m.tipo, l.m.descripcion || "", l.m.notas || "",
@@ -224,6 +245,7 @@ export default function Reportes() {
           ds.length ? `${ds.length} (${[...new Set(ds.map((d) => d.tipo))].join(", ")})` : "sin documento",
         ];
       })),
+      ] : []),
     ];
     const csv = "\uFEFF" + filas.map((f) => f.map(esc).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -241,24 +263,32 @@ export default function Reportes() {
     doc.text("Sobre la Roca · Reporte de tesorería", 14, 18);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(110);
     doc.text(`Por ${tituloAgrupar.toLowerCase()} · ${periodo}`, 14, 25);
+    let arranque = 31;
+    if (parcial) {
+      // Que quien lo lea sepa que no es el total de la empresa
+      doc.setFontSize(8.5);
+      const lineasNota = doc.splitTextToSize(notaParcial, 182);
+      doc.text(lineasNota, 14, 30);
+      arranque = 30 + lineasNota.length * 4 + 2;
+    }
     doc.setTextColor(0);
 
-    autoTable(doc, {
-      startY: 31,
+    if (conResumen) autoTable(doc, {
+      startY: arranque,
       head: [[tituloAgrupar, etqEntra, etqSale, "Neto", "Mov."]],
-      body: grupos.map((g) => [nombreGrupo(g.grupo), fq(g.entra), fq(g.sale), fq(g.entra - g.sale), g.n]),
-      foot: [["Total", fq(totEntra), fq(totSale), fq(totEntra - totSale),
-              grupos.reduce((a, g) => a + g.n, 0)]],
+      body: sel.map((g) => [nombreGrupo(g.grupo), fq(g.entra), fq(g.sale), fq(g.entra - g.sale), g.n]),
+      foot: [["Total", fq(selE), fq(selS), fq(selE - selS),
+              sel.reduce((a, g) => a + g.n, 0)]],
       styles: { fontSize: 8.5 },
       headStyles: { fillColor: [16, 24, 38] },
       footStyles: { fillColor: [201, 162, 39], textColor: [16, 24, 38] },
       columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
     });
 
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 8,
+    if (conDetalle) autoTable(doc, {
+      startY: conResumen ? doc.lastAutoTable.finalY + 8 : arranque,
       head: [[tituloAgrupar, "Fecha", "Descripción y notas", "Doc.", etqEntra, etqSale]],
-      body: grupos.flatMap((g) => g.lineas.map((l) => [
+      body: sel.flatMap((g) => g.lineas.map((l) => [
         nombreGrupo(g.grupo), fmtDate(l.m.fecha),
         (l.m.descripcion || l.m.tipo) + (l.m.notas ? `\n${l.m.notas}` : ""),
         (docs[l.m.id] || []).length || "—",
@@ -271,15 +301,17 @@ export default function Reportes() {
 
     // Anexo con las imágenes de los documentos, si se pidió
     if (conImagenes) {
-      const conDocs = grupos.flatMap((g) => g.lineas)
+      const conDocs = sel.flatMap((g) => g.lineas)
         .filter((l, i, arr) => arr.findIndex((x) => x.m.id === l.m.id) === i)
         .filter((l) => (docs[l.m.id] || []).some((d) => d.url && !d.esPdf));
       let hechas = 0;
       const total = conDocs.reduce((a, l) => a + (docs[l.m.id] || []).filter((d) => d.url && !d.esPdf).length, 0);
-      doc.addPage();
+      const hayTablas = conResumen || conDetalle;
+      if (hayTablas) doc.addPage();
+      const yTitulo = hayTablas ? 18 : arranque + 4;
       doc.setFont("helvetica", "bold"); doc.setFontSize(13);
-      doc.text("Anexo: documentos de respaldo", 14, 18);
-      let y = 26;
+      doc.text(hayTablas ? "Anexo: documentos de respaldo" : "Documentos de respaldo", 14, yTitulo);
+      let y = yTitulo + 8;
       const alto = doc.internal.pageSize.getHeight();
       for (const l of conDocs) {
         if (y > alto - 40) { doc.addPage(); y = 18; }
@@ -373,21 +405,91 @@ export default function Reportes() {
             </div>
           )}
 
-          <label className="flex items-center gap-2 text-[11px] text-[#8A93A3]">
-            <input type="checkbox" checked={conImagenes} onChange={(e) => setConImagenes(e.target.checked)} />
-            Incluir las imágenes de los documentos en el PDF
-          </label>
-          {armando && <div className="text-[11px] text-[#C9A227]">{armando}</div>}
-          <div className="flex gap-2">
-            <button onClick={bajarExcel}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
-              <Download size={12} /> Bajar a Excel
+          {!panelBajar ? (
+            <button onClick={() => setPanelBajar(true)}
+              className="w-full flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
+              <Download size={12} /> Bajar o imprimir el reporte
             </button>
-            <button onClick={bajarPdf} disabled={!!armando}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 py-2 rounded-md">
-              <FileText size={12} /> Bajar en PDF
-            </button>
-          </div>
+          ) : (
+            <div className="bg-[#0C121C] border border-[#C9A227]/50 rounded-lg p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[12px] text-[#EDE7D9]">Qué incluir</div>
+                <button onClick={() => setPanelBajar(false)} className="text-[#8A93A3]"><X size={14} /></button>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">{tituloAgrupar}</span>
+                  <span className="flex gap-2 text-[10px]">
+                    <button onClick={() => setExcluidos(new Set())} className="text-[#C9A227]">Todos</button>
+                    <button onClick={() => setExcluidos(new Set(grupos.map((g) => g.grupo)))} className="text-[#8A93A3]">Ninguno</button>
+                  </span>
+                </div>
+                <div className="space-y-0.5 max-h-56 overflow-y-auto">
+                  {grupos.map((g) => {
+                    const marcado = !excluidos.has(g.grupo);
+                    return (
+                      <label key={g.grupo} className="flex items-center gap-2 text-[11px] py-1 cursor-pointer">
+                        <input type="checkbox" checked={marcado}
+                          onChange={() => {
+                            const x = new Set(excluidos);
+                            marcado ? x.add(g.grupo) : x.delete(g.grupo);
+                            setExcluidos(x);
+                          }} />
+                        <span className={`flex-1 truncate ${marcado ? "" : "text-[#6b7280] line-through"}`}>
+                          {nombreGrupo(g.grupo)}
+                        </span>
+                        <span className="font-mono text-[10px] text-[#8A93A3] shrink-0">
+                          {fmt(g.entra + g.sale)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Secciones</span>
+                <label className="flex items-center gap-2 text-[11px] py-1">
+                  <input type="checkbox" checked={conResumen} onChange={(e) => setConResumen(e.target.checked)} />
+                  Resumen con totales por {tituloAgrupar.toLowerCase()}
+                </label>
+                <label className="flex items-center gap-2 text-[11px] py-1">
+                  <input type="checkbox" checked={conDetalle} onChange={(e) => setConDetalle(e.target.checked)} />
+                  Detalle de cada movimiento, con sus notas
+                </label>
+                <label className="flex items-center gap-2 text-[11px] py-1">
+                  <input type="checkbox" checked={conImagenes} onChange={(e) => setConImagenes(e.target.checked)} />
+                  Imágenes de los documentos <span className="text-[#6b7280]">(solo PDF)</span>
+                </label>
+              </div>
+
+              {(() => {
+                const n = grupos.length - excluidos.size;
+                const vacio = n === 0 || (!conResumen && !conDetalle && !conImagenes);
+                return (
+                  <>
+                    <div className="text-[10px] text-[#8A93A3]">
+                      {n === grupos.length
+                        ? `Va todo: ${grupos.length} ${tituloAgrupar.toLowerCase()}.`
+                        : `Van ${n} de ${grupos.length}. El archivo lo va a decir arriba, para que quien lo lea sepa que no es el total.`}
+                    </div>
+                    {armando && <div className="text-[11px] text-[#C9A227]">{armando}</div>}
+                    <div className="flex gap-2">
+                      <button onClick={bajarExcel} disabled={vacio || (!conResumen && !conDetalle)}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 py-2 rounded-md">
+                        <Download size={12} /> Excel
+                      </button>
+                      <button onClick={bajarPdf} disabled={vacio || !!armando}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#C9A227] text-[#101826] font-medium disabled:opacity-40 py-2 rounded-md">
+                        <FileText size={12} /> PDF
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             {grupos.map((g) => (

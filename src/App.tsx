@@ -5967,89 +5967,97 @@ function VisorGaleria({ galeria, setGaleria }) {
 // Hasta ahora esto solo existía en el portal del cliente, así que cuando el
 // cliente mandaba la foto por WhatsApp no había dónde meterla.
 //
-// Se apoya en asignar_boleta(), la misma función que usa la bandeja, para
-// que el reparto entre mora, luz y cuota sea idéntico por los dos caminos.
-function SubirBoletaCuota({ f, prop, actualizar, puede }) {
+// Pasa por aprobarComprobante, la misma función que aprueba los pagos del
+// cliente. Antes usaba un atajo por SQL que tenía dos problemas: no hacía el
+// abono a capital de verdad, y al refrescar la pantalla se pisaba con la
+// copia vieja y la cuota volvía a quedar pendiente (le pasó a Vilma).
+function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
   const [abierto, setAbierto] = useState(false);
   const [archivo, setArchivo] = useState(null);
   const [monto, setMonto] = useState("");
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoy);
   const [nota, setNota] = useState("");
+  const [usarGuardado, setUsarGuardado] = useState(true);
+  const [destino, setDestino] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [paso, setPaso] = useState("");
   const [error, setError] = useState("");
-  const [ok, setOk] = useState("");
 
   if (!puede || !puede("aprobar_rechazar_pagos")) return null;
   if (!f.id || f.estado === "pagado") return null;
 
-  const sugerido =
-    Number(f.pago || 0) - Number(f.montoPagadoAcumulado || 0) +
-    (prop.aplicaLuz && !f.luzPagado ? Number(prop.montoLuzMensual || 0) : 0);
+  // Lo que la cuota pide a la fecha del depósito, no a la de hoy
+  const fechaCalc = fecha || hoy;
+  const mora = calcularMoraCredito(f, fechaCalc, prop.diasGracia, prop.moraDiaria);
+  const luz = prop.aplicaLuz && !f.luzPagado ? Number(prop.montoLuzMensual || 0) : 0;
+  const luzMora = prop.aplicaLuz && !f.luzPagado
+    ? calcularMoraLuzCuota(f, fechaCalc, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
+  const falta = Math.max(0, Number(f.pago || 0) - Number(f.montoPagadoAcumulado || 0));
+  const requerido = falta + mora + luz + luzMora;
+
+  const guardado = Number(prop.saldoAFavor || 0);
+  const montoNum = Number(monto) || 0;
+  const disponible = montoNum + (usarGuardado ? guardado : 0);
+  const excedente = Math.max(0, disponible - requerido);
+  const faltante = Math.max(0, requerido - disponible);
+  const limite = fechaLimiteGracia(f.fecha, prop.diasGracia);
+  const aTiempo = fechaCalc <= limite;
+  const preguntaDestino = excedente > 0.009 && aTiempo;
+
+  const listo = archivo && montoNum > 0 && fecha && (!preguntaDestino || destino);
 
   const guardar = async () => {
     setError(""); setGuardando(true);
     try {
-      setPaso("Subiendo la boleta...");
       const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${prop.id}/${crypto.randomUUID()}-${Date.now()}.${ext}`;
+      const path = `${prop.id}/${f.id}-${Date.now()}.${ext}`;
       const { error: e1 } = await supabase.storage
         .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
       if (e1) throw new Error(e1.message);
 
-      setPaso("Registrando...");
-      const { data: b, error: e2 } = await supabase.from("boletas_sueltas").insert({
-        storage_path: path, nombre_archivo: archivo.name,
-        monto: Number(monto), fecha, estado_lectura: "leida",
-        nota: "Subida desde la cuota, sin pasar por la bandeja.",
-      }).select("id").single();
-      if (e2) throw new Error(e2.message);
+      const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
+      const destinoFinal = resultado === "excedente"
+        ? (preguntaDestino ? destino : "creditoSiguiente") : null;
 
-      const { data: msg, error: e3 } = await supabase.rpc("asignar_boleta", {
-        p_boleta: b.id, p_cuota: f.id, p_cubre_luz: true,
-        p_nota: nota.trim() || null,
+      const datos = {
+        montoDepositado: montoNum, moraAlSubir: mora + luzMora,
+        montoRequerido: requerido, excedente, faltante, resultado,
+        destinoExcedente: destinoFinal, fechaPagoReal: fecha,
+        notaCliente: nota.trim() || null,
+      };
+      await guardarComprobanteEnBD(f.id, path, datos);
+
+      const { data: firmada } = await supabase.storage
+        .from("comprobantes").createSignedUrl(path, 3600);
+
+      // Se aprueba en el mismo paso, por la cascada de siempre
+      onAprobar(idx, usarGuardado, {
+        ...datos,
+        imagen: firmada?.signedUrl || null,
+        imagenUrlCruda: path,
+        fecha: fecha,
+        estado: "revision",
       });
-      if (e3) throw new Error(e3.message);
-
-      setOk(msg || "Pago registrado.");
       setAbierto(false);
-      actualizar && actualizar((p) => p);
-    } catch (e) {
-      setError(e.message); setPaso("");
-    } finally { setGuardando(false); }
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
   };
-
-  if (ok) {
-    return (
-      <div className="mt-3 pt-3 border-t border-[#2A3547] text-[11px] text-emerald-400">
-        {ok}
-      </div>
-    );
-  }
 
   return (
     <div className="mt-3 pt-3 border-t border-[#2A3547]">
       {!abierto ? (
         <button
-          onClick={() => { setAbierto(true); setMonto(String(Math.round(sugerido * 100) / 100)); setError(""); }}
+          onClick={() => { setAbierto(true); setMonto(String(Math.round(requerido * 100) / 100)); setError(""); }}
           title="Registrar el pago con su boleta, sin esperar a que el cliente la suba."
           className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
           <Upload size={11} /> Subir la boleta y registrar el pago
         </button>
       ) : (
         <div className="space-y-2">
-          <p className="text-[10px] text-[#8A93A3] leading-relaxed">
-            Se cubre primero la mora, después la luz y el resto va a la cuota.
-            La mora se calcula a la fecha del depósito, no a la de hoy.
-          </p>
-
           {archivo ? (
             <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <FileText size={13} className="text-[#C9A227] shrink-0" />
               <span className="text-[11px] truncate flex-1">{archivo.name}</span>
-              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0">
-                <X size={13} />
-              </button>
+              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0"><X size={13} /></button>
             </div>
           ) : (
             <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
@@ -6071,6 +6079,63 @@ function SubirBoletaCuota({ f, prop, actualizar, puede }) {
                 className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
             </label>
           </div>
+
+          {/* Lo que pide la cuota, desglosado para decidir con los números a la vista */}
+          <div className="text-[10px] text-[#8A93A3] bg-[#0C121C] border border-[#2A3547] rounded p-2 space-y-0.5">
+            <div className="flex justify-between"><span>Cuota</span><span className="font-mono">{fmt(falta)}</span></div>
+            {mora > 0 && <div className="flex justify-between text-red-400"><span>Mora</span><span className="font-mono">{fmt(mora)}</span></div>}
+            {luz > 0 && <div className="flex justify-between"><span>Luz</span><span className="font-mono">{fmt(luz)}</span></div>}
+            {luzMora > 0 && <div className="flex justify-between text-red-400"><span>Mora de luz</span><span className="font-mono">{fmt(luzMora)}</span></div>}
+            <div className="flex justify-between text-[#EDE7D9] border-t border-[#2A3547] pt-0.5">
+              <span>Total a cubrir</span><span className="font-mono">{fmt(requerido)}</span>
+            </div>
+          </div>
+
+          {guardado > 0.009 && (
+            <div className="bg-emerald-950/30 border border-emerald-900 rounded-md p-2 space-y-1">
+              <div className="text-[11px] text-emerald-400">
+                Tiene {fmt(guardado)} guardado de un depósito anterior.
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={usarGuardado} onChange={() => setUsarGuardado(true)} />
+                Aplicarlo a esta cuota
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={!usarGuardado} onChange={() => setUsarGuardado(false)} />
+                Seguir guardándolo
+              </label>
+            </div>
+          )}
+
+          {montoNum > 0 && (
+            <div className={`text-[11px] ${faltante > 0.009 ? "text-amber-400" : "text-emerald-400"}`}>
+              {faltante > 0.009
+                ? `Queda corto: faltan ${fmt(faltante)}. La cuota quedará parcial.`
+                : excedente > 0.009
+                  ? `Cubre todo y sobran ${fmt(excedente)}.`
+                  : "Cubre la cuota exacta."}
+            </div>
+          )}
+
+          {preguntaDestino && (
+            <div className="bg-[#0C121C] border border-[#C9A227]/60 rounded-md p-2 space-y-1">
+              <div className="text-[11px] text-[#C9A227]">¿Qué se hace con los {fmt(excedente)} que sobran?</div>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={destino === "abono"} onChange={() => setDestino("abono")} />
+                Abonarlos a capital
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={destino === "creditoSiguiente"} onChange={() => setDestino("creditoSiguiente")} />
+                Reservarlos para el siguiente mes
+              </label>
+            </div>
+          )}
+          {excedente > 0.009 && !aTiempo && (
+            <div className="text-[10px] text-[#8A93A3]">
+              Como pagó fuera de plazo, el sobrante se reserva para el siguiente mes.
+            </div>
+          )}
+
           <input value={nota} onChange={(e) => setNota(e.target.value)}
             placeholder="Banco, referencia o nota (opcional)"
             className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
@@ -6080,9 +6145,9 @@ function SubirBoletaCuota({ f, prop, actualizar, puede }) {
           <div className="flex gap-2">
             <button onClick={() => setAbierto(false)} disabled={guardando}
               className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-2 rounded">Cancelar</button>
-            <button onClick={guardar} disabled={!archivo || guardando || !(Number(monto) > 0)}
+            <button onClick={guardar} disabled={!listo || guardando}
               className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded">
-              {guardando ? (paso || "Guardando...") : "Registrar el pago"}
+              {guardando ? "Guardando..." : "Registrar el pago"}
             </button>
           </div>
         </div>
@@ -6377,19 +6442,24 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     });
   };
 
-  const aprobarComprobante = (idx) => {
+  // usarSaldoAFavor: la inmobiliaria decide si el saldo guardado de un
+  // depósito anterior se aplica a esta cuota o se sigue guardando. Antes se
+  // aplicaba solo; ahora se pregunta, porque a veces conviene reservarlo.
+  // comprobanteNuevo: cuando la inmobiliaria sube la boleta ella misma, el
+  // comprobante recién creado entra por aquí y se aprueba en el mismo paso.
+  // Así pasa por la misma cascada que el pago del cliente: mora, luz, meses
+  // atrasados, abono a capital que recalcula la tabla, y saldo guardado.
+  const aprobarComprobante = (idx, usarSaldoAFavor = true, comprobanteNuevo = null) => {
     const numero = prop.tabla[idx].numero;
     actualizarEstadoComprobanteBD(prop.id, numero, "aprobado").catch((err) => console.error(err));
     actualizar((p) => {
       const fila = p.tabla[idx];
+      if (comprobanteNuevo) fila.comprobante = comprobanteNuevo;
       const c = fila.comprobante;
       if (!c) return p;
 
-      // Cualquier saldo a favor que ya tuviera (de un depósito anterior que no alcanzó a cubrir
-      // algo completo, ej. la luz) se suma automáticamente aquí — no se le pide al cliente que
-      // lo "aplique" a mano, porque en realidad ya estaba comprometido a completar ese pendiente.
-      const disponiblePrevio = p.saldoAFavor || 0;
-      p.saldoAFavor = 0;
+      const disponiblePrevio = usarSaldoAFavor ? (p.saldoAFavor || 0) : 0;
+      if (usarSaldoAFavor) p.saldoAFavor = 0;
       const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado + disponiblePrevio, hoy, p, c.fechaPagoReal);
 
       if (c.fechaPagoReal) fila.fechaPagoReal = c.fechaPagoReal;
@@ -6784,7 +6854,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
 
-        <SubirBoletaCuota f={f} prop={prop} actualizar={actualizar} puede={puede} />
+        <SubirBoletaCuota f={f} idx={idx} prop={prop} hoy={hoy} puede={puede}
+          onAprobar={aprobarComprobante} />
 
         <IngresoDeCuota f={f} prop={prop} hoy={hoy} actualizar={actualizar} puede={puede} />
 
@@ -6890,10 +6961,33 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                   </div>
                 </div>
               ) : (
+                prop.saldoAFavor > 0.009 ? (
+                  // Hay saldo guardado de un depósito anterior. La inmobiliaria
+                  // decide si se usa en esta cuota o se sigue guardando.
+                  <div className="mt-2.5 space-y-2">
+                    <div className="text-[11px] text-emerald-400 bg-emerald-950/30 border border-emerald-900 rounded-md p-2">
+                      El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior.
+                      ¿Se aplica a esta cuota o se sigue guardando?
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => aprobarComprobante(idx, true)}
+                        className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2 py-1.5 rounded-md">
+                        Aprobar y aplicar lo guardado
+                      </button>
+                      <button onClick={() => aprobarComprobante(idx, false)}
+                        className="flex-1 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2 py-1.5 rounded-md">
+                        Aprobar y seguir guardándolo
+                      </button>
+                    </div>
+                    <button onClick={() => { setRechazandoIdx(idx); setMotivoRechazo(""); }}
+                      className="w-full text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
+                  </div>
+                ) : (
                 <div className="flex gap-2 mt-2.5">
                   <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
                   <button onClick={() => { setRechazandoIdx(idx); setMotivoRechazo(""); }} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
                 </div>
+                )
               )
             ) : (
               <div className="mt-2.5 text-[11px] text-[#8A93A3]">No tienes permiso para aprobar o rechazar pagos.</div>
@@ -7115,7 +7209,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         </div>
       )}
       {prop.saldoAFavor > 0 && (
-        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior — se aplica solo en cuanto entre el próximo pago.</div>
+        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior. Al aprobar su próximo pago vas a decidir si se aplica o se sigue guardando.</div>
       )}
 
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
@@ -8375,7 +8469,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       {prop.saldoAFavor > 0 && (
         <div className="bg-emerald-950/30 border border-emerald-800 rounded-lg p-4 mb-4">
           <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} guardado de un depósito anterior</div>
-          <div className="text-xs text-emerald-400/80 mt-0.5">Se va a usar automáticamente para completar tu próximo pago pendiente — no tenés que hacer nada.</div>
+          <div className="text-xs text-emerald-400/80 mt-0.5">Queda a tu favor. La inmobiliaria lo aplica a un próximo pago o lo reserva, según convenga.</div>
         </div>
       )}
 

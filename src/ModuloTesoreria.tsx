@@ -20,7 +20,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard, Home } from "lucide-react";
+import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard, Home, Lock, Printer } from "lucide-react";
 import { fmt } from "./tesoreria/comun";
 import MapaFlujo from "./tesoreria/Mapa";
 import { ResumenTesoreria, MovimientosTesoreria } from "./tesoreria/Resumen";
@@ -33,10 +33,12 @@ import Anticipos from "./tesoreria/Anticipos";
 import Rentas from "./tesoreria/Rentas";
 import Tarjetas from "./tesoreria/Tarjetas";
 import Fuentes from "./tesoreria/Fuentes";
+import PorLiberar from "./tesoreria/PorLiberar";
+import Reportes from "./tesoreria/Reportes";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v65";
+const VERSION = "v67";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -122,11 +124,13 @@ function PanelTesoreria({ perfil, onCerrar }) {
     ["facturas", "Subir factura", Upload, puede("finanzas_documentar")],
     ["pendientes", "Documentar", AlertTriangle, puede("finanzas_documentar")],
     ["compromisos", "Por pagar", Clock, true],
+    ["porliberar", "Por liberar", Lock, puede("finanzas_registrar")],
     ["anticipos", "Adelantos", Users, esSuper],
     ["rentas", "Rentas", Store, puede("finanzas_registrar")],
     ["tarjetas", "Tarjetas", CreditCard, esSuper],
     ["fuentes", "Fuentes", Home, esSuper],
     ["movimientos", "Movimientos", FileText, true],
+    ["reportes", "Reportes", Printer, true],
     ["permisos", "Permisos", Shield, esSuper],
   ].filter((p) => p[3]);
 
@@ -282,6 +286,10 @@ function PanelTesoreria({ perfil, onCerrar }) {
           <Tarjetas bolsas={bolsas} onCambio={cargar} />
         ) : tab === "fuentes" ? (
           <Fuentes onCambio={cargar} />
+        ) : tab === "porliberar" ? (
+          <PorLiberar onCambio={cargar} />
+        ) : tab === "reportes" ? (
+          <Reportes />
 
         ) : tab === "permisos" ? (
           <Permisos />

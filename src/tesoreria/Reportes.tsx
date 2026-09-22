@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../supabaseClient";
-import { Download, FileText, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, FileText, ChevronDown, ChevronRight, Paperclip, Pencil, Check, X } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fmt, fmtDate, C_ORIGEN, C_GASTO, C_BOLSA } from "./comun";
@@ -32,6 +32,77 @@ const AGRUPAR = [
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio",
                "agosto","septiembre","octubre","noviembre","diciembre"];
 
+// Los documentos de un movimiento viven en dos lugares: las facturas y
+// vouchers de gastos (tabla factura_movimientos, bucket "facturas") y las
+// boletas que suben los clientes al pagar (comprobantes, bucket
+// "comprobantes"). Se traen de los dos y se firman en lotes.
+async function cargarDocumentos(movs) {
+  const docs = {};
+  const ids = movs.map((m) => m.id);
+  const push = (movId, d) => { (docs[movId] = docs[movId] || []).push(d); };
+  const trozos = (arr, k) => arr.reduce((a, _, i) => (i % k ? a : [...a, arr.slice(i, i + k)]), []);
+
+  for (const grupo of trozos(ids, 100)) {
+    const { data } = await supabase.from("factura_movimientos")
+      .select("movimiento_id, facturas(storage_path, tipo_documento)")
+      .in("movimiento_id", grupo);
+    for (const r of data || []) {
+      if (r.facturas?.storage_path) {
+        push(r.movimiento_id, { bucket: "facturas", path: r.facturas.storage_path,
+                                tipo: r.facturas.tipo_documento || "documento" });
+      }
+    }
+  }
+
+  const porComp = {};
+  for (const m of movs) if (m.comprobante_id) porComp[m.comprobante_id] = m.id;
+  const compIds = Object.keys(porComp);
+  for (const grupo of trozos(compIds, 100)) {
+    const { data } = await supabase.from("comprobantes")
+      .select("id, imagen_url, imagenes_extra").in("id", grupo);
+    for (const c of data || []) {
+      const movId = porComp[c.id];
+      for (const ruta of [c.imagen_url, ...(c.imagenes_extra || [])].filter(Boolean)) {
+        if (/^https?:\/\//i.test(ruta)) push(movId, { externo: true, url: ruta, tipo: "boleta" });
+        else push(movId, { bucket: "comprobantes", path: ruta, tipo: "boleta" });
+      }
+    }
+  }
+
+  // Firmar por bucket
+  for (const bucket of ["facturas", "comprobantes"]) {
+    const rutas = Object.values(docs).flat().filter((d) => d.bucket === bucket).map((d) => d.path);
+    for (const grupo of trozos([...new Set(rutas)], 100)) {
+      const { data } = await supabase.storage.from(bucket).createSignedUrls(grupo, 3600);
+      const url = {};
+      (data || []).forEach((f) => { if (f.signedUrl && f.path) url[f.path] = f.signedUrl; });
+      Object.values(docs).flat().forEach((d) => {
+        if (d.bucket === bucket && url[d.path]) d.url = url[d.path];
+      });
+    }
+  }
+  Object.values(docs).flat().forEach((d) => {
+    d.esPdf = /\.pdf($|\?)/i.test(d.path || d.url || "");
+  });
+  return docs;
+}
+
+// Baja una imagen, la achica y la devuelve lista para el PDF. Las que no
+// sean imagen (un PDF adjunto, por ejemplo) devuelven null.
+async function imagenParaPdf(url, max = 1100) {
+  try {
+    const r = await fetch(url);
+    const b = await r.blob();
+    if (!b.type.startsWith("image/")) return null;
+    const bmp = await createImageBitmap(b);
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return { data: c.toDataURL("image/jpeg", 0.72), w: c.width, h: c.height };
+  } catch { return null; }
+}
+
 function primerDiaMes() {
   const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
@@ -45,13 +116,16 @@ export default function Reportes() {
   const [movs, setMovs] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [abierto, setAbierto] = useState(null);
+  const [docs, setDocs] = useState({});
+  const [conImagenes, setConImagenes] = useState(false);
+  const [armando, setArmando] = useState("");
 
   useEffect(() => {
     (async () => {
       setCargando(true);
       const { data } = await supabase
         .from("movimientos")
-        .select("id, tipo, fecha, monto, descripcion, factura_pendiente, " +
+        .select("id, tipo, fecha, monto, descripcion, notas, factura_pendiente, comprobante_id, " +
                 "centros_costo(nombre), categorias(nombre), proveedores(nombre), " +
                 "origen:bolsa_origen_id(nombre, banco), destino:bolsa_destino_id(nombre, banco)")
         .gte("fecha", desde).lte("fecha", hasta)
@@ -59,6 +133,7 @@ export default function Reportes() {
       setMovs(data || []);
       setCargando(false);
       setAbierto(null);
+      setDocs(await cargarDocumentos(data || []));
     })();
   }, [desde, hasta]);
 
@@ -136,15 +211,19 @@ export default function Reportes() {
        grupos.reduce((a, g) => a + g.n, 0)],
       [],
       ["DETALLE"],
-      [tituloAgrupar, "Fecha", "Tipo", "Descripción", etqEntra, etqSale,
-       "Bolsa origen", "Bolsa destino", "Tipo de gasto", "Obra", "Proveedor"],
-      ...grupos.flatMap((g) => g.lineas.map((l) => [
-        nombreGrupo(g.grupo), l.m.fecha, l.m.tipo, l.m.descripcion || "",
-        l.entra ? l.entra.toFixed(2) : "", l.sale ? l.sale.toFixed(2) : "",
-        l.m.origen?.nombre || "", l.m.destino?.nombre || "",
-        l.m.categorias?.nombre || "", l.m.centros_costo?.nombre || "",
-        l.m.proveedores?.nombre || "",
-      ])),
+      [tituloAgrupar, "Fecha", "Tipo", "Descripción", "Notas", etqEntra, etqSale,
+       "Bolsa origen", "Bolsa destino", "Tipo de gasto", "Obra", "Proveedor", "Documentos"],
+      ...grupos.flatMap((g) => g.lineas.map((l) => {
+        const ds = docs[l.m.id] || [];
+        return [
+          nombreGrupo(g.grupo), l.m.fecha, l.m.tipo, l.m.descripcion || "", l.m.notas || "",
+          l.entra ? l.entra.toFixed(2) : "", l.sale ? l.sale.toFixed(2) : "",
+          l.m.origen?.nombre || "", l.m.destino?.nombre || "",
+          l.m.categorias?.nombre || "", l.m.centros_costo?.nombre || "",
+          l.m.proveedores?.nombre || "",
+          ds.length ? `${ds.length} (${[...new Set(ds.map((d) => d.tipo))].join(", ")})` : "sin documento",
+        ];
+      })),
     ];
     const csv = "\uFEFF" + filas.map((f) => f.map(esc).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -155,7 +234,7 @@ export default function Reportes() {
     URL.revokeObjectURL(a.href);
   };
 
-  const bajarPdf = () => {
+  const bajarPdf = async () => {
     const doc = new jsPDF({ unit: "mm", format: "letter" });
     const fq = (n) => "Q " + Number(n || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     doc.setFont("helvetica", "bold"); doc.setFontSize(15);
@@ -178,15 +257,57 @@ export default function Reportes() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 8,
-      head: [[tituloAgrupar, "Fecha", "Descripción", etqEntra, etqSale]],
+      head: [[tituloAgrupar, "Fecha", "Descripción y notas", "Doc.", etqEntra, etqSale]],
       body: grupos.flatMap((g) => g.lineas.map((l) => [
-        nombreGrupo(g.grupo), fmtDate(l.m.fecha), (l.m.descripcion || l.m.tipo).slice(0, 70),
+        nombreGrupo(g.grupo), fmtDate(l.m.fecha),
+        (l.m.descripcion || l.m.tipo) + (l.m.notas ? `\n${l.m.notas}` : ""),
+        (docs[l.m.id] || []).length || "—",
         l.entra ? fq(l.entra) : "", l.sale ? fq(l.sale) : "",
       ])),
-      styles: { fontSize: 7.5 },
+      styles: { fontSize: 7.5, cellPadding: 1.6 },
       headStyles: { fillColor: [42, 53, 71] },
-      columnStyles: { 3: { halign: "right" }, 4: { halign: "right" } },
+      columnStyles: { 2: { cellWidth: 70 }, 3: { halign: "center" }, 4: { halign: "right" }, 5: { halign: "right" } },
     });
+
+    // Anexo con las imágenes de los documentos, si se pidió
+    if (conImagenes) {
+      const conDocs = grupos.flatMap((g) => g.lineas)
+        .filter((l, i, arr) => arr.findIndex((x) => x.m.id === l.m.id) === i)
+        .filter((l) => (docs[l.m.id] || []).some((d) => d.url && !d.esPdf));
+      let hechas = 0;
+      const total = conDocs.reduce((a, l) => a + (docs[l.m.id] || []).filter((d) => d.url && !d.esPdf).length, 0);
+      doc.addPage();
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.text("Anexo: documentos de respaldo", 14, 18);
+      let y = 26;
+      const alto = doc.internal.pageSize.getHeight();
+      for (const l of conDocs) {
+        if (y > alto - 40) { doc.addPage(); y = 18; }
+        doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+        doc.text(`${fmtDate(l.m.fecha)} · ${(l.m.descripcion || l.m.tipo).slice(0, 80)} · ${fq(l.entra || l.sale)}`, 14, y);
+        y += 4;
+        for (const d of (docs[l.m.id] || []).filter((d) => d.url && !d.esPdf)) {
+          hechas++;
+          setArmando(`Armando el PDF: imagen ${hechas} de ${total}...`);
+          const img = await imagenParaPdf(d.url);
+          if (!img) continue;
+          const maxW = 182, maxH = 115;
+          const k = Math.min(maxW / (img.w * 0.2646), maxH / (img.h * 0.2646), 1);
+          const w = img.w * 0.2646 * k, h = img.h * 0.2646 * k;
+          if (y + h > alto - 12) { doc.addPage(); y = 18; }
+          doc.addImage(img.data, "JPEG", 14, y, w, h);
+          y += h + 5;
+        }
+        const pdfs = (docs[l.m.id] || []).filter((d) => d.esPdf).length;
+        if (pdfs) {
+          doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(110);
+          doc.text(`Además tiene ${pdfs} documento${pdfs === 1 ? "" : "s"} en PDF: se ve${pdfs === 1 ? "" : "n"} en la app.`, 14, y);
+          doc.setTextColor(0); y += 5;
+        }
+        y += 3;
+      }
+      setArmando("");
+    }
 
     doc.save(`reporte-tesoreria-${agrupar}-${desde}-a-${hasta}.pdf`);
   };
@@ -252,13 +373,18 @@ export default function Reportes() {
             </div>
           )}
 
+          <label className="flex items-center gap-2 text-[11px] text-[#8A93A3]">
+            <input type="checkbox" checked={conImagenes} onChange={(e) => setConImagenes(e.target.checked)} />
+            Incluir las imágenes de los documentos en el PDF
+          </label>
+          {armando && <div className="text-[11px] text-[#C9A227]">{armando}</div>}
           <div className="flex gap-2">
             <button onClick={bajarExcel}
               className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
               <Download size={12} /> Bajar a Excel
             </button>
-            <button onClick={bajarPdf}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
+            <button onClick={bajarPdf} disabled={!!armando}
+              className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 py-2 rounded-md">
               <FileText size={12} /> Bajar en PDF
             </button>
           </div>
@@ -271,7 +397,14 @@ export default function Reportes() {
                   {abierto === g.grupo ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   <div className="min-w-0 flex-1">
                     <div className="text-[12px] truncate">{nombreGrupo(g.grupo)}</div>
-                    <div className="text-[10px] text-[#6b7280]">{g.n} movimiento{g.n === 1 ? "" : "s"}</div>
+                    <div className="text-[10px] text-[#6b7280]">
+                      {g.n} movimiento{g.n === 1 ? "" : "s"}
+                      {(() => {
+                        const unicos = [...new Set(g.lineas.map((l) => l.m.id))];
+                        const con = unicos.filter((id) => (docs[id] || []).length > 0).length;
+                        return <span> · <Paperclip size={9} className="inline -mt-0.5" /> {con} de {unicos.length} con documento</span>;
+                      })()}
+                    </div>
                   </div>
                   <div className="text-right shrink-0 font-mono text-[11px]">
                     {g.entra > 0 && <div style={{ color: C_ORIGEN }}>+{fmt(g.entra)}</div>}
@@ -279,18 +412,10 @@ export default function Reportes() {
                   </div>
                 </button>
                 {abierto === g.grupo && (
-                  <div className="border-t border-[#2A3547] px-3 pb-2 pt-1.5 space-y-1">
+                  <div className="border-t border-[#2A3547] px-3 pb-2 pt-1 divide-y divide-[#2A3547]">
                     {g.lineas.map((l, i) => (
-                      <div key={i} className="flex items-start gap-2 text-[10px]">
-                        <span className="text-[#6b7280] shrink-0 w-16">{fmtDate(l.m.fecha)}</span>
-                        <span className="flex-1 min-w-0 truncate text-[#8A93A3]">
-                          {l.m.descripcion || l.m.tipo}
-                          {l.m.factura_pendiente && <span className="text-amber-400"> · sin factura</span>}
-                        </span>
-                        <span className="font-mono shrink-0" style={{ color: l.entra ? C_ORIGEN : C_GASTO }}>
-                          {l.entra ? `+${fmt(l.entra)}` : `−${fmt(l.sale)}`}
-                        </span>
-                      </div>
+                      <Linea key={i} l={l} docs={docs[l.m.id] || []}
+                        onNota={(texto) => setMovs(movs.map((m) => m.id === l.m.id ? { ...m, notas: texto } : m))} />
                     ))}
                   </div>
                 )}
@@ -298,6 +423,85 @@ export default function Reportes() {
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// Un movimiento dentro del reporte: su nota, sus documentos, y la opción de
+// escribirle o corregirle la nota sin salir del reporte.
+function Linea({ l, docs, onNota }) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(l.m.notas || "");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    const limpio = texto.trim() || null;
+    const { error: e } = await supabase.from("movimientos").update({ notas: limpio }).eq("id", l.m.id);
+    setGuardando(false);
+    if (e) { setError(e.message); return; }
+    onNota(limpio);
+    setEditando(false);
+  };
+
+  return (
+    <div className="py-2 text-[10px]">
+      <div className="flex items-start gap-2">
+        <span className="text-[#6b7280] shrink-0 w-16">{fmtDate(l.m.fecha)}</span>
+        <span className="flex-1 min-w-0 text-[#8A93A3]">
+          {l.m.descripcion || l.m.tipo}
+          {l.m.factura_pendiente && <span className="text-amber-400"> · sin factura</span>}
+        </span>
+        <span className="font-mono shrink-0" style={{ color: l.entra ? C_ORIGEN : C_GASTO }}>
+          {l.entra ? `+${fmt(l.entra)}` : `−${fmt(l.sale)}`}
+        </span>
+      </div>
+
+      {!editando && (
+        <div className="flex items-start gap-1.5 mt-1 ml-[4.5rem]">
+          {l.m.notas
+            ? <span className="flex-1 text-[#EDE7D9]/80 italic whitespace-pre-line">{l.m.notas}</span>
+            : <span className="flex-1 text-[#6b7280]">Sin notas</span>}
+          <button onClick={() => { setTexto(l.m.notas || ""); setEditando(true); }}
+            title={l.m.notas ? "Editar la nota" : "Agregar una nota"}
+            className="text-[#8A93A3] hover:text-[#C9A227] shrink-0">
+            <Pencil size={11} />
+          </button>
+        </div>
+      )}
+
+      {editando && (
+        <div className="mt-1.5 ml-[4.5rem] space-y-1.5">
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={3} autoFocus
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px] leading-relaxed" />
+          {error && <div className="text-red-400">{error}</div>}
+          <div className="flex gap-1.5">
+            <button onClick={() => setEditando(false)} disabled={guardando}
+              className="flex items-center gap-1 bg-[#2A3547] px-2 py-1 rounded"><X size={10} /> Cancelar</button>
+            <button onClick={guardar} disabled={guardando}
+              className="flex items-center gap-1 bg-[#C9A227] text-[#101826] font-medium px-2 py-1 rounded">
+              <Check size={10} /> {guardando ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {docs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5 ml-[4.5rem]">
+          {docs.map((d, k) => (
+            <a key={k} href={d.url || "#"} target="_blank" rel="noopener noreferrer"
+              title={`${d.tipo}${d.externo ? " (enlace externo)" : ""}`}
+              className="block w-14 h-14 rounded border border-[#2A3547] overflow-hidden bg-[#0C121C] shrink-0">
+              {d.url && !d.esPdf && !d.externo
+                ? <img src={d.url} alt={d.tipo} className="w-full h-full object-cover" loading="lazy" />
+                : <div className="w-full h-full flex flex-col items-center justify-center text-[8px] text-[#8A93A3] gap-0.5">
+                    <FileText size={14} />{d.esPdf ? "PDF" : d.externo ? "Drive" : d.tipo}
+                  </div>}
+            </a>
+          ))}
+        </div>
       )}
     </div>
   );

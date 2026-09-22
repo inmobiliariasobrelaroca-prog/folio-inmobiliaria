@@ -17,6 +17,9 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const [centro, setCentro] = useState("");
   const [categoria, setCategoria] = useState("");
   const [descripcion, setDescripcion] = useState("");
+  // La descripción es el título corto; las notas, el detalle que después
+  // hace falta recordar: por qué, quién autorizó, a qué acuerdo responde.
+  const [notas, setNotas] = useState("");
   const [pendiente, setPendiente] = useState(true);
   const [nuevaObra, setNuevaObra] = useState(false);
   const [nuevaBolsa, setNuevaBolsa] = useState(false);
@@ -63,7 +66,7 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   };
 
   const limpiar = () => {
-    setMonto(0); setCentro(""); setCategoria(""); setDescripcion(""); setProveedor("");
+    setMonto(0); setCentro(""); setCategoria(""); setDescripcion(""); setNotas(""); setProveedor("");
     setFecha(hoy); setPendiente(true); setError("");
     setArchivo(null); setTipoDoc("factura"); setPaso("");
   };
@@ -96,10 +99,11 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
           origen: origenFondo.trim() || null,
           fecha,
           fecha_esperada: fechaEsperada || null,
+          notas: notas.trim() || null,
         });
         if (eF) throw new Error(eF.message);
         setOk(`Quedaron ${fmt(monto)} por liberar. No suman a la bolsa hasta que los pongás disponibles en la pestaña Por liberar.`);
-        setMonto(""); setDescripcion(""); setOrigenFondo(""); setFechaEsperada(""); setPorLiberar(false);
+        setMonto(""); setDescripcion(""); setNotas(""); setOrigenFondo(""); setFechaEsperada(""); setPorLiberar(false);
         onGuardado && onGuardado();
         return;
       }
@@ -107,6 +111,7 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
       const fila = {
         tipo, fecha, monto: Number(monto),
         descripcion: descripcion.trim() || null,
+        notas: notas.trim() || null,
         bolsa_origen_id:  tipo === "ingreso" ? null : origen,
         bolsa_destino_id: tipo === "egreso"  ? null : destino,
         centro_costo_id:  tipo === "egreso" ? (centro || null) : null,
@@ -377,6 +382,13 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
           placeholder="Ej. compra de duchas, comida de albañiles"
           className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#C9A227]" />
+      </label>
+
+      <label className="block">
+        <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Notas (opcional)</span>
+        <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={3}
+          placeholder="El detalle que después vas a querer recordar: por qué se hizo, quién lo autorizó, a qué acuerdo responde..."
+          className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm leading-relaxed resize-y focus:outline-none focus:border-[#C9A227]" />
       </label>
 
       {tipo === "egreso" && (

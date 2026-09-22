@@ -209,6 +209,9 @@ export function MovimientosTesoreria() {
 
               <div className="min-w-0 flex-1">
                 <div className="text-sm truncate">{m.descripcion || "Sin descripción"}</div>
+                {m.notas && (
+                  <div className="text-[11px] text-[#EDE7D9]/70 italic line-clamp-2 whitespace-pre-line">{m.notas}</div>
+                )}
                 <div className="text-[11px] text-[#8A93A3] truncate">
                   {fmtDate(m.fecha)}
                   {m.tipo === "traslado"

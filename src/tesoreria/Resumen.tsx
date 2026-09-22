@@ -96,16 +96,19 @@ export function ResumenTesoreria({ libre, delegado, apartado, bolsas, centros, c
 }
 
 // ---------- Inversión declarada por obra ----------
+//
+// Cuando una obra llega a su presupuesto, el sistema rechaza el siguiente
+// gasto. Por eso cada obra tiene aquí su botón para ajustarlo, y cada
+// ajuste queda registrado con su motivo.
 
 function PresupuestoObras() {
   const [filas, setFilas] = useState([]);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("v_presupuesto_centros").select("*").order("nombre");
-      setFilas(data || []);
-    })();
-  }, []);
+  const cargar = async () => {
+    const { data } = await supabase.from("v_presupuesto_centros").select("*").order("nombre");
+    setFilas(data || []);
+  };
+  useEffect(() => { cargar(); }, []);
 
   if (filas.length === 0) return null;
 
@@ -113,37 +116,131 @@ function PresupuestoObras() {
     <div>
       <div className="text-[11px] uppercase tracking-wide text-[#8A93A3] mb-2">Obras</div>
       <div className="space-y-2">
-        {filas.map((c) => {
-          const tope = c.inversion_declarada != null;
-          const pct = tope && Number(c.inversion_declarada) > 0
-            ? Math.min(100, (Number(c.gastado) / Number(c.inversion_declarada)) * 100)
-            : 0;
-          const apretado = tope && pct >= 85;
-          return (
-            <div key={c.id} className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm truncate">{c.nombre}</div>
-                <div className="font-mono text-xs shrink-0">{fmt(c.gastado)}</div>
-              </div>
-              {tope ? (
-                <>
-                  <div className="h-1.5 bg-[#0C121C] rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${apretado ? "bg-red-500" : "bg-[#C9A227]"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="text-[10px] text-[#8A93A3] mt-1">
-                    Quedan {fmt(c.disponible)} de {fmt(c.inversion_declarada)} declarados
-                  </div>
-                </>
-              ) : (
-                <div className="text-[10px] text-[#6b7280] mt-1">Sin inversión declarada</div>
-              )}
-            </div>
-          );
-        })}
+        {filas.map((c) => <ObraPresupuesto key={c.id} c={c} onCambio={cargar} />)}
       </div>
+    </div>
+  );
+}
+
+function ObraPresupuesto({ c, onCambio }) {
+  const [abierto, setAbierto] = useState(false);
+  const [modo, setModo] = useState("sumar");     // "sumar" | "total"
+  const [monto, setMonto] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [historial, setHistorial] = useState(null);
+
+  const tope = c.inversion_declarada != null;
+  const actual = Number(c.inversion_declarada || 0);
+  const gastado = Number(c.gastado || 0);
+  const pct = tope && actual > 0 ? Math.min(100, (gastado / actual) * 100) : 0;
+  const apretado = tope && pct >= 85;
+  const nuevo = modo === "sumar" ? actual + (Number(monto) || 0) : (Number(monto) || 0);
+
+  const abrir = async () => {
+    setAbierto(true); setError(""); setMonto(""); setMotivo("");
+    setModo(tope ? "sumar" : "total");
+    const { data } = await supabase.from("presupuesto_ajustes")
+      .select("antes, despues, motivo, created_at")
+      .eq("centro_costo_id", c.id).order("created_at", { ascending: false }).limit(5);
+    setHistorial(data || []);
+  };
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const { error: e } = await supabase.rpc("ajustar_presupuesto", {
+        p_centro: c.id, p_nuevo: nuevo, p_motivo: motivo.trim(),
+      });
+      if (e) throw new Error(e.message);
+      setAbierto(false);
+      onCambio();
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm truncate">{c.nombre}</div>
+        <div className="font-mono text-xs shrink-0">{fmt(c.gastado)}</div>
+      </div>
+      {tope ? (
+        <>
+          <div className="h-1.5 bg-[#0C121C] rounded-full mt-2 overflow-hidden">
+            <div className={`h-full rounded-full ${apretado ? "bg-red-500" : "bg-[#C9A227]"}`}
+              style={{ width: `${pct}%` }} />
+          </div>
+          <div className="text-[10px] text-[#8A93A3] mt-1">
+            Quedan {fmt(c.disponible)} de {fmt(c.inversion_declarada)} declarados
+            {Number(c.comprometido) > 0 && ` · ${fmt(c.comprometido)} por pagar`}
+          </div>
+          {apretado && (
+            <div className="text-[10px] text-red-400 mt-0.5">
+              Está cerca del tope: un gasto que lo pase va a ser rechazado.
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="text-[10px] text-[#6b7280] mt-1">Sin inversión declarada</div>
+      )}
+
+      {!abierto ? (
+        <button onClick={abrir} className="text-[10px] text-[#C9A227] mt-1.5">
+          {tope ? "Ajustar presupuesto" : "Ponerle presupuesto"}
+        </button>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {tope && (
+            <div className="grid grid-cols-2 gap-1.5">
+              {[["sumar", "Sumarle"], ["total", "Cambiar el total"]].map(([k, t]) => (
+                <button key={k} onClick={() => setModo(k)}
+                  className={`text-[10px] py-1.5 rounded ${modo === k
+                    ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#0C121C] border border-[#2A3547] text-[#8A93A3]"}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="block">
+            <span className="text-[10px] text-[#8A93A3]">
+              {modo === "sumar" ? "Cuánto se le suma" : "Presupuesto total"}
+            </span>
+            <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)}
+              className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[12px] font-mono" />
+          </label>
+          {Number(monto) > 0 && (
+            <div className="text-[10px] text-[#8A93A3]">
+              Queda en <span className="text-[#EDE7D9] font-mono">{fmt(nuevo)}</span>
+              {tope && ` (antes ${fmt(actual)})`}, con {fmt(Math.max(0, nuevo - gastado - Number(c.comprometido || 0)))} libres.
+            </div>
+          )}
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Por qué: ej. se agregaron acabados, subió el hierro..."
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">Cancelar</button>
+            <button onClick={guardar} disabled={guardando || !(Number(monto) > 0) || !motivo.trim()}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded">
+              {guardando ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+
+          {historial && historial.length > 0 && (
+            <div className="pt-1.5 border-t border-[#2A3547]">
+              <div className="text-[10px] uppercase tracking-wide text-[#6b7280] mb-1">Ajustes anteriores</div>
+              {historial.map((h, i) => (
+                <div key={i} className="text-[10px] text-[#8A93A3]">
+                  {fmtDate(String(h.created_at).slice(0, 10))}: {h.antes != null ? fmt(h.antes) : "sin tope"} → {h.despues != null ? fmt(h.despues) : "sin tope"} · {h.motivo}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

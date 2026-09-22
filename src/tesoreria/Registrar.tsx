@@ -30,6 +30,12 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const [tipoDoc, setTipoDoc] = useState("factura");
   const [paso, setPaso] = useState("");
   const [guardando, setGuardando] = useState(false);
+  // Un ingreso puede estar ya en la cuenta o todavía por liberar: dinero que
+  // es de la empresa pero que el banco retiene, un depósito avisado que no se
+  // acredita, un pago prometido. Lo por liberar no suma a ninguna bolsa.
+  const [porLiberar, setPorLiberar] = useState(false);
+  const [origenFondo, setOrigenFondo] = useState("");
+  const [fechaEsperada, setFechaEsperada] = useState("");
   const [error, setError] = useState("");
   const [ok, setOk] = useState(null);
 
@@ -80,6 +86,24 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
   const guardar = async () => {
     setError(""); setOk(null); setGuardando(true);
     try {
+      if (tipo === "ingreso" && porLiberar) {
+        if (!descripcion.trim()) throw new Error("Poné de qué es ese dinero, por ejemplo: segunda mitad del desembolso.");
+        const { error: eF } = await supabase.from("fondos_por_liberar").insert({
+          bolsa_id: destino,
+          categoria_id: categoria || null,
+          monto: Number(monto),
+          concepto: descripcion.trim(),
+          origen: origenFondo.trim() || null,
+          fecha,
+          fecha_esperada: fechaEsperada || null,
+        });
+        if (eF) throw new Error(eF.message);
+        setOk(`Quedaron ${fmt(monto)} por liberar. No suman a la bolsa hasta que los pongás disponibles en la pestaña Por liberar.`);
+        setMonto(""); setDescripcion(""); setOrigenFondo(""); setFechaEsperada(""); setPorLiberar(false);
+        onGuardado && onGuardado();
+        return;
+      }
+
       const fila = {
         tipo, fecha, monto: Number(monto),
         descripcion: descripcion.trim() || null,
@@ -229,7 +253,41 @@ export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
         <Campo label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
       </div>
 
-      {tipo === "ingreso" && selBolsa(destino, setDestino, "¿A qué bolsa entró?")}
+      {tipo === "ingreso" && (
+        <div className="space-y-2">
+          <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">¿Ya está en la cuenta?</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPorLiberar(false)}
+              className={`text-[11px] py-2 rounded-md border ${!porLiberar
+                ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium"
+                : "bg-[#0C121C] border-[#2A3547] text-[#8A93A3]"}`}>
+              Sí, ya está disponible
+            </button>
+            <button type="button" onClick={() => setPorLiberar(true)}
+              className={`text-[11px] py-2 rounded-md border ${porLiberar
+                ? "bg-[#C9A227] text-[#101826] border-[#C9A227] font-medium"
+                : "bg-[#0C121C] border-[#2A3547] text-[#8A93A3]"}`}>
+              No, está por liberar
+            </button>
+          </div>
+          {porLiberar && (
+            <p className="text-[10px] text-[#8A93A3] leading-relaxed">
+              Queda anotado pero no suma a la bolsa ni se puede gastar. Cuando
+              el dinero entre de verdad, lo ponés disponible en la pestaña Por liberar.
+            </p>
+          )}
+        </div>
+      )}
+      {tipo === "ingreso" && selBolsa(destino, setDestino,
+        porLiberar ? "¿A qué bolsa va a entrar cuando se libere?" : "¿A qué bolsa entró?")}
+      {tipo === "ingreso" && porLiberar && (
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Quién lo retiene (opcional)" value={origenFondo}
+            onChange={(e) => setOrigenFondo(e.target.value)} placeholder="Ej. Banrural" />
+          <Campo label="Cuándo se espera (opcional)" type="date" value={fechaEsperada}
+            onChange={(e) => setFechaEsperada(e.target.value)} />
+        </div>
+      )}
       {tipo === "egreso" && selBolsa(origen, setOrigen, "¿De qué bolsa salió?", true)}
       {tipo === "traslado" && (
         <div className="space-y-3">

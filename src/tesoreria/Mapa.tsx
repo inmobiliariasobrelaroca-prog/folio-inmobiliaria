@@ -25,6 +25,14 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
   const [cargando, setCargando] = useState(true);
   const [sel, setSel] = useState(null);
   const [catAbierta, setCatAbierta] = useState(null);
+  // Dinero que es de la empresa pero todavía no entró a ninguna cuenta.
+  // No suma a "A tu disposición": se muestra aparte para que no se pierda.
+  const [porLiberar, setPorLiberar] = useState(0);
+  useEffect(() => {
+    supabase.from("v_fondos_por_liberar").select("pendiente, estado")
+      .in("estado", ["pendiente", "parcial"])
+      .then(({ data }) => setPorLiberar((data || []).reduce((a, f) => a + Number(f.pendiente || 0), 0)));
+  }, []);
 
   // Al moverse a otro nodo del mapa se cierra el desglose que estuviera abierto.
   useEffect(() => { setCatAbierta(null); }, [sel?.id]); // { tipo:'origen'|'bolsa'|'gasto', id, nombre, monto }
@@ -150,8 +158,14 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
         )}
         {apartado > 0 && (
           <div className="flex items-baseline justify-between mt-1.5 pt-1.5 border-t border-[#2A3547]">
-            <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Apartado o retenido</span>
+            <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Apartado</span>
             <span className="font-mono text-sm text-[#8A93A3]">{fmt(apartado)}</span>
+          </div>
+        )}
+        {porLiberar > 0 && (
+          <div className="flex items-baseline justify-between mt-1.5 pt-1.5 border-t border-[#2A3547]">
+            <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Por liberar · aún no está en cuentas</span>
+            <span className="font-mono text-sm text-[#8A93A3]">{fmt(porLiberar)}</span>
           </div>
         )}
       </div>

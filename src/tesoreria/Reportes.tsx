@@ -125,6 +125,17 @@ export default function Reportes() {
   const [excluidos, setExcluidos] = useState(new Set());
   const [conResumen, setConResumen] = useState(true);
   const [conDetalle, setConDetalle] = useState(true);
+  // Presupuesto de cada obra: lo asignado, lo gastado, lo que está
+  // comprometido por pagar y lo que queda. Opcional al imprimir.
+  const [conPresupuesto, setConPresupuesto] = useState(true);
+  const [presupuestos, setPresupuestos] = useState({});
+  useEffect(() => {
+    supabase.from("v_presupuesto_centros").select("*").then(({ data }) => {
+      const m = {};
+      (data || []).forEach((c) => { m[c.nombre] = c; });
+      setPresupuestos(m);
+    });
+  }, []);
   const [armando, setArmando] = useState("");
 
   useEffect(() => {
@@ -205,6 +216,18 @@ export default function Reportes() {
 
   // ---------- Exportar ----------
 
+  // Columnas del detalle. La que coincide con la agrupación se omite, porque
+  // ya sale como título del grupo.
+  const bolsaDe = (m) => m.tipo === "traslado"
+    ? `${m.origen?.nombre || "?"} → ${m.destino?.nombre || "?"}`
+    : (m.tipo === "egreso" ? m.origen?.nombre : m.destino?.nombre) || "";
+  const respaldoDe = (m) => {
+    const k = (docs[m.id] || []).length;
+    if (k) return `${k} doc.`;
+    return m.tipo === "egreso" && m.factura_pendiente ? "SIN FACTURA" : "—";
+  };
+  const conPresup = agrupar === "obra" && conPresupuesto;
+
   // Lo que se va a bajar: solo los grupos marcados, con sus propios totales.
   const sel = grupos.filter((g) => !excluidos.has(g.grupo));
   const selE = sel.reduce((a, g) => a + g.entra, 0);
@@ -228,6 +251,20 @@ export default function Reportes() {
                               (g.entra - g.sale).toFixed(2), g.n]),
         ["TOTAL", selE.toFixed(2), selS.toFixed(2), (selE - selS).toFixed(2),
          sel.reduce((a, g) => a + g.n, 0)],
+        [],
+      ] : []),
+      ...(conPresup ? [
+        ["PRESUPUESTO DE CADA OBRA"],
+        ["Obra", "Presupuesto", "Gastado en el período", "Gastado en total", "Por pagar", "Queda"],
+        ...sel.map((g) => {
+          const pr = presupuestos[g.grupo];
+          return [nombreGrupo(g.grupo),
+            pr?.inversion_declarada != null ? Number(pr.inversion_declarada).toFixed(2) : "sin presupuesto",
+            g.sale.toFixed(2),
+            pr ? Number(pr.gastado || 0).toFixed(2) : "",
+            pr ? Number(pr.comprometido || 0).toFixed(2) : "",
+            pr?.disponible != null ? Number(pr.disponible).toFixed(2) : ""];
+        }),
         [],
       ] : []),
       ...(conDetalle ? [
@@ -257,7 +294,8 @@ export default function Reportes() {
   };
 
   const bajarPdf = async () => {
-    const doc = new jsPDF({ unit: "mm", format: "letter" });
+    // Horizontal: el detalle lleva proveedor, tipo de gasto, bolsa y respaldo
+    const doc = new jsPDF({ unit: "mm", format: "letter", orientation: "landscape" });
     const fq = (n) => "Q " + Number(n || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     doc.setFont("helvetica", "bold"); doc.setFontSize(15);
     doc.text("Sobre la Roca · Reporte de tesorería", 14, 18);
@@ -267,7 +305,7 @@ export default function Reportes() {
     if (parcial) {
       // Que quien lo lea sepa que no es el total de la empresa
       doc.setFontSize(8.5);
-      const lineasNota = doc.splitTextToSize(notaParcial, 182);
+      const lineasNota = doc.splitTextToSize(notaParcial, 250);
       doc.text(lineasNota, 14, 30);
       arranque = 30 + lineasNota.length * 4 + 2;
     }
@@ -285,18 +323,56 @@ export default function Reportes() {
       columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
     });
 
-    if (conDetalle) autoTable(doc, {
+    if (conPresup) autoTable(doc, {
       startY: conResumen ? doc.lastAutoTable.finalY + 8 : arranque,
-      head: [[tituloAgrupar, "Fecha", "Descripción y notas", "Doc.", etqEntra, etqSale]],
-      body: sel.flatMap((g) => g.lineas.map((l) => [
-        nombreGrupo(g.grupo), fmtDate(l.m.fecha),
-        (l.m.descripcion || l.m.tipo) + (l.m.notas ? `\n${l.m.notas}` : ""),
-        (docs[l.m.id] || []).length || "—",
-        l.entra ? fq(l.entra) : "", l.sale ? fq(l.sale) : "",
-      ])),
-      styles: { fontSize: 7.5, cellPadding: 1.6 },
+      head: [["Obra", "Presupuesto", "Gastado en el período", "Gastado en total", "Por pagar", "Queda"]],
+      body: sel.map((g) => {
+        const pr = presupuestos[g.grupo];
+        return [nombreGrupo(g.grupo),
+          pr?.inversion_declarada != null ? fq(pr.inversion_declarada) : "sin presupuesto",
+          fq(g.sale),
+          pr ? fq(pr.gastado) : "—",
+          pr ? fq(pr.comprometido) : "—",
+          pr?.disponible != null ? fq(pr.disponible) : "—"];
+      }),
+      styles: { fontSize: 8.5 },
+      headStyles: { fillColor: [201, 162, 39], textColor: [16, 24, 38] },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" },
+                      4: { halign: "right" }, 5: { halign: "right" } },
+    });
+
+    // Columnas del detalle, sin repetir la de la agrupación
+    const cols = [
+      [tituloAgrupar, (g) => nombreGrupo(g.grupo), 24],
+      ["Fecha", (g, l) => fmtDate(l.m.fecha), 16],
+      // La descripción toma el ancho que sobre, para que nunca se salga de la hoja
+      ["Descripción y notas", (g, l) => (l.m.descripcion || l.m.tipo) + (l.m.notas ? `\n${l.m.notas}` : ""), "auto"],
+      ...(agrupar !== "categoria" ? [["Tipo de gasto", (g, l) => l.m.categorias?.nombre || "", 24]] : []),
+      ...(agrupar !== "proveedor" ? [["Proveedor", (g, l) => l.m.proveedores?.nombre || "", 24]] : []),
+      ...(agrupar !== "obra" ? [["Obra", (g, l) => l.m.centros_costo?.nombre || "", 20]] : []),
+      ...(agrupar !== "bolsa" ? [["Bolsa", (g, l) => bolsaDe(l.m), 26]] : []),
+      ["Respaldo", (g, l) => respaldoDe(l.m), 15],
+      [etqEntra, (g, l) => l.entra ? fq(l.entra) : "", 20],
+      [etqSale, (g, l) => l.sale ? fq(l.sale) : "", 20],
+    ];
+    const iRespaldo = cols.findIndex((c) => c[0] === "Respaldo");
+
+    if (conDetalle) autoTable(doc, {
+      startY: (conResumen || conPresup) ? doc.lastAutoTable.finalY + 8 : arranque,
+      head: [cols.map((c) => c[0])],
+      body: sel.flatMap((g) => g.lineas.map((l) => cols.map((c) => c[1](g, l)))),
+      styles: { fontSize: 7.2, cellPadding: 1.4, overflow: "linebreak" },
       headStyles: { fillColor: [42, 53, 71] },
-      columnStyles: { 2: { cellWidth: 70 }, 3: { halign: "center" }, 4: { halign: "right" }, 5: { halign: "right" } },
+      columnStyles: Object.fromEntries(cols.map((c, i) => [i, {
+        cellWidth: c[2],
+        halign: i >= cols.length - 2 ? "right" : (i === iRespaldo ? "center" : "left"),
+      }])),
+      // "SIN FACTURA" en rojo, para que salte a la vista al revisar
+      didParseCell: (d) => {
+        if (d.section === "body" && d.column.index === iRespaldo && d.cell.raw === "SIN FACTURA") {
+          d.cell.styles.textColor = [192, 57, 43]; d.cell.styles.fontStyle = "bold";
+        }
+      },
     });
 
     // Anexo con las imágenes de los documentos, si se pidió
@@ -458,6 +534,12 @@ export default function Reportes() {
                   <input type="checkbox" checked={conDetalle} onChange={(e) => setConDetalle(e.target.checked)} />
                   Detalle de cada movimiento, con sus notas
                 </label>
+                {agrupar === "obra" && (
+                  <label className="flex items-center gap-2 text-[11px] py-1">
+                    <input type="checkbox" checked={conPresupuesto} onChange={(e) => setConPresupuesto(e.target.checked)} />
+                    Presupuesto de cada obra: asignado, gastado, por pagar y lo que queda
+                  </label>
+                )}
                 <label className="flex items-center gap-2 text-[11px] py-1">
                   <input type="checkbox" checked={conImagenes} onChange={(e) => setConImagenes(e.target.checked)} />
                   Imágenes de los documentos <span className="text-[#6b7280]">(solo PDF)</span>
@@ -466,7 +548,7 @@ export default function Reportes() {
 
               {(() => {
                 const n = grupos.length - excluidos.size;
-                const vacio = n === 0 || (!conResumen && !conDetalle && !conImagenes);
+                const vacio = n === 0 || (!conResumen && !conDetalle && !conImagenes && !(agrupar === "obra" && conPresupuesto));
                 return (
                   <>
                     <div className="text-[10px] text-[#8A93A3]">
@@ -476,7 +558,7 @@ export default function Reportes() {
                     </div>
                     {armando && <div className="text-[11px] text-[#C9A227]">{armando}</div>}
                     <div className="flex gap-2">
-                      <button onClick={bajarExcel} disabled={vacio || (!conResumen && !conDetalle)}
+                      <button onClick={bajarExcel} disabled={vacio || (!conResumen && !conDetalle && !(agrupar === "obra" && conPresupuesto))}
                         className="flex-1 flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 py-2 rounded-md">
                         <Download size={12} /> Excel
                       </button>
@@ -507,6 +589,19 @@ export default function Reportes() {
                         return <span> · <Paperclip size={9} className="inline -mt-0.5" /> {con} de {unicos.length} con documento</span>;
                       })()}
                     </div>
+                    {agrupar === "obra" && presupuestos[g.grupo]?.inversion_declarada != null && (() => {
+                      const pr = presupuestos[g.grupo];
+                      const queda = Number(pr.disponible || 0);
+                      return (
+                        <div className="text-[10px] text-[#8A93A3] mt-0.5">
+                          Presupuesto {fmt(pr.inversion_declarada)} · gastado {fmt(pr.gastado)}
+                          {Number(pr.comprometido) > 0 && ` · por pagar ${fmt(pr.comprometido)}`}
+                          {" · "}<span style={{ color: queda < 0 ? C_GASTO : C_ORIGEN }}>
+                            {queda < 0 ? `pasado por ${fmt(-queda)}` : `queda ${fmt(queda)}`}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="text-right shrink-0 font-mono text-[11px]">
                     {g.entra > 0 && <div style={{ color: C_ORIGEN }}>+{fmt(g.entra)}</div>}

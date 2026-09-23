@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { FileText, Upload } from "lucide-react";
+import { FileText, Upload, Trash2, AlertTriangle } from "lucide-react";
 import { fmt, fmtDate, C_BOLSA } from "./comun";
 import { DocumentosDelGasto } from "./Documentos";
 
@@ -245,10 +245,25 @@ function ObraPresupuesto({ c, onCambio }) {
   );
 }
 
-export function MovimientosTesoreria() {
+export function MovimientosTesoreria({ puedeBorrar = true }) {
   const [movs, setMovs] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [abierto, setAbierto] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState("");
+  const [trabajando, setTrabajando] = useState(false);
+
+  const borrar = async (id) => {
+    setError(""); setTrabajando(true);
+    try {
+      const { error: e } = await supabase.rpc("borrar_movimiento", { p_id: id, p_motivo: motivo.trim() });
+      if (e) throw new Error(e.message);
+      setBorrando(null); setMotivo("");
+      await cargar();
+    } catch (e) { setError(e.message); }
+    finally { setTrabajando(false); }
+  };
 
   const cargar = async () => {
     setCargando(true);
@@ -270,10 +285,19 @@ export function MovimientosTesoreria() {
         .from("facturas").createSignedUrls(rutas, 3600);
       (firmados || []).forEach((f) => { if (f.signedUrl && f.path) urls[f.path] = f.signedUrl; });
     }
+    // Dos movimientos del mismo día, mismo monto y misma bolsa casi siempre
+    // son el mismo registrado dos veces.
+    const veces = {};
+    filas.forEach((m) => {
+      const k = `${m.fecha}|${m.monto}|${m.tipo}|${m.bolsa_origen_id || ""}|${m.bolsa_destino_id || ""}`;
+      veces[k] = (veces[k] || 0) + 1;
+    });
     setMovs(filas.map((m) => {
       const primera = (m.facturas || []).find((f) => f.storage_path);
+      const k = `${m.fecha}|${m.monto}|${m.tipo}|${m.bolsa_origen_id || ""}|${m.bolsa_destino_id || ""}`;
       return { ...m, miniatura: primera ? urls[primera.storage_path] : null,
-               esPdf: primera ? /\.pdf$/i.test(primera.storage_path) : false };
+               esPdf: primera ? /\.pdf$/i.test(primera.storage_path) : false,
+               posibleDuplicado: veces[k] > 1 };
     }));
     setCargando(false);
   };
@@ -333,6 +357,43 @@ export function MovimientosTesoreria() {
 
             {m.factura_pendiente && (
               <div className="mt-2 text-[10px] text-amber-400">Falta la factura del proveedor</div>
+            )}
+
+            {m.posibleDuplicado && (
+              <div className="mt-2 text-[10px] text-amber-400 flex items-start gap-1">
+                <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+                Hay otro movimiento del mismo día, por el mismo monto y la misma bolsa.
+                Puede estar registrado dos veces.
+              </div>
+            )}
+
+            {puedeBorrar && borrando !== m.id && (
+              <button onClick={() => { setBorrando(m.id); setMotivo(""); setError(""); }}
+                className="mt-2 flex items-center gap-1 text-[10px] text-[#8A93A3] hover:text-red-400">
+                <Trash2 size={10} /> Borrar este movimiento
+              </button>
+            )}
+
+            {borrando === m.id && (
+              <div className="mt-2 space-y-1.5 border-t border-[#2A3547] pt-2">
+                <div className="text-[10px] text-red-400">
+                  Se va a borrar {fmt(m.monto)} del {fmtDate(m.fecha)}. El saldo de
+                  {m.tipo === "ingreso" ? ` ${m.destino?.nombre}` : ` ${m.origen?.nombre}`} cambia.
+                  Queda registrado quién lo borró y por qué.
+                </div>
+                <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+                  placeholder="Por qué se borra: ej. se registró dos veces"
+                  className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+                {error && <div className="text-[10px] text-red-400">{error}</div>}
+                <div className="flex gap-2">
+                  <button onClick={() => { setBorrando(null); setError(""); }} disabled={trabajando}
+                    className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">Cancelar</button>
+                  <button onClick={() => borrar(m.id)} disabled={trabajando || !motivo.trim()}
+                    className="flex-1 flex items-center justify-center gap-1 text-[10px] bg-red-900 disabled:opacity-40 py-1.5 rounded">
+                    <Trash2 size={10} /> {trabajando ? "Borrando..." : "Borrar"}
+                  </button>
+                </div>
+              </div>
             )}
 
             {expandido && (

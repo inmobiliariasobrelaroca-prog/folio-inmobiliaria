@@ -249,6 +249,12 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
   const [movs, setMovs] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [abierto, setAbierto] = useState(null);
+  // Mismo criterio que el reporte: un período, no un corte de 60 que
+  // escondía movimientos viejos sin avisar.
+  const hoyIso = new Date().toISOString().slice(0, 10);
+  const primeroDelMes = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); })();
+  const [desde, setDesde] = useState(primeroDelMes);
+  const [hasta, setHasta] = useState(hoyIso);
   const [borrando, setBorrando] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
@@ -273,9 +279,9 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
       // que ya no se usa, y la tabla factura_movimientos, que es la buena. Sin
       // decirle cuál, PostgREST responde 300 y la lista sale vacía.
       .select("*, facturas!factura_movimientos(id, storage_path, tipo_documento), centros_costo(nombre), categorias(nombre), proveedores(nombre), origen:bolsa_origen_id(nombre), destino:bolsa_destino_id(nombre)")
+      .gte("fecha", desde).lte("fecha", hasta)
       .order("fecha", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(60);
+      .order("created_at", { ascending: false });
     const filas = data || [];
 
     // Miniatura del primer documento de cada movimiento, en un solo lote
@@ -304,13 +310,47 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
     }));
     setCargando(false);
   };
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(); }, [desde, hasta]);
 
-  if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando...</div>;
-  if (movs.length === 0) return <div className="text-sm text-[#8A93A3]">Sin movimientos todavía.</div>;
+  const periodo = (
+    <div className="grid grid-cols-2 gap-2 mb-3">
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Desde</span>
+        <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
+          className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-2 text-[12px]" />
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Hasta</span>
+        <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)}
+          className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-2 text-[12px]" />
+      </label>
+    </div>
+  );
+
+  if (cargando) return <div>{periodo}<div className="text-sm text-[#8A93A3]">Cargando...</div></div>;
+  if (movs.length === 0) return (
+    <div>
+      {periodo}
+      <div className="text-sm text-[#8A93A3]">
+        No hay movimientos entre esas fechas. Ampliá el período si buscás algo más viejo.
+      </div>
+    </div>
+  );
+
+  const entro = movs.filter((m) => m.tipo === "ingreso").reduce((a, m) => a + Number(m.monto), 0);
+  const salio = movs.filter((m) => m.tipo === "egreso").reduce((a, m) => a + Number(m.monto), 0);
 
   return (
     <div className="space-y-2">
+      {periodo}
+      <div className="flex items-center justify-between text-[11px] text-[#8A93A3] pb-1">
+        <span>{movs.length} movimiento{movs.length === 1 ? "" : "s"}</span>
+        <span className="font-mono">
+          <span className="text-emerald-400">+{fmt(entro)}</span>
+          {" · "}
+          <span className="text-red-400">−{fmt(salio)}</span>
+        </span>
+      </div>
       {movs.map((m) => {
         const color = m.tipo === "ingreso" ? "text-emerald-400" : m.tipo === "egreso" ? "text-red-400" : "text-[#C9A227]";
         const signo = m.tipo === "ingreso" ? "+" : m.tipo === "egreso" ? "−" : "";

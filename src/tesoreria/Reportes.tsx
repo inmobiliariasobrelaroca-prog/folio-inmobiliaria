@@ -265,23 +265,35 @@ export default function Reportes() {
             pr ? Number(pr.comprometido || 0).toFixed(2) : "",
             pr?.disponible != null ? Number(pr.disponible).toFixed(2) : ""];
         }),
+        (() => {
+          const t = (campo) => sel.reduce((a, g) => a + Number(presupuestos[g.grupo]?.[campo] || 0), 0);
+          return ["TOTAL", t("inversion_declarada").toFixed(2), selS.toFixed(2),
+                  t("gastado").toFixed(2), t("comprometido").toFixed(2), t("disponible").toFixed(2)];
+        })(),
         [],
       ] : []),
       ...(conDetalle ? [
       ["DETALLE"],
       [tituloAgrupar, "Fecha", "Tipo", "Descripción", "Notas", etqEntra, etqSale,
        "Bolsa origen", "Bolsa destino", "Tipo de gasto", "Obra", "Proveedor", "Documentos"],
-      ...sel.flatMap((g) => g.lineas.map((l) => {
-        const ds = docs[l.m.id] || [];
-        return [
-          nombreGrupo(g.grupo), l.m.fecha, l.m.tipo, l.m.descripcion || "", l.m.notas || "",
-          l.entra ? l.entra.toFixed(2) : "", l.sale ? l.sale.toFixed(2) : "",
-          l.m.origen?.nombre || "", l.m.destino?.nombre || "",
-          l.m.categorias?.nombre || "", l.m.centros_costo?.nombre || "",
-          l.m.proveedores?.nombre || "",
-          ds.length ? `${ds.length} (${[...new Set(ds.map((d) => d.tipo))].join(", ")})` : "sin documento",
-        ];
-      })),
+      ...sel.flatMap((g) => [
+        ...g.lineas.map((l) => {
+          const ds = docs[l.m.id] || [];
+          return [
+            nombreGrupo(g.grupo), l.m.fecha, l.m.tipo, l.m.descripcion || "", l.m.notas || "",
+            l.entra ? l.entra.toFixed(2) : "", l.sale ? l.sale.toFixed(2) : "",
+            l.m.origen?.nombre || "", l.m.destino?.nombre || "",
+            l.m.categorias?.nombre || "", l.m.centros_costo?.nombre || "",
+            l.m.proveedores?.nombre || "",
+            ds.length ? `${ds.length} (${[...new Set(ds.map((d) => d.tipo))].join(", ")})` : "sin documento",
+          ];
+        }),
+        // Subtotal de cada grupo, para que el detalle cuadre por sí solo
+        [`Subtotal ${nombreGrupo(g.grupo)}`, "", "", "", "",
+         g.entra.toFixed(2), g.sale.toFixed(2), "", "", "", "", "", ""],
+      ]),
+      ["GRAN TOTAL", "", "", "", "", selE.toFixed(2), selS.toFixed(2), "", "", "", "", "",
+       `Neto ${(selE - selS).toFixed(2)}`],
       ] : []),
     ];
     const csv = "\uFEFF" + filas.map((f) => f.map(esc).join(",")).join("\r\n");
@@ -335,8 +347,14 @@ export default function Reportes() {
           pr ? fq(pr.comprometido) : "—",
           pr?.disponible != null ? fq(pr.disponible) : "—"];
       }),
+      foot: [(() => {
+        const t = (campo) => sel.reduce((a, g) => a + Number(presupuestos[g.grupo]?.[campo] || 0), 0);
+        return ["Total", fq(t("inversion_declarada")), fq(selS),
+                fq(t("gastado")), fq(t("comprometido")), fq(t("disponible"))];
+      })()],
       styles: { fontSize: 8.5 },
       headStyles: { fillColor: [201, 162, 39], textColor: [16, 24, 38] },
+      footStyles: { fillColor: [16, 24, 38], textColor: [237, 231, 217] },
       columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" },
                       4: { halign: "right" }, 5: { halign: "right" } },
     });
@@ -360,9 +378,20 @@ export default function Reportes() {
     if (conDetalle) autoTable(doc, {
       startY: (conResumen || conPresup) ? doc.lastAutoTable.finalY + 8 : arranque,
       head: [cols.map((c) => c[0])],
-      body: sel.flatMap((g) => g.lineas.map((l) => cols.map((c) => c[1](g, l)))),
+      // Cada grupo cierra con su subtotal; al final, el gran total
+      body: sel.flatMap((g) => [
+        ...g.lineas.map((l) => cols.map((c) => c[1](g, l))),
+        cols.map((c, i) => i === 0 ? `Subtotal ${nombreGrupo(g.grupo)}`
+          : i === cols.length - 2 ? fq(g.entra)
+          : i === cols.length - 1 ? fq(g.sale) : ""),
+      ]),
+      foot: [cols.map((c, i) => i === 0 ? "Gran total"
+        : i === 2 ? `Neto ${fq(selE - selS)}`
+        : i === cols.length - 2 ? fq(selE)
+        : i === cols.length - 1 ? fq(selS) : "")],
       styles: { fontSize: 7.2, cellPadding: 1.4, overflow: "linebreak" },
       headStyles: { fillColor: [42, 53, 71] },
+      footStyles: { fillColor: [201, 162, 39], textColor: [16, 24, 38], fontStyle: "bold" },
       columnStyles: Object.fromEntries(cols.map((c, i) => [i, {
         cellWidth: c[2],
         halign: i >= cols.length - 2 ? "right" : (i === iRespaldo ? "center" : "left"),
@@ -371,6 +400,10 @@ export default function Reportes() {
       didParseCell: (d) => {
         if (d.section === "body" && d.column.index === iRespaldo && d.cell.raw === "SIN FACTURA") {
           d.cell.styles.textColor = [192, 57, 43]; d.cell.styles.fontStyle = "bold";
+        }
+        if (d.section === "body" && String(d.row.raw?.[0] || "").startsWith("Subtotal ")) {
+          d.cell.styles.fontStyle = "bold";
+          d.cell.styles.fillColor = [238, 238, 238];
         }
       },
     });
@@ -614,6 +647,12 @@ export default function Reportes() {
                       <Linea key={i} l={l} docs={docs[l.m.id] || []}
                         onNota={(texto) => setMovs(movs.map((m) => m.id === l.m.id ? { ...m, notas: texto } : m))} />
                     ))}
+                    <div className="flex items-center gap-2 pt-1.5 text-[10px]">
+                      <span className="flex-1 text-[#8A93A3]">Subtotal de {nombreGrupo(g.grupo)}</span>
+                      {g.entra > 0 && <span className="font-mono" style={{ color: C_ORIGEN }}>+{fmt(g.entra)}</span>}
+                      {g.sale > 0 && <span className="font-mono" style={{ color: C_GASTO }}>−{fmt(g.sale)}</span>}
+                      <span className="font-mono text-[#EDE7D9]">neto {fmt(g.entra - g.sale)}</span>
+                    </div>
                   </div>
                 )}
               </div>

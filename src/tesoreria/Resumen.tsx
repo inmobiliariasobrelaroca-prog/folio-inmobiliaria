@@ -269,7 +269,10 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
     setCargando(true);
     const { data } = await supabase
       .from("movimientos")
-      .select("*, facturas(id, storage_path, tipo_documento), centros_costo(nombre), categorias(nombre), proveedores(nombre), origen:bolsa_origen_id(nombre), destino:bolsa_destino_id(nombre)")
+      // Hay dos caminos de movimientos a facturas: la columna vieja factura_id,
+      // que ya no se usa, y la tabla factura_movimientos, que es la buena. Sin
+      // decirle cuál, PostgREST responde 300 y la lista sale vacía.
+      .select("*, facturas!factura_movimientos(id, storage_path, tipo_documento), centros_costo(nombre), categorias(nombre), proveedores(nombre), origen:bolsa_origen_id(nombre), destino:bolsa_destino_id(nombre)")
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(60);

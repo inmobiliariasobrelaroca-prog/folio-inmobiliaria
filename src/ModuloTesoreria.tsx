@@ -38,7 +38,7 @@ import Reportes from "./tesoreria/Reportes";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v76";
+const VERSION = "v78";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -294,7 +294,7 @@ function PanelTesoreria({ perfil, onCerrar }) {
         ) : tab === "permisos" ? (
           <Permisos />
         ) : (
-          <MovimientosTesoreria puedeBorrar={esSuper} />
+          <MovimientosTesoreria puedeBorrar={esSuper || puede("finanzas_borrar")} soloGastos={!esSuper} />
         )}
         </div>
       </div>

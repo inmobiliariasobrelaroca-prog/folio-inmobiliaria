@@ -245,7 +245,9 @@ function ObraPresupuesto({ c, onCambio }) {
   );
 }
 
-export function MovimientosTesoreria({ puedeBorrar = true }) {
+// soloGastos: quien no es administrador solo borra gastos. Un ingreso mal
+// borrado descuadra lo que entró de verdad, y un traslado toca dos bolsas.
+export function MovimientosTesoreria({ puedeBorrar = true, soloGastos = false }) {
   const [movs, setMovs] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [abierto, setAbierto] = useState(null);
@@ -481,7 +483,7 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
               </div>
             )}
 
-            {puedeBorrar && borrando !== m.id && (
+            {puedeBorrar && (!soloGastos || m.tipo === "egreso") && borrando !== m.id && (
               <button onClick={() => { setBorrando(m.id); setMotivo(""); setError(""); }}
                 className="mt-2 flex items-center gap-1 text-[10px] text-[#8A93A3] hover:text-red-400">
                 <Trash2 size={10} /> Borrar este movimiento

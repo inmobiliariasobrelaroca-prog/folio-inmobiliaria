@@ -255,6 +255,10 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
   const primeroDelMes = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); })();
   const [desde, setDesde] = useState(primeroDelMes);
   const [hasta, setHasta] = useState(hoyIso);
+  // Los mismos cortes del reporte, para poder mirar la lista por bolsa,
+  // por obra, por proveedor... y no solo en orden de fecha.
+  const [agrupar, setAgrupar] = useState("fecha");
+  const [soloTipo, setSoloTipo] = useState("todos");
   const [borrando, setBorrando] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
@@ -337,21 +341,88 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
     </div>
   );
 
-  const entro = movs.filter((m) => m.tipo === "ingreso").reduce((a, m) => a + Number(m.monto), 0);
-  const salio = movs.filter((m) => m.tipo === "egreso").reduce((a, m) => a + Number(m.monto), 0);
+  const visibles = movs.filter((m) => soloTipo === "todos" || m.tipo === soloTipo);
+  const entro = visibles.filter((m) => m.tipo === "ingreso").reduce((a, m) => a + Number(m.monto), 0);
+  const salio = visibles.filter((m) => m.tipo === "egreso").reduce((a, m) => a + Number(m.monto), 0);
+
+  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio",
+                 "agosto","septiembre","octubre","noviembre","diciembre"];
+  const claveDe = (m) => {
+    if (agrupar === "bolsa") return m.tipo === "traslado"
+      ? `${m.origen?.nombre || "?"} → ${m.destino?.nombre || "?"}`
+      : (m.tipo === "egreso" ? m.origen?.nombre : m.destino?.nombre) || "Sin bolsa";
+    if (agrupar === "banco") return (m.tipo === "egreso" ? m.origen?.banco : m.destino?.banco) || "Sin banco";
+    if (agrupar === "categoria") return m.categorias?.nombre || "Sin clasificar";
+    if (agrupar === "obra") return m.centros_costo?.nombre || "Sin obra";
+    if (agrupar === "proveedor") return m.proveedores?.nombre || "Sin proveedor";
+    if (agrupar === "mes") { const [a, mm] = m.fecha.split("-"); return `${MESES[Number(mm) - 1]} ${a}`; }
+    return null;
+  };
+
+  const secciones = (() => {
+    if (agrupar === "fecha") return [{ titulo: null, movs: visibles }];
+    const mapa = new Map();
+    for (const m of visibles) {
+      const k = claveDe(m);
+      if (!mapa.has(k)) mapa.set(k, []);
+      mapa.get(k).push(m);
+    }
+    return [...mapa.entries()]
+      .map(([titulo, ms]) => ({ titulo, movs: ms,
+        total: ms.reduce((a, m) => a + (m.tipo === "ingreso" ? Number(m.monto) : -Number(m.monto)), 0) }))
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+  })();
 
   return (
     <div className="space-y-2">
       {periodo}
+
+      <div>
+        <span className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Agrupar por</span>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {[["fecha", "Fecha"], ["bolsa", "Bolsa"], ["banco", "Cuenta del banco"],
+            ["categoria", "Tipo de gasto o ingreso"], ["obra", "Obra"],
+            ["proveedor", "Proveedor"], ["mes", "Mes"]].map(([k, t]) => (
+            <button key={k} onClick={() => setAgrupar(k)}
+              className={`text-[11px] px-2.5 py-1.5 rounded-md ${agrupar === k
+                ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {[["todos", "Todo"], ["ingreso", "Solo ingresos"], ["egreso", "Solo gastos"],
+          ["traslado", "Solo traslados"]].map(([k, t]) => (
+          <button key={k} onClick={() => setSoloTipo(k)}
+            className={`text-[10px] px-2 py-1 rounded ${soloTipo === k
+              ? "bg-[#161F2E] border border-[#C9A227] text-[#EDE7D9]"
+              : "border border-[#2A3547] text-[#8A93A3]"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between text-[11px] text-[#8A93A3] pb-1">
-        <span>{movs.length} movimiento{movs.length === 1 ? "" : "s"}</span>
+        <span>{visibles.length} movimiento{visibles.length === 1 ? "" : "s"}</span>
         <span className="font-mono">
           <span className="text-emerald-400">+{fmt(entro)}</span>
           {" · "}
           <span className="text-red-400">−{fmt(salio)}</span>
         </span>
       </div>
-      {movs.map((m) => {
+      {secciones.map((sec) => (
+        <div key={sec.titulo || "todos"} className="space-y-2">
+          {sec.titulo && (
+            <div className="flex items-baseline justify-between gap-2 pt-1.5">
+              <span className="text-[11px] text-[#EDE7D9] truncate">{sec.titulo}</span>
+              <span className="text-[10px] text-[#8A93A3] shrink-0">
+                {sec.movs.length} mov · <span className="font-mono">{fmt(Math.abs(sec.total))}</span>
+              </span>
+            </div>
+          )}
+      {sec.movs.map((m) => {
         const color = m.tipo === "ingreso" ? "text-emerald-400" : m.tipo === "egreso" ? "text-red-400" : "text-[#C9A227]";
         const signo = m.tipo === "ingreso" ? "+" : m.tipo === "egreso" ? "−" : "";
         const docs = (m.facturas || []).length;
@@ -448,6 +519,8 @@ export function MovimientosTesoreria({ puedeBorrar = true }) {
           </div>
         );
       })}
+        </div>
+      ))}
     </div>
   );
 }

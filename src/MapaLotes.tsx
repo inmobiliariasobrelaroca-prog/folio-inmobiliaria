@@ -34,7 +34,7 @@ const fmtQ = (n) =>
 
 // verConteos: el asesor externo no necesita saber cuántos van vendidos ni
 // apartados. Le basta el color de cada lote. La inmobiliaria sí lo ve.
-export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, asesorId, verConteos = false }) {
+export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, asesorId, verConteos = false, precioCasa = 580000 }) {
   const [lotes, setLotes] = useState([]);
   const [apartados, setApartados] = useState([]);
   const [sel, setSel] = useState(null);
@@ -85,6 +85,13 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
                 <text x={l.mapa_x} y={l.mapa_y} fontSize="12" fontWeight="700" fill="#fff"
                       textAnchor="middle" dominantBaseline="central"
                       style={{ pointerEvents: "none" }}>{l.numero}</text>
+                {/* Marca de que ahí va o ya hay casa */}
+                {(l.destino === "casa" || l.obra_estado !== "ninguna") && (
+                  <text x={l.mapa_x} y={l.mapa_y + 24} fontSize="13"
+                        textAnchor="middle" style={{ pointerEvents: "none" }}>
+                    {l.obra_estado === "acabados" ? "\u{1F3E0}" : "\u{1F6A7}"}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -93,6 +100,7 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
 
       {sel && (
         <PanelLote
+          precioCasa={precioCasa}
           lote={sel}
           apartado={apartadoDe(sel.id)}
           puedeApartar={puedeApartar}
@@ -109,9 +117,14 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
 }
 
 // ---------- El lote elegido ----------
+//
+// Un lote en blanco se puede vender de dos formas, y no son el mismo
+// producto: como terreno o para construirle casa. Hay que elegir una,
+// porque cambia el precio y lo que el cliente termina firmando.
 
 function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar,
-                     apartando, setApartando, onListo }) {
+                     apartando, setApartando, onListo, precioCasa }) {
+  const [destino, setDestino] = useState(null);
   const [nombre, setNombre] = useState("");
   const [tel, setTel] = useState("");
   const [monto, setMonto] = useState("");
@@ -119,18 +132,25 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
+  const precioLote = lote.precio_lote != null ? Number(lote.precio_lote) : null;
+  // Si ya se definió que ahí va casa, no se puede vender como terreno pelado
+  const soloCasa = lote.destino === "casa";
+  const puedeLote = !soloCasa && precioLote != null;
+
   const guardar = async () => {
     setError(""); setGuardando(true);
     try {
-      const { error: e1 } = await supabase.from("lote_apartados").insert({
-        lote_id: lote.id, cliente_nombre: nombre.trim(), cliente_telefono: tel.trim() || null,
-        monto: Number(monto), vence: vence || null, asesor_id: asesorId || null,
+      const { error: e } = await supabase.rpc("apartar_lote", {
+        p_lote: lote.id,
+        p_destino: destino,
+        p_cliente: nombre.trim(),
+        p_telefono: tel.trim() || null,
+        p_monto: Number(monto),
+        p_precio: destino === "lote" ? precioLote : precioCasa,
+        p_vence: vence || null,
+        p_nota: null,
       });
-      if (e1) throw new Error(e1.message);
-      // El lote queda bloqueado para los demás vendedores
-      const { error: e2 } = await supabase.from("lotes")
-        .update({ estado: "apartado" }).eq("id", lote.id);
-      if (e2) throw new Error(e2.message);
+      if (e) throw new Error(e.message);
       onListo();
     } catch (e) { setError(e.message); setGuardando(false); }
   };
@@ -143,6 +163,8 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
           <div className="text-[11px] text-[#8A93A3]">
             {lote.area_m2 ? `${lote.area_m2} m² de terreno · ` : ""}
             <span style={{ color: COLOR[lote.estado] }}>{ROTULO[lote.estado]}</span>
+            {lote.obra_estado === "construccion" && " · casa en construcción"}
+            {lote.obra_estado === "acabados" && " · casa en acabados finales"}
           </div>
           {lote.notas && <div className="text-[10px] text-[#6b7280] mt-0.5">{lote.notas}</div>}
         </div>
@@ -153,31 +175,73 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
 
       {apartado && (
         <div className="mt-2 text-[11px] bg-[#0C121C] border border-amber-800/60 rounded-md p-2">
-          Apartado por <b>{apartado.cliente_nombre}</b> con {fmtQ(apartado.monto)} el{" "}
+          Apartado por <b>{apartado.cliente_nombre}</b> con {fmt(apartado.monto)} el{" "}
           {apartado.fecha}
+          {apartado.destino && ` · para ${apartado.destino === "casa" ? "casa" : "terreno"}`}
           {apartado.vence ? `, vence el ${apartado.vence}` : ""}.
         </div>
       )}
 
       {lote.estado === "disponible" && !apartando && (
-        <div className="flex gap-2 mt-3">
-          <button onClick={() => onCotizar && onCotizar(lote)}
-            className="flex-1 text-[11px] bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">
-            Cotizar este lote
-          </button>
-          {puedeApartar && (
-            <button onClick={() => setApartando(true)}
-              className="flex-1 text-[11px] bg-[#2A3547] py-2 rounded-md">
-              Apartarlo
-            </button>
+        <div className="mt-3 space-y-2">
+          <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">
+            {soloCasa ? "Se vende como" : "Se puede vender como"}
+          </div>
+
+          {puedeLote && (
+            <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px]">Terreno</span>
+                <span className="font-mono text-sm" style={{ color: C_BOLSA }}>{fmt(precioLote)}</span>
+              </div>
+              <div className="text-[10px] text-[#8A93A3] mb-1.5">
+                Enganche desde {fmt(8000)} · hasta 10 años
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => onCotizar && onCotizar(lote, "lote")}
+                  className="flex-1 text-[10px] bg-[#C9A227] text-[#101826] font-medium py-1.5 rounded">
+                  Cotizar el terreno
+                </button>
+                {puedeApartar && (
+                  <button onClick={() => { setDestino("lote"); setApartando(true); setError(""); }}
+                    className="flex-1 text-[10px] bg-[#2A3547] py-1.5 rounded">
+                    Apartar como terreno
+                  </button>
+                )}
+              </div>
+            </div>
           )}
+
+          <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px]">Casa construida</span>
+              <span className="font-mono text-sm" style={{ color: C_BOLSA }}>{fmt(precioCasa)}</span>
+            </div>
+            <div className="text-[10px] text-[#8A93A3] mb-1.5">
+              Enganche desde {fmt(40000)} · hasta 25 años
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => onCotizar && onCotizar(lote, "casa")}
+                className="flex-1 text-[10px] bg-[#C9A227] text-[#101826] font-medium py-1.5 rounded">
+                Cotizar la casa
+              </button>
+              {puedeApartar && (
+                <button onClick={() => { setDestino("casa"); setApartando(true); setError(""); }}
+                  className="flex-1 text-[10px] bg-[#2A3547] py-1.5 rounded">
+                  Apartar para casa
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
       {apartando && (
         <div className="mt-3 space-y-2">
           <p className="text-[10px] text-[#8A93A3]">
-            Al apartarlo queda bloqueado para los demás vendedores.
+            Se aparta <b>para {destino === "casa" ? "casa" : "terreno"}</b>, a{" "}
+            {fmt(destino === "casa" ? precioCasa : precioLote)}. Queda bloqueado
+            para los demás vendedores.
           </p>
           <input value={nombre} onChange={(e) => setNombre(e.target.value)}
             placeholder="Nombre de quien aparta"
@@ -200,9 +264,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
           {error && <div className="text-[11px] text-red-400">{error}</div>}
           <div className="flex gap-2">
             <button onClick={() => setApartando(false)} disabled={guardando}
-              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-2 rounded">
-              Cancelar
-            </button>
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-2 rounded">Cancelar</button>
             <button onClick={guardar}
               disabled={guardando || !nombre.trim() || !(Number(monto) > 0)}
               className="flex-1 flex items-center justify-center gap-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded">

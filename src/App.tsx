@@ -4833,6 +4833,10 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
   const [casas, setCasas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [sel, setSel] = useState(null);
+  // Para revisar qué ve de verdad un vendedor externo: con sus topes, sin
+  // el piso del precio y sin los conteos del plano. Mirarlo como interno
+  // no sirve para eso, porque interno no tiene ninguna de esas limitaciones.
+  const [comoVendedor, setComoVendedor] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -4847,13 +4851,24 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
 
   if (sel) {
     return (
-      <CotizadorAsesor
-        propiedad={{ ...sel, condiciones: sel.propiedades_venta_condiciones?.[0] || {} }}
-        puedeEnviar={true}
-        puedeVerMinimo={true}
-        asesor={{ ...(usuario || {}), tipo: "asesor_interno" }}
-        onVolver={() => setSel(null)}
-      />
+      <div>
+        {comoVendedor && (
+          <div className="max-w-2xl mx-auto px-5 pt-4">
+            <div className="text-[11px] text-[#C9A227] bg-[#0C121C] border border-[#C9A227]/50 rounded-md p-2">
+              Estás viendo el cotizador <b>como lo ve un vendedor externo</b>: con
+              sus topes de precio y plazo, sin el piso a la vista y sin los
+              conteos del plano. Lo que cotices aquí se registra a tu nombre.
+            </div>
+          </div>
+        )}
+        <CotizadorAsesor
+          propiedad={{ ...sel, condiciones: sel.propiedades_venta_condiciones?.[0] || {} }}
+          puedeEnviar={true}
+          puedeVerMinimo={!comoVendedor}
+          asesor={{ ...(usuario || {}), tipo: comoVendedor ? "asesor_externo" : "asesor_interno" }}
+          onVolver={() => setSel(null)}
+        />
+      </div>
     );
   }
 
@@ -4863,10 +4878,23 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Cotizador</h1>
       </div>
-      <p className="text-xs text-[#8A93A3] mb-5">
+      <p className="text-xs text-[#8A93A3] mb-3">
         Elegí la casa y armá la cotización. Desde aquí no hay tope de precio
         ni de enganche: los rangos son para los asesores.
       </p>
+
+      <div className="grid grid-cols-2 gap-2 mb-5">
+        <button onClick={() => setComoVendedor(false)}
+          className={`text-[11px] py-2 rounded-md ${!comoVendedor
+            ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+          Como vos, sin topes
+        </button>
+        <button onClick={() => setComoVendedor(true)}
+          className={`text-[11px] py-2 rounded-md ${comoVendedor
+            ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+          Como lo ve el vendedor
+        </button>
+      </div>
 
       {cargando && <div className="text-sm text-[#8A93A3]">Cargando...</div>}
       {!cargando && casas.length === 0 && (

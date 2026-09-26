@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import GuardiaSesion from "./GuardiaSesion";
 import MapaLotes from "./MapaLotes";
 import BoletasBandeja from "./BoletasBandeja";
+import Ofertas from "./Ofertas";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
@@ -2133,6 +2134,83 @@ function linkPropiedadVenta(propiedad) {
 }
 
 // Un par etiqueta/valor de una línea, para la ficha de datos guardados.
+// El vendedor no puede bajar el precio por su cuenta. Cuando el cliente
+// ofrece menos, manda la oferta con su motivo y Carlos la aprueba o la
+// rechaza. Mientras tanto puede cotizar, pero queda dicho que falta
+// autorizarla: la respuesta es lo que habilita cerrar a ese precio.
+function PedirAutorizacion({ lote, propiedad, asesor, esLote, precioLista,
+                             precioOfrecido, enganche, anios, cliente, whatsapp }) {
+  const [abierto, setAbierto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [enviada, setEnviada] = useState(false);
+
+  const rebaja = precioLista - precioOfrecido;
+
+  const enviar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const { error: e } = await supabase.from("solicitudes_oferta").insert({
+        lote_id: lote?.id || null,
+        propiedad_venta_id: esLote ? null : (propiedad?.id || null),
+        destino: esLote ? "lote" : "casa",
+        asesor_id: asesor?.id || null,
+        asesor_nombre: asesor?.nombre || null,
+        cliente_nombre: cliente.trim() || "Sin nombre",
+        cliente_telefono: whatsapp.trim() || null,
+        precio_lista: precioLista,
+        precio_ofrecido: precioOfrecido,
+        enganche_ofrecido: enganche || null,
+        plazo_anios: anios,
+        motivo: motivo.trim(),
+      });
+      if (e) throw new Error(e.message);
+      setEnviada(true); setAbierto(false);
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  if (enviada) {
+    return (
+      <div className="text-[11px] text-emerald-400 bg-emerald-950/30 border border-emerald-800 rounded-md p-2 -mt-1">
+        Solicitud enviada. Vas a poder cerrar a ese precio cuando la inmobiliaria
+        la apruebe; mientras tanto, decile al cliente que está sujeta a aprobación.
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2 -mt-1">
+      Este precio está {fmt(rebaja)} abajo del de lista, que es {fmt(precioLista)}.
+      Podés cotizarlo, pero el descuento tiene que autorizarse antes de cerrar.
+      {!abierto ? (
+        <button onClick={() => setAbierto(true)}
+          className="block mt-1.5 text-[11px] text-[#C9A227] underline">
+          Pedir autorización
+        </button>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Por qué: ej. paga todo de contado, ofrece cerrar esta semana..."
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-2 text-[11px] text-[#EDE7D9]" />
+          {error && <div className="text-red-400">{error}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] text-[#8A93A3] disabled:opacity-40 py-1.5 rounded">
+              Cancelar
+            </button>
+            <button onClick={enviar} disabled={guardando || !motivo.trim()}
+              className="flex-1 text-[10px] bg-[#C9A227] text-[#101826] font-medium disabled:opacity-40 py-1.5 rounded">
+              {guardando ? "Enviando..." : "Enviar la solicitud"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dato({ k, v }) {
   return (
     <div className="flex justify-between gap-2 min-w-0">
@@ -2153,16 +2231,39 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [sistema, setSistema] = useState("nivelada");
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [errorPdf, setErrorPdf] = useState("");
-  // Lote elegido en el plano. La casa es la misma; lo que cambia es el
-  // terreno, y en este proyecto hay lotes de 112 y de 128 m².
+  // Un lote se puede vender de dos formas y no son el mismo producto:
+  // como terreno (Q180,000, o Q200,000 el 3 y el 4; enganche Q8,000, hasta
+  // 10 años) o para construirle casa (Q580,000, enganche Q40,000, 25 años).
+  // El vendedor elige en el plano y el cotizador cambia de condiciones.
   const [lote, setLote] = useState(null);
+  const [modoVenta, setModoVenta] = useState("casa");
   const [verMapa, setVerMapa] = useState(false);
+  const esLote = modoVenta === "lote" && lote;
 
-  const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
-  const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
-  const engancheMin = propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null;
-  const tasaMin = cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null;
-  const tasaMax = cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null;
+  // Los lotes no tienen rango de negociación: el precio es el que es, y
+  // cualquier rebaja pasa por una solicitud que Carlos aprueba.
+  const precioMin = esLote ? Number(lote.precio_lote || 0)
+    : (cond.precio_minimo != null ? Number(cond.precio_minimo) : null);
+  const precioMax = esLote ? Number(lote.precio_lote || 0)
+    : (cond.precio_maximo != null ? Number(cond.precio_maximo) : null);
+  const engancheMin = esLote ? 8000
+    : (propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null);
+  const tasaMin = esLote ? 12 : (cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null);
+  const tasaMax = esLote ? 12 : (cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null);
+  const plazoMaxProducto = esLote ? 10 : (propiedad.financiamiento_plazo_max_anios || null);
+
+  // Al cambiar de producto se recargan los valores de arranque
+  const aplicarProducto = (l, modo) => {
+    setLote(l); setModoVenta(modo);
+    if (modo === "lote") {
+      setPrecio(l.precio_lote ?? ""); setEnganche(8000); setTasaAnual(12); setAnios(10);
+    } else {
+      setPrecio(propiedad.precio ?? "");
+      setEnganche(propiedad.financiamiento_enganche_desde ?? "");
+      setTasaAnual(cond.financiamiento_tasa_anual ?? "");
+      setAnios(propiedad.financiamiento_plazo_max_anios ?? "");
+    }
+  };
 
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
@@ -2182,13 +2283,17 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // Bajar del precio de lista sí se permite hasta el mínimo, pero es un
   // descuento: se cotiza y se envía, sólo que queda advertido que todavía
   // no está autorizado. Distinto de estar fuera de rango, que sí bloquea.
-  const precioDeLista = propiedad.precio != null ? Number(propiedad.precio) : null;
+  const precioDeLista = esLote
+    ? (lote.precio_lote != null ? Number(lote.precio_lote) : null)
+    : (propiedad.precio != null ? Number(propiedad.precio) : null);
   const precioNecesitaAutorizacion =
     !sinRestriccionDeRango && !precioFueraDeRango &&
     precioDeLista != null && precioNum > 0 && precioNum < precioDeLista;
   const engancheFueraDeRango = !sinRestriccionDeRango && engancheMin != null && engancheNum < engancheMin;
   const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
-  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
+  const plazoFueraDeRango = !sinRestriccionDeRango && plazoMaxProducto != null
+    && Number(anios) > Number(plazoMaxProducto);
+  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango || plazoFueraDeRango;
 
   // Al asesor externo se le muestra el techo pero no el piso. Si conoce el
   // mínimo, el descuento deja de ser algo que se autoriza y pasa a ser su
@@ -2416,7 +2521,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             <div className="space-y-2">
               <button type="button" onClick={() => setVerMapa(!verMapa)}
                 className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
-                {verMapa ? "Ocultar el plano" : (lote ? `Lote ${lote.numero} · cambiar` : "Ver el plano y elegir lote")}
+                {verMapa ? "Ocultar el plano"
+                  : (lote ? `Lote ${lote.numero} · ${esLote ? "terreno" : "casa"} · cambiar`
+                          : "Ver el plano y elegir lote")}
               </button>
               {verMapa && (
                 <MapaLotes
@@ -2424,13 +2531,18 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                   asesorId={asesor?.id}
                   puedeApartar={true}
                   verConteos={asesor?.tipo !== "asesor_externo"}
-                  onCotizar={(l) => { setLote(l); setVerMapa(false); }}
+                  precioCasa={Number(propiedad.precio) || 580000}
+                  onCotizar={(l, modo) => { aplicarProducto(l, modo); setVerMapa(false); }}
                 />
               )}
               {lote && !verMapa && (
                 <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
-                  Cotizando sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
-                  {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.
+                  {esLote
+                    ? <>Vendiendo el <b>lote {lote.numero}</b> como terreno
+                        {lote.area_m2 ? `, ${lote.area_m2} m²` : ""}. Enganche desde {fmt(8000)},
+                        hasta 10 años.</>
+                    : <>Casa sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
+                        {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.</>}
                 </div>
               )}
             </div>
@@ -2450,11 +2562,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
           <div className="grid grid-cols-2 gap-3">
             <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
             {precioNecesitaAutorizacion && (
-              <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2 -mt-1">
-                Este precio está {fmt(precioDeLista - precioNum)} abajo del precio de lista
-                de {fmt(precioDeLista)}. Podés cotizarlo, pero el descuento
-                todavía tiene que autorizarse antes de cerrar la venta.
-              </div>
+              <PedirAutorizacion
+                lote={lote} propiedad={propiedad} asesor={asesor} esLote={esLote}
+                precioLista={precioDeLista} precioOfrecido={precioNum}
+                enganche={engancheNum} anios={Number(anios) || null}
+                cliente={cliente} whatsapp={whatsapp} />
             )}
             <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} hint={engancheHint} invalid={engancheFueraDeRango} />
           </div>
@@ -2969,6 +3081,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
           onCotizar={() => setPantalla("cotizadorDirecto")}
           onBoletas={() => setPantalla("bandejaBoletas")}
+          onOfertas={() => setPantalla("ofertas")}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
@@ -2989,6 +3102,16 @@ function AppInterno({ perfil, cerrarSesion }) {
             onAsesores={() => setPantalla("catalogoAsesores")}
             onActividad={() => setPantalla("catalogoActividad")}
           />
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "ofertas" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <div className="flex items-center gap-2 mb-4">
+              <button onClick={() => setPantalla("proyectos")} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+              <h1 className="font-serif text-2xl">Ofertas por autorizar</h1>
+            </div>
+            <Ofertas />
+          </div>
         )}
 
         {modo === "inmobiliaria" && pantalla === "bandejaBoletas" && (
@@ -3083,7 +3206,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -3127,6 +3250,12 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           {modo === "inmobiliaria" && onBoletas && (
             <button onClick={onBoletas} title="Boletas por asignar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Inbox size={16} />
+            </button>
+          )}
+          {/* Ofertas por debajo del precio de lista, esperando respuesta */}
+          {puedeVerCatalogo && modo === "inmobiliaria" && onOfertas && (
+            <button onClick={onOfertas} title="Ofertas por autorizar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Sparkles size={16} />
             </button>
           )}
 <BotonTesoreria perfil={perfil} />

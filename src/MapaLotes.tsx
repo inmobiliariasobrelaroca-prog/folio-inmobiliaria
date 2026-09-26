@@ -13,8 +13,50 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { X, Check } from "lucide-react";
 
-const TRAZO = "M500.4 21.0L1018.4 679.7M1018.4 679.7L499.8 1165.2M499.8 1165.2L396.1 1141.5M397.6 1136.8L246.9 1131.8M246.9 1131.8L281.6 1083.8M281.6 1083.8L228.7 1053.4M228.7 1053.4L-57.8 22.1M396.1 1141.5L397.6 1136.8M-57.8 22.1L500.4 21.0M2.4 22.1L2.4 54.5M-19.4 23.5L1.0 23.5M1.0 23.5L1.0 54.5M-19.4 53.1L1.0 53.1M2.4 54.5L-19.4 54.5M11.1 171.6L-9.2 54.5M-20.8 22.1L2.4 22.1M2.4 22.1L2.4 21.9M2.4 22.0L1.0 22.0M1.0 22.0L1.0 22.2M2.4 22.0L34.7 22.0M34.7 22.0L34.7 22.0M50.9 22.0L50.9 170.9M34.7 30.5L50.9 30.5M34.7 31.0L50.9 31.0M34.7 152.6L50.9 152.6M34.7 153.1L50.9 153.1M34.7 141.5L50.9 141.5M34.7 142.0L50.9 142.0M34.7 130.4L51.0 130.4M34.7 130.9L51.0 130.9M34.7 119.3L50.9 119.3M34.7 119.8L50.9 119.8M34.7 108.2L50.9 108.2M34.7 108.7L50.9 108.7M34.7 97.1L50.9 97.1M34.7 97.6L50.9 97.6M34.7 86.0L50.9 86.0M34.7 86.5L50.9 86.5M34.7 74.9L50.9 74.9M34.7 75.4L50.9 75.4M34.7 63.8L50.9 63.8M34.7 64.3L50.9 64.3M34.7 52.7L51.0 52.7M34.7 53.2L51.0 53.2M34.7 41.6L51.0 41.6M34.7 42.1L51.0 42.1M50.9 30.5L36.1 30.5M36.1 30.5L36.1 170.9M36.1 170.9L50.9 170.9M34.7 23.3L50.9 23.3M50.9 22.0L34.7 22.0M115.7 22.0L115.7 170.0M50.9 170.0L50.9 22.0M500.4 170.0L50.9 170.0M245.2 22.0L245.2 170.0M180.4 170.0L180.4 22.0M374.7 22.0L374.7 170.0M310.0 170.0L310.0 22.0M439.5 170.0L439.5 22.0M115.7 22.0L50.9 22.0M180.4 22.0L115.7 22.0M245.2 22.0L180.4 22.0M310.0 22.0L245.2 22.0M374.7 22.0L310.0 22.0M439.5 22.0L374.7 22.0M500.4 21.0L439.5 22.0M500.4 170.0L500.4 20.6M501.3 19.9L1018.4 679.7M1018.4 679.7L499.1 1164.5M499.1 1164.5L395.4 1140.7M397.0 1135.9L246.3 1130.8M246.3 1130.8L281.1 1082.8M281.1 1082.8L228.2 1052.3M228.2 1052.3L-56.9 20.7M395.4 1140.7L397.0 1135.9M499.2 252.9L909.5 780.8M199.7 530.9L473.2 882.8M518.8 941.4L610.0 1058.7M124.9 675.8L364.3 983.8M409.9 1042.5L501.1 1159.8M403.1 1048.8L481.6 1149.7M1018.4 679.7L497.6 1163.0M972.8 621.1L863.9 722.1M564.4 1000.1L455.5 1101.1M927.2 562.4L818.3 663.5M518.8 941.4L409.9 1042.5M881.6 503.8L772.7 604.8M473.2 882.8L364.3 983.8M836.0 445.1L727.1 546.2M427.6 824.1L318.7 925.2M790.4 386.5L681.5 487.5M382.0 765.5L273.1 866.5M744.8 327.8L635.9 428.9M336.4 706.8L227.5 807.9M699.2 269.2L590.3 370.2M290.9 648.2L182.0 749.2M653.7 210.5L544.7 311.6M245.3 589.5L136.4 690.6M608.1 151.9L499.2 252.9M595.6 150.9L492.9 246.2M199.7 530.9L108.4 615.5M499.2 252.9L492.9 246.2M409.9 1042.5L403.1 1048.8M364.3 983.8L357.0 989.5M333.7 969.9L335.7 967.7M333.7 969.9L335.7 967.7M868.6 818.7L909.5 780.8M889.1 799.7L419.8 196.1M496.0 912.1L387.1 1013.1M610.0 1058.7L650.7 1020.9M546.8 408.7L329.9 611.7M586.9 459.8L370.0 662.9M627.0 511.0L410.1 714.0M667.1 562.1L450.2 765.2M707.2 613.3L490.3 816.3M747.4 664.4L530.4 867.5M787.5 715.6L570.5 918.6M827.6 766.7L610.6 969.8M506.7 357.5L289.7 560.6M466.6 306.4L249.6 509.4M466.6 306.4L867.7 817.9M318.1 356.9L759.2 919.4M249.6 509.4L650.7 1020.9M466.6 306.4L426.6 255.4M249.6 509.4L209.6 458.4M426.6 255.4L209.6 458.4M426.6 255.4L318.5 356.6M80.0 225.5L402.3 225.5M426.5 255.2L209.5 458.3M466.6 306.4L249.6 509.4M363.6 225.5L169.4 407.1M268.8 225.5L129.3 356.0M402.3 225.5L466.6 306.4M237.8 254.4L358.1 407.9M129.3 356.0L249.6 509.4M268.8 225.5L129.0 355.6M174.0 225.5L89.2 304.8M215.1 225.5L237.8 254.4M89.2 304.8L129.3 356.0M199.7 530.9L21.6 308.0M80.0 225.5L56.6 247.3M56.4 246.9L89.5 305.2M199.7 530.9L141.9 458.5M89.2 304.8L174.0 225.5M42.4 197.7L423.1 199.0M30.5 249.9L30.5 249.9";
-const LIENZO = { w: 1000, h: 1157 };
+// El dibujo del plano vive en public/plano-reu.svg: el mismo que se manda
+// por WhatsApp, con calles, áreas verdes, garita y Fase 2. Se le quitaron
+// los colores de los lotes y los puntos rojos de vendido, porque eso lo
+// pinta la app con lo que dice la base. Así el plano nunca queda viejo.
+//
+// GEO son los 32 lotes que sí están a la venta, con su figura exacta sacada
+// del vectorial. Los del 8 al 16 y del 42 al 49 son Fase 2 y ya salen
+// rotulados como tales en el dibujo.
+const GEO = {
+  1: { d: "M 210.31 276.5 L 210.31 276.14 L 257.11 276.14 L 260.71 276.14 L 260.71 391.32 L 226.15 391.32 L 224.6 391.24 L 223.06 391.02 L 221.55 390.64 L 220.09 390.11 L 218.69 389.45 L 217.35 388.65 L 216.1 387.72 L 214.95 386.68 L 213.91 385.53 L 212.98 384.28 L 212.18 382.95 L 211.52 381.54 L 210.99 380.08 L 210.62 378.57 L 210.39 377.03 L 210.31 375.48 L 210.31 276.51 Z", cx: 221.1, cy: 362.0 },
+  2: { d: "M 260.71 391.32 L 260.71 276.14 L 264.31 276.14 L 311.11 276.14 L 311.11 391.32 Z", cx: 281.6, cy: 322.2 },
+  3: { d: "M 361.52 276.14 L 361.52 276.14 L 361.52 391.32 L 311.11 391.32 L 311.11 276.14 L 311.11 276.14 Z", cx: 336.3, cy: 314.5 },
+  4: { d: "M 361.52 391.32 L 361.52 276.14 L 411.92 276.14 L 411.92 391.32 Z", cx: 386.7, cy: 333.7 },
+  5: { d: "M 462.32 276.14 L 462.32 276.14 L 462.32 391.32 L 411.92 391.32 L 411.92 276.14 L 411.92 276.14 Z", cx: 437.1, cy: 314.5 },
+  6: { d: "M 462.32 391.32 L 462.32 276.14 L 512.72 276.14 L 512.72 276.14 L 512.72 391.32 Z", cx: 492.6, cy: 322.2 },
+  7: { d: "M 560.16 391.34 L 560.14 391.34 L 560.14 391.34 L 559.77 391.32 L 512.72 391.32 L 512.72 276.14 L 512.72 276.14 L 560.16 275.43 Z", cx: 542.3, cy: 348.0 },
+  17: { d: "M 846.92 896.81 L 762.4 975.71 L 730.37 934.86 L 814.75 855.9 L 845.77 895.38 L 846.0 895.65 L 846.01 895.65 L 846.62 896.42 Z", cx: 817.4, cy: 905.8 },
+  18: { d: "M 699.15 895.05 L 783.5 816.11 L 814.75 855.9 L 730.37 934.86 Z", cx: 756.9, cy: 875.5 },
+  19: { d: "M 667.93 855.23 L 752.25 776.33 L 783.5 816.11 L 699.15 895.05 Z", cx: 725.7, cy: 835.7 },
+  20: { d: "M 636.72 815.42 L 721.0 736.55 L 752.25 776.33 L 667.93 855.23 Z", cx: 694.5, cy: 795.9 },
+  21: { d: "M 605.5 775.61 L 689.75 696.76 L 721.0 736.55 L 636.72 815.42 Z", cx: 663.2, cy: 756.1 },
+  22: { d: "M 574.28 735.79 L 658.51 656.98 L 689.75 696.76 L 605.5 775.61 Z", cx: 632.0, cy: 716.3 },
+  23: { d: "M 543.06 695.98 L 627.26 617.2 L 658.51 656.98 L 574.28 735.79 Z", cx: 600.8, cy: 676.5 },
+  24: { d: "M 511.85 656.17 L 596.01 577.41 L 627.26 617.2 L 543.06 695.98 Z", cx: 569.5, cy: 636.7 },
+  25: { d: "M 596.01 577.41 L 511.85 656.17 L 480.63 616.35 L 564.76 537.63 Z", cx: 538.3, cy: 596.9 },
+  26: { d: "M 564.76 537.63 L 480.63 616.35 L 451.63 579.37 L 449.41 576.54 L 533.51 497.85 Z", cx: 496.0, cy: 561.5 },
+  27: { d: "M 533.51 497.85 L 449.41 576.54 L 418.28 536.84 L 502.36 458.18 Z", cx: 475.9, cy: 517.4 },
+  28: { d: "M 418.2 536.73 L 416.04 533.98 L 386.98 496.91 L 453.64 434.53 L 476.36 434.53 L 477.66 434.6 L 479.23 434.84 L 480.77 435.24 L 482.27 435.78 L 483.7 436.48 L 485.06 437.32 L 486.32 438.28 L 487.48 439.37 L 488.52 440.58 L 502.26 458.06 Z", cx: 467.0, cy: 455.1 },
+  29: { d: "M 386.98 496.91 L 302.54 575.93 L 271.33 536.11 L 355.76 457.1 L 357.98 459.93 Z", cx: 334.9, cy: 505.2 },
+  30: { d: "M 416.04 533.98 L 418.2 536.73 L 333.76 615.74 L 302.54 575.93 L 386.98 496.91 Z", cx: 371.5, cy: 551.9 },
+  31: { d: "M 449.41 576.54 L 364.98 655.55 L 333.84 615.84 L 415.93 539.04 L 418.28 536.84 Z", cx: 396.5, cy: 584.8 },
+  32: { d: "M 480.63 616.35 L 396.19 695.37 L 392.8 691.05 L 364.98 655.55 L 449.41 576.54 L 451.63 579.37 Z", cx: 422.6, cy: 635.7 },
+  33: { d: "M 511.85 656.17 L 427.41 735.18 L 396.19 695.37 L 480.63 616.35 Z", cx: 454.0, cy: 675.8 },
+  34: { d: "M 427.41 735.18 L 511.85 656.17 L 543.06 695.98 L 458.63 774.99 Z", cx: 485.2, cy: 715.6 },
+  35: { d: "M 458.63 774.99 L 543.06 695.98 L 574.28 735.79 L 489.84 814.81 Z", cx: 516.5, cy: 755.4 },
+  36: { d: "M 489.84 814.81 L 574.28 735.79 L 605.5 775.61 L 521.06 854.62 Z", cx: 547.7, cy: 795.2 },
+  37: { d: "M 521.06 854.62 L 605.5 775.61 L 636.72 815.42 L 552.28 894.43 Z", cx: 578.9, cy: 835.0 },
+  38: { d: "M 552.28 894.43 L 636.72 815.42 L 667.93 855.23 L 583.5 934.25 Z", cx: 610.1, cy: 874.8 },
+  39: { d: "M 583.5 934.25 L 667.93 855.23 L 699.15 895.05 L 614.71 974.06 Z", cx: 641.3, cy: 914.6 },
+  40: { d: "M 614.71 974.06 L 699.15 895.05 L 730.37 934.86 L 645.93 1013.87 Z", cx: 672.5, cy: 954.5 },
+  41: { d: "M 762.4 975.71 L 677.88 1054.62 L 677.15 1053.69 L 645.93 1013.87 L 730.37 934.86 Z", cx: 698.7, cy: 1006.5 },
+};
+
+const VISTA = { w: 1080, h: 1281.6 };
 
 const COLOR = {
   disponible:    "#2E9E6B",
@@ -40,69 +82,91 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
   const [sel, setSel] = useState(null);
   const [apartando, setApartando] = useState(false);
   const [cargando, setCargando] = useState(true);
+  const [zoom, setZoom] = useState(false);
 
   const cargar = async () => {
-    const [l, a] = await Promise.all([
+    const [{ data: ls }, { data: aps }] = await Promise.all([
       supabase.from("lotes").select("*").eq("proyecto_venta_id", proyectoVentaId).order("numero"),
-      supabase.from("lote_apartados").select("*").eq("estado", "vigente"),
+      supabase.from("lote_apartados").select("*").order("created_at", { ascending: false }),
     ]);
-    setLotes(l.data || []);
-    setApartados(a.data || []);
+    setLotes(ls || []);
+    setApartados(aps || []);
     setCargando(false);
   };
-  useEffect(() => { if (proyectoVentaId) cargar(); }, [proyectoVentaId]);
+  useEffect(() => { cargar(); }, [proyectoVentaId]);
 
   if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando el plano...</div>;
-  if (lotes.length === 0) return null;
+
+  const porNumero = {};
+  lotes.forEach((l) => { porNumero[l.numero] = l; });
+  const elegido = sel ? lotes.find((l) => l.id === sel) : null;
+  const apartadoDe = elegido
+    ? apartados.find((a) => a.lote_id === elegido.id && !a.liberado)
+    : null;
 
   const cuenta = (e) => lotes.filter((l) => l.estado === e).length;
-  const apartadoDe = (loteId) => apartados.find((a) => a.lote_id === loteId);
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-3 text-[11px] text-[#8A93A3]">
-        {["disponible", "apartado", "vendido", "no_disponible"].map((e) => (
-          <span key={e} className="flex items-center gap-1.5">
-            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR[e] }} />
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+        {["disponible", "apartado", "vendido"].map((e) => (
+          <span key={e} className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR[e] }} />
             {ROTULO[e]}{verConteos ? ` · ${cuenta(e)}` : ""}
           </span>
         ))}
+        <button onClick={() => setZoom(!zoom)} className="ml-auto text-[#C9A227]">
+          {zoom ? "Achicar" : "Agrandar"}
+        </button>
       </div>
 
-      <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-2">
-        <svg viewBox={`0 0 ${LIENZO.w} ${LIENZO.h}`} className="w-full h-auto">
-          <path d={TRAZO} stroke="#6E7A92" strokeWidth="1.6" fill="none" />
-          {lotes.map((l) => {
-            const activo = l.estado === "disponible" || l.estado === "apartado";
-            return (
-              <g key={l.id}
-                 onClick={() => activo && setSel(l)}
-                 style={{ cursor: activo ? "pointer" : "default" }}>
-                <circle cx={l.mapa_x} cy={l.mapa_y} r={sel?.id === l.id ? 22 : 17}
-                        fill={COLOR[l.estado]} fillOpacity={activo ? 0.9 : 0.55}
-                        stroke={sel?.id === l.id ? "#EDE7D9" : "#fff"}
-                        strokeWidth={sel?.id === l.id ? 3 : 1.5} />
-                <text x={l.mapa_x} y={l.mapa_y} fontSize="12" fontWeight="700" fill="#fff"
-                      textAnchor="middle" dominantBaseline="central"
-                      style={{ pointerEvents: "none" }}>{l.numero}</text>
-                {/* Marca de que ahí va o ya hay casa */}
-                {(l.destino === "casa" || l.obra_estado !== "ninguna") && (
-                  <text x={l.mapa_x} y={l.mapa_y + 24} fontSize="13"
-                        textAnchor="middle" style={{ pointerEvents: "none" }}>
-                    {l.obra_estado === "acabados" ? "\u{1F3E0}" : "\u{1F6A7}"}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+      <div className={`bg-[#F6F2EA] rounded-lg border border-[#2A3547] ${zoom ? "overflow-auto max-h-[70vh]" : "overflow-hidden"}`}>
+        <div className="relative" style={{ width: zoom ? "200%" : "100%" }}>
+          {/* El dibujo, tal cual se diseñó */}
+          <img src="/plano-reu.svg" alt="Plano de distribución de Las Luces Retalhuleu"
+               className="block w-full select-none" draggable="false" />
+
+          {/* Encima, cada lote con el color que le da la base */}
+          <svg viewBox={`0 0 ${VISTA.w} ${VISTA.h}`} className="absolute inset-0 w-full h-full">
+            {Object.entries(GEO).map(([num, g]) => {
+              const l = porNumero[num];
+              if (!l) return null;
+              const activo = l.estado === "disponible";
+              return (
+                <g key={num} onClick={() => { setSel(l.id); setApartando(false); }}
+                   style={{ cursor: activo || puedeApartar ? "pointer" : "default" }}>
+                  <path d={g.d} fill={COLOR[l.estado]}
+                        fillOpacity={sel === l.id ? 0.62 : 0.38}
+                        stroke={sel === l.id ? "#101826" : "none"} strokeWidth="2.5" />
+                  {l.estado === "vendido" && (
+                    <circle cx={g.cx} cy={g.cy} r="9" fill="#d62828" stroke="#7f1010" strokeWidth="0.7" />
+                  )}
+                  {l.estado === "apartado" && (
+                    <circle cx={g.cx} cy={g.cy} r="9" fill="#C9A227" stroke="#7a6316" strokeWidth="0.7" />
+                  )}
+                  {/* Marca de que ahí va casa */}
+                  {l.destino === "casa" && l.estado !== "vendido" && (
+                    <text x={g.cx} y={g.cy + 5} fontSize="14" textAnchor="middle"
+                          style={{ pointerEvents: "none" }}>{"\u{1F3E0}"}</text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
       </div>
 
-      {sel && (
+      {!elegido && (
+        <p className="text-[10px] text-[#8A93A3]">
+          Tocá un lote para ver su precio. Los que dicen Fase 2 todavía no se venden.
+        </p>
+      )}
+
+      {elegido && (
         <PanelLote
           precioCasa={precioCasa}
-          lote={sel}
-          apartado={apartadoDe(sel.id)}
+          lote={elegido}
+          apartado={apartadoDe}
           puedeApartar={puedeApartar}
           asesorId={asesorId}
           onCerrar={() => { setSel(null); setApartando(false); }}

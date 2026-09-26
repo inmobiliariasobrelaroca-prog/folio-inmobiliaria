@@ -4862,7 +4862,12 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
           </div>
         )}
         <CotizadorAsesor
-          propiedad={{ ...sel, condiciones: sel.propiedades_venta_condiciones?.[0] || {} }}
+          // La relación es uno a uno (propiedad_venta_id es único), así que la
+          // base devuelve un objeto, no una lista. Leerlo con [0] lo dejaba
+          // vacío y la tasa salía "sin cargar".
+          propiedad={{ ...sel, condiciones: (Array.isArray(sel.propiedades_venta_condiciones)
+            ? sel.propiedades_venta_condiciones[0]
+            : sel.propiedades_venta_condiciones) || {} }}
           puedeEnviar={true}
           puedeVerMinimo={!comoVendedor}
           asesor={{ ...(usuario || {}), tipo: comoVendedor ? "asesor_externo" : "asesor_interno" }}

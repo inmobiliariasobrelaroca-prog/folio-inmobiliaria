@@ -101,7 +101,8 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
   lotes.forEach((l) => { porNumero[l.numero] = l; });
   const elegido = sel ? lotes.find((l) => l.id === sel) : null;
   const apartadoDe = elegido
-    ? apartados.find((a) => a.lote_id === elegido.id && !a.liberado)
+    // El estado real está en `estado`, no en una columna "liberado" que no existe
+    ? apartados.find((a) => a.lote_id === elegido.id && a.estado === "vigente")
     : null;
 
   const cuenta = (e) => lotes.filter((l) => l.estado === e).length;
@@ -239,7 +240,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
 
       {apartado && (
         <div className="mt-2 text-[11px] bg-[#0C121C] border border-amber-800/60 rounded-md p-2">
-          Apartado por <b>{apartado.cliente_nombre}</b> con {fmt(apartado.monto)} el{" "}
+          Apartado por <b>{apartado.cliente_nombre}</b> con {fmtQ(apartado.monto)} el{" "}
           {apartado.fecha}
           {apartado.destino && ` · para ${apartado.destino === "casa" ? "casa" : "terreno"}`}
           {apartado.vence ? `, vence el ${apartado.vence}` : ""}.
@@ -256,10 +257,10 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
             <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <div className="flex items-baseline justify-between">
                 <span className="text-[11px]">Terreno</span>
-                <span className="font-mono text-sm" style={{ color: C_BOLSA }}>{fmt(precioLote)}</span>
+                <span className="font-mono text-sm" style={{ color: COLOR.apartado }}>{fmtQ(precioLote)}</span>
               </div>
               <div className="text-[10px] text-[#8A93A3] mb-1.5">
-                Enganche desde {fmt(8000)} · hasta 10 años
+                Enganche desde {fmtQ(8000)} · hasta 10 años
               </div>
               <div className="flex gap-2">
                 <button onClick={() => onCotizar && onCotizar(lote, "lote")}
@@ -279,10 +280,10 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
             <div className="flex items-baseline justify-between">
               <span className="text-[11px]">Casa construida</span>
-              <span className="font-mono text-sm" style={{ color: C_BOLSA }}>{fmt(precioCasa)}</span>
+              <span className="font-mono text-sm" style={{ color: COLOR.apartado }}>{fmtQ(precioCasa)}</span>
             </div>
             <div className="text-[10px] text-[#8A93A3] mb-1.5">
-              Enganche desde {fmt(40000)} · hasta 25 años
+              Enganche desde {fmtQ(40000)} · hasta 25 años
             </div>
             <div className="flex gap-2">
               <button onClick={() => onCotizar && onCotizar(lote, "casa")}
@@ -304,7 +305,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
         <div className="mt-3 space-y-2">
           <p className="text-[10px] text-[#8A93A3]">
             Se aparta <b>para {destino === "casa" ? "casa" : "terreno"}</b>, a{" "}
-            {fmt(destino === "casa" ? precioCasa : precioLote)}. Queda bloqueado
+            {fmtQ(destino === "casa" ? precioCasa : precioLote)}. Queda bloqueado
             para los demás vendedores.
           </p>
           <input value={nombre} onChange={(e) => setNombre(e.target.value)}

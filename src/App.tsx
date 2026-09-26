@@ -1315,6 +1315,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [seleccionada, setSeleccionada] = useState(null);
+  const [lotesPorProyecto, setLotesPorProyecto] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -1339,6 +1340,18 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         condiciones: condiciones.find((c) => c.propiedad_venta_id === p.id) || null,
         fotoPortada: (p.fotos_propiedad_venta || []).slice().sort((a, b) => a.orden - b.orden)[0]?.archivo_url || null,
       }));
+      // Si el proyecto tiene lotes, el vendedor entra por el plano y no por
+      // una casa: el producto (terreno o casa) se decide al tocar el lote.
+      const { data: ls } = await supabase
+        .from("lotes").select("proyecto_venta_id, estado");
+      const porProyecto = {};
+      (ls || []).forEach((l) => {
+        porProyecto[l.proyecto_venta_id] = porProyecto[l.proyecto_venta_id] || { total: 0, libres: 0 };
+        porProyecto[l.proyecto_venta_id].total++;
+        if (l.estado === "disponible") porProyecto[l.proyecto_venta_id].libres++;
+      });
+      setLotesPorProyecto(porProyecto);
+
       setPropiedades(combinadas);
       setCargando(false);
     })();
@@ -1390,7 +1403,10 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
           {propiedades.map((p) => (
             <button
               key={p.id}
-              onClick={() => puedeCotizar && setSeleccionada(p)}
+              onClick={() => puedeCotizar && setSeleccionada(
+                lotesPorProyecto[p.proyecto_venta_id]
+                  ? { ...p, entrarPorPlano: true }
+                  : p)}
               disabled={!puedeCotizar}
               className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden hover:border-[#C9A227] transition disabled:opacity-60"
             >
@@ -1400,6 +1416,15 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
               <div className="p-3">
                 <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
                 <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
+                {/* Si el proyecto tiene lotes, se anuncia el plano: lo que se
+                    vende ahí depende del lote que elija el cliente. */}
+                {lotesPorProyecto[p.proyecto_venta_id] && (
+                  <div className="text-[11px] text-[#C9A227] mb-1.5">
+                    {lotesPorProyecto[p.proyecto_venta_id].libres} lote
+                    {lotesPorProyecto[p.proyecto_venta_id].libres === 1 ? "" : "s"} disponible
+                    {lotesPorProyecto[p.proyecto_venta_id].libres === 1 ? "" : "s"} · entrás al plano
+                  </div>
+                )}
                 {puedeVerLista && p.precio != null && (
                   <div className="text-[#C9A227] font-serif text-lg">{fmt(p.precio)}</div>
                 )}
@@ -2237,7 +2262,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // El vendedor elige en el plano y el cotizador cambia de condiciones.
   const [lote, setLote] = useState(null);
   const [modoVenta, setModoVenta] = useState("casa");
-  const [verMapa, setVerMapa] = useState(false);
+  // Cuando el proyecto tiene lotes, lo primero que se ve es el plano: qué se
+  // vende depende del lote, no al revés.
+  const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
   const esLote = modoVenta === "lote" && lote;
 
   // Los lotes no tienen rango de negociación: el precio es el que es, y

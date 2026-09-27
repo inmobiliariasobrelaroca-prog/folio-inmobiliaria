@@ -76,7 +76,7 @@ const fmtQ = (n) =>
 
 // verConteos: el asesor externo no necesita saber cuántos van vendidos ni
 // apartados. Le basta el color de cada lote. La inmobiliaria sí lo ve.
-export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, asesorId, verConteos = false, precioCasa = 580000 }) {
+export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, puedeApartar, asesorId, verConteos = false, precioCasa = 580000 }) {
   const [lotes, setLotes] = useState([]);
   const [apartados, setApartados] = useState([]);
   const [sel, setSel] = useState(null);
@@ -134,7 +134,7 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
               if (!l) return null;
               const activo = l.estado === "disponible";
               return (
-                <g key={num} onClick={() => { setSel(l.id); setApartando(false); }}
+                <g key={num} onClick={() => { setSel(l.id); setApartando(false); onSeleccionar && onSeleccionar(l); }}
                    style={{ cursor: activo || puedeApartar ? "pointer" : "default" }}>
                   <path d={g.d} fill={COLOR[l.estado]}
                         fillOpacity={sel === l.id ? 0.62 : 0.38}
@@ -170,7 +170,7 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, puedeApartar, as
           apartado={apartadoDe}
           puedeApartar={puedeApartar}
           asesorId={asesorId}
-          onCerrar={() => { setSel(null); setApartando(false); }}
+          onCerrar={() => { setSel(null); setApartando(false); onSeleccionar && onSeleccionar(null); }}
           onCotizar={onCotizar}
           apartando={apartando}
           setApartando={setApartando}

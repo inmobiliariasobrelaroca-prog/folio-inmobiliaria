@@ -2261,11 +2261,14 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // 10 años) o para construirle casa (Q580,000, enganche Q40,000, 25 años).
   // El vendedor elige en el plano y el cotizador cambia de condiciones.
   const [lote, setLote] = useState(null);
-  const [modoVenta, setModoVenta] = useState("casa");
+  // null mientras no se elija: al tocar un lote primero se ve el lote, y
+  // recién al cotizar o apartar se decide si es terreno o casa.
+  const [modoVenta, setModoVenta] = useState(propiedad.entrarPorPlano ? null : "casa");
   // Cuando el proyecto tiene lotes, lo primero que se ve es el plano: qué se
   // vende depende del lote, no al revés.
   const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
   const esLote = modoVenta === "lote" && lote;
+  const soloLoteElegido = lote && !modoVenta;
 
   // Los lotes no tienen rango de negociación: el precio es el que es, y
   // cualquier rebaja pasa por una solicitud que Carlos aprueba.
@@ -2291,6 +2294,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
       setAnios(propiedad.financiamiento_plazo_max_anios ?? "");
     }
   };
+
+  // Tocar un lote en el plano no elige producto todavía: solo muestra ese lote
+  const soloVerLote = (l) => { setLote(l); setModoVenta(null); };
 
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
@@ -2503,8 +2509,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               Volver a las propiedades
             </div>
             <div className="font-serif text-lg -mt-0.5 truncate">
-              {esLote && lote ? `Lote ${lote.numero} · terreno`
-                : (lote ? `Casa sobre el lote ${lote.numero}` : propiedad.nombre)}
+              {!lote ? propiedad.nombre
+                : esLote ? `Lote ${lote.numero} · terreno`
+                : modoVenta === "casa" ? `Casa sobre el lote ${lote.numero}`
+                : `Lote ${lote.numero}`}
               {!lote && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
             </div>
           </div>
@@ -2515,10 +2523,24 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               tener que salir a buscarlo al catálogo. */}
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
-              {esLote
-                ? `Lo que está guardado para el lote ${lote.numero}`
-                : (lote ? `Casa sobre el lote ${lote.numero}` : "Lo que está guardado para esta casa")}
+              {lote ? `Lote ${lote.numero} · sector ${lote.sector}`
+                    : "Lo que está guardado para esta casa"}
             </div>
+            {soloLoteElegido ? (
+              <div className="space-y-1 text-[11px]">
+                <Dato k="Terreno" v={lote.area_m2 ? `${lote.area_m2} m²` : "112 m²"} />
+                <Dato k="Estado" v={lote.estado === "disponible" ? "Disponible"
+                  : lote.estado === "apartado" ? "Apartado"
+                  : lote.estado === "vendido" ? "Vendido" : "Todavía no a la venta"} />
+                {lote.precio_lote != null && lote.destino !== "casa" && (
+                  <Dato k="Como terreno" v={`${fmt(lote.precio_lote)} · enganche ${fmt(8000)} · 10 años`} />
+                )}
+                <Dato k="Con casa" v={`${fmt(propiedad.precio)} · enganche ${fmt(propiedad.financiamiento_enganche_desde || 40000)} · ${propiedad.financiamiento_plazo_max_anios || 25} años`} />
+                <div className="text-[10px] text-[#8A93A3] pt-1">
+                  Elegí abajo si lo vas a cotizar como terreno o como casa.
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
               <Dato k="Precio de lista" v={precioDeLista != null ? fmt(precioDeLista) : "sin cargar"} />
               <Dato k="Tasa sugerida" v={esLote ? "12%" : (cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar")} />
@@ -2548,6 +2570,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               {!esLote && propiedad.habitaciones && <Dato k="Habitaciones" v={propiedad.habitaciones} />}
               {!esLote && propiedad.banos && <Dato k="Baños" v={propiedad.banos} />}
             </div>
+            )}
             {sinRestriccionDeRango && (
               <div className="text-[10px] text-[#6b7280] mt-2">
                 Como interno podés salirte de estos rangos; son la referencia,
@@ -2572,6 +2595,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                   verConteos={asesor?.tipo !== "asesor_externo"}
                   precioCasa={Number(propiedad.precio) || 580000}
                   onCotizar={(l, modo) => { aplicarProducto(l, modo); setVerMapa(false); }}
+                  onSeleccionar={soloVerLote}
                 />
               )}
               {lote && !verMapa && (
@@ -2857,6 +2881,10 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
   const [pantalla, setPantalla] = useState("proyectos");
+  // Tocar el botón del cotizador estando adentro no hacía nada, porque la
+  // pantalla ya era esa. Este contador lo vuelve a montar, así regresa a la
+  // lista de propiedades en vez de quedarse en la casa abierta.
+  const [cotizadorNonce, setCotizadorNonce] = useState(0);
   const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [actualizando, setActualizando] = useState(false);
@@ -3118,7 +3146,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           onEquipo={() => setPantalla("equipo")}
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
-          onCotizar={() => setPantalla("cotizadorDirecto")}
+          onCotizar={() => { setPantalla("cotizadorDirecto"); setCotizadorNonce((n) => n + 1); }}
           onBoletas={() => setPantalla("bandejaBoletas")}
           onOfertas={() => setPantalla("ofertas")}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
@@ -3165,6 +3193,7 @@ function AppInterno({ perfil, cerrarSesion }) {
 
         {modo === "inmobiliaria" && pantalla === "cotizadorDirecto" && (
           <PantallaCotizadorDirecto
+            key={cotizadorNonce}
             usuario={perfil.usuario}
             onVolver={() => setPantalla("proyectos")}
           />
@@ -4967,27 +4996,37 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
           <button key={c.id} onClick={() => setSel(c)}
             className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 hover:border-[#C9A227] transition">
             <div className="text-sm font-medium">
-              {c.nombre}
-              {c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}
+              {conLotes[c.proyecto_venta_id]
+                ? (c.proyectos_venta?.nombre || c.nombre)
+                : <>{c.nombre}{c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}</>}
             </div>
-            <div className="text-[11px] text-[#8A93A3] mb-1.5">{c.proyectos_venta?.nombre}</div>
-            {/* Si el proyecto tiene lotes, se entra al plano y ahí se decide
-                si es terreno o casa; la casa es solo una de las dos salidas. */}
-            {conLotes[c.proyecto_venta_id] && (
-              <div className="text-[11px] text-[#C9A227] mb-1.5">
-                {conLotes[c.proyecto_venta_id].libres} lote
-                {conLotes[c.proyecto_venta_id].libres === 1 ? "" : "s"} disponible
-                {conLotes[c.proyecto_venta_id].libres === 1 ? "" : "s"} · abre el plano
-              </div>
-            )}
-            {c.precio != null && (
-              <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
-            )}
-            <div className="text-[10px] text-[#6b7280] mt-0.5">
-              {c.estado === "vendida" ? "Vendida" : "Disponible"}
-              {c.financiamiento_enganche_desde
-                ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
+            <div className="text-[11px] text-[#8A93A3] mb-1.5">
+              {conLotes[c.proyecto_venta_id] ? "Lotes y casas" : c.proyectos_venta?.nombre}
             </div>
+            {conLotes[c.proyecto_venta_id] ? (
+              // Proyecto con lotes: no se entra por una casa. Lo que se vende
+              // depende del lote, así que la puerta es el plano.
+              <>
+                <div className="text-[#C9A227] font-serif text-lg">
+                  {conLotes[c.proyecto_venta_id].libres} disponibles
+                </div>
+                <div className="text-[10px] text-[#6b7280] mt-0.5">
+                  Terreno desde {fmt(180000)} · con casa {fmt(c.precio)}
+                </div>
+                <div className="text-[10px] text-[#C9A227] mt-1">Abre el plano</div>
+              </>
+            ) : (
+              <>
+                {c.precio != null && (
+                  <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
+                )}
+                <div className="text-[10px] text-[#6b7280] mt-0.5">
+                  {c.estado === "vendida" ? "Vendida" : "Disponible"}
+                  {c.financiamiento_enganche_desde
+                    ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
+                </div>
+              </>
+            )}
           </button>
         ))}
       </div>

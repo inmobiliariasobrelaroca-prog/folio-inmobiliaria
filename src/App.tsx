@@ -11,6 +11,16 @@ import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
 import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";
+
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
@@ -51,16 +61,20 @@ const fmtDateTime = (iso) => {
 // perfecto en cualquier navegador.
 const pdfSafe = (s) => String(s).replace(/→/g, "->").replace(/×/g, "x");
 
+// Fecha a texto leyendo el reloj local, sin pasar por hora universal.
+const aISO = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 const addMonths = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setMonth(d.getMonth() + n);
-  return d.toISOString().slice(0, 10);
+  return aISO(d);
 };
 
 const addDays = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return aISO(d);
 };
 
 const daysBetween = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
@@ -913,7 +927,7 @@ async function eliminarFotoPropiedadStorage(fotoId, storagePath) {
 
 function datosIniciales() {
   const proyectoId = crypto.randomUUID();
-  const fechaInicio = new Date().toISOString().slice(0, 10);
+  const fechaInicio = hoyISO();
   const propiedad = {
     id: crypto.randomUUID(),
     proyectoId,
@@ -1477,7 +1491,7 @@ function MiReporte({ asesor }) {
 
   const conDatos = filas.filter((f) => f.cliente_nombre && f.cliente_nombre.trim()).length;
   const lotes = new Set(filas.filter((f) => f.lote_numero).map((f) => f.lote_numero));
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   const deHoy = filas.filter((f) => String(f.created_at).slice(0, 10) === hoy).length;
   const mes = hoy.slice(0, 7);
   const delMes = filas.filter((f) => String(f.created_at).slice(0, 7) === mes).length;
@@ -2411,7 +2425,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     (textoPendientes ? `\n\n${textoPendientes}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
 
   // El nombre de archivo que sugiere "Imprimir → Guardar como PDF" lo toma el
   // navegador de document.title. Se restaura el título original al salir de
@@ -2941,7 +2955,7 @@ function AppInterno({ perfil, cerrarSesion }) {
     escriturasPendientesRef.current += 1;
     promesa.finally(() => { escriturasPendientesRef.current = Math.max(0, escriturasPendientesRef.current - 1); });
   };
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
 
   const cargarDatos = async () => {
       // proyectos y propiedades no dependen uno del otro: se piden a la vez en vez de en fila.
@@ -5626,7 +5640,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     aplicaLuz: false, montoLuzMensual: "",
     sistemaAmortizacion: "nivelada",
     sistemaPago: "vencido",
-    fechaInicio: new Date().toISOString().slice(0, 10),
+    fechaInicio: hoyISO(),
     // Datos internos — no los ve el cliente, viven solo en las pantallas de "Inmobiliaria".
     codigoClienteReferencia: "",
     registroFincaDocumento: "", registroFolioDocumento: "", registroLibroDocumento: "",

@@ -2373,20 +2373,20 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // con un papel que promete algo que todavía nadie aprobó.
   const pendientes = [];
   if (precioDeLista != null && precioNum > 0 && precioNum < precioDeLista)
-    pendientes.push(`el precio de ${fmt(precioNum)}, que está ${fmt(precioDeLista - precioNum)} abajo del de lista`);
+    pendientes.push(`precio de ${fmt(precioNum)} (lista: ${fmt(precioDeLista)})`);
   if (precioMax != null && precioNum > precioMax)
-    pendientes.push(`el precio de ${fmt(precioNum)}, arriba del autorizado`);
+    pendientes.push(`precio de ${fmt(precioNum)} (tope: ${fmt(precioMax)})`);
   if (engancheMin != null && engancheNum > 0 && engancheNum < engancheMin)
-    pendientes.push(`el enganche de ${fmt(engancheNum)}, menor al mínimo de ${fmt(engancheMin)}`);
+    pendientes.push(`enganche de ${fmt(engancheNum)} (mínimo: ${fmt(engancheMin)})`);
   if (tasaMin != null && tasaNum > 0 && tasaNum < tasaMin)
-    pendientes.push(`la tasa del ${fmtNum(tasaNum)}%, abajo del ${fmtNum(tasaMin)}% autorizado`);
+    pendientes.push(`tasa del ${fmtNum(tasaNum)}% (mínimo: ${fmtNum(tasaMin)}%)`);
   if (tasaMax != null && tasaNum > tasaMax)
-    pendientes.push(`la tasa del ${fmtNum(tasaNum)}%, arriba del ${fmtNum(tasaMax)}%`);
+    pendientes.push(`tasa del ${fmtNum(tasaNum)}% (máximo: ${fmtNum(tasaMax)}%)`);
   if (plazoMaxProducto != null && Number(anios) > Number(plazoMaxProducto))
-    pendientes.push(`el plazo de ${anios} años, mayor al máximo de ${plazoMaxProducto}`);
+    pendientes.push(`plazo de ${anios} años (máximo: ${plazoMaxProducto})`);
 
   const textoPendientes = pendientes.length
-    ? `SUJETO A AUTORIZACIÓN: ${pendientes.join("; ")}. Esta cotización no es válida hasta que la inmobiliaria lo apruebe por escrito.`
+    ? `PENDIENTE DE AUTORIZACIÓN: ${pendientes.join(", ")}. Válida solo si la inmobiliaria lo aprueba por escrito.`
     : "";
 
   const telLimpio = whatsapp.replace(/\D/g, "");
@@ -2470,8 +2470,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
     disclaimerTexto:
       (textoPendientes ? textoPendientes + " " : "") +
-      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.` +
-      (meses > mesesTabla ? ` La tabla completa tiene ${meses} cuotas — arriba se muestra una muestra de los primeros ${mesesTabla} meses; pide la tabla completa a la inmobiliaria.` : ""),
+      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día pasados ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. ` +
+      (textoPendientes ? "" : "Cotización informativa. ") +
+      `Los montos pueden variar según la fecha de firma.` +
+      (meses > mesesTabla ? ` Aquí van las primeras ${mesesTabla} cuotas de ${meses}; pedí la tabla completa a la inmobiliaria.` : ""),
     asesorNombre: asesor?.nombre || "—",
     asesorTelefono: asesor?.telefono || "",
     linkVentas: LINK_SITIO_VENTAS.replace("https://", ""),
@@ -2707,7 +2709,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 </div>
               )}
               <div className="text-[11px] text-[#8A93A3]">
-                Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
+                Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día pasados {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
+                {!textoPendientes && " Cotización informativa, sujeta a aprobación."}
               </div>
               {fueraDeRango && (
                 <div className="text-[11px] text-red-400 border-t border-red-900 pt-2">
@@ -2716,8 +2719,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               )}
               {precioNecesitaAutorizacion && !fueraDeRango && (
                 <div className="text-[11px] text-amber-400 border-t border-amber-900 pt-2">
-                  Ojo: esta cotización lleva un descuento de {fmt(precioDeLista - precioNum)} sobre
-                  el precio de lista y todavía falta autorizarlo.
+                  Lleva {fmt(precioDeLista - precioNum)} de descuento sobre el precio de lista.
                 </div>
               )}
             </div>
@@ -2725,10 +2727,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           {textoPendientes && (
             <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2.5 leading-relaxed">
-              <div className="font-medium mb-0.5">Esto necesita autorización</div>
-              Se sale de lo permitido {pendientes.join("; ")}. Podés enviarla, pero
-              va a salir escrito en la cotización que esos valores están sujetos
-              a autorización.
+              <div className="font-medium mb-0.5">Necesita autorización</div>
+              {pendientes.join(", ")}. Podés enviarla; la cotización va a salir
+              diciendo que eso todavía no está aprobado.
             </div>
           )}
 
@@ -2827,7 +2828,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           <div className="text-[9px] text-gray-500 leading-relaxed">
             Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
-            Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
+            {textoPendientes
+              ? textoPendientes
+              : "Cotización informativa, sujeta a aprobación."} Los montos pueden variar según la fecha de firma.
           </div>
 
           <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center">

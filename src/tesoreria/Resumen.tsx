@@ -8,6 +8,16 @@ import { FileText, Upload, Trash2, AlertTriangle } from "lucide-react";
 import { fmt, fmtDate, C_BOLSA } from "./comun";
 import { DocumentosDelGasto } from "./Documentos";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 export function ResumenTesoreria({ libre, delegado, apartado, bolsas, centros, cuotas }) {
   return (
     <div className="space-y-5">
@@ -253,8 +263,8 @@ export function MovimientosTesoreria({ puedeBorrar = true, soloGastos = false })
   const [abierto, setAbierto] = useState(null);
   // Mismo criterio que el reporte: un período, no un corte de 60 que
   // escondía movimientos viejos sin avisar.
-  const hoyIso = new Date().toISOString().slice(0, 10);
-  const primeroDelMes = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); })();
+  const hoyIso = hoyISO();
+  const primeroDelMes = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; })();
   const [desde, setDesde] = useState(primeroDelMes);
   const [hasta, setHasta] = useState(hoyIso);
   // Los mismos cortes del reporte, para poder mirar la lista por bolsa,

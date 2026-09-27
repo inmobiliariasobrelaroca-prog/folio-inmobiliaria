@@ -20,6 +20,16 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fmt, fmtDate, C_ORIGEN, C_GASTO, C_BOLSA } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 const AGRUPAR = [
   ["bolsa",     "Bolsa"],
   ["banco",     "Cuenta del banco"],
@@ -104,9 +114,9 @@ async function imagenParaPdf(url, max = 1100) {
 }
 
 function primerDiaMes() {
-  const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
-function hoyIso() { return new Date().toISOString().slice(0, 10); }
+function hoyIso() { return hoyISO(); }
 
 export default function Reportes() {
   const [desde, setDesde] = useState(primerDiaMes());

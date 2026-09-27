@@ -13,7 +13,15 @@ import { supabase } from "../supabaseClient";
 import { Plus, CreditCard, Check, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { fmt, fmtDate, C_GASTO, C_BOLSA, C_ORIGEN, Campo, CampoMoneda } from "./comun";
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 const mesActual = () => hoyISO().slice(0, 7) + "-01";
 
 export default function Tarjetas({ bolsas, onCambio }) {

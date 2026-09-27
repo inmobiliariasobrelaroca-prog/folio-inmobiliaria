@@ -7,8 +7,18 @@ import { supabase } from "../supabaseClient";
 import { FileText, Upload, X, CheckCircle2 } from "lucide-react";
 import { fmt, llamarFuncionSesion, C_BOLSA, Campo, CampoMoneda, SelectorCategoria, CrearObra, CrearBolsa } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 export function RegistrarMovimiento({ bolsas, centros, onGuardado }) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   const [tipo, setTipo] = useState("egreso");
   const [fecha, setFecha] = useState(hoy);
   const [monto, setMonto] = useState(0);

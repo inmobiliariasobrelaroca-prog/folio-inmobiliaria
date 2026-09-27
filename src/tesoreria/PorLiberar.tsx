@@ -18,6 +18,16 @@ import { supabase } from "../supabaseClient";
 import { Check, X, Clock } from "lucide-react";
 import { fmt, fmtDate, C_ORIGEN, C_BOLSA } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 export default function PorLiberar({ onCambio }) {
   const [fondos, setFondos] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -88,7 +98,7 @@ export default function PorLiberar({ onCambio }) {
 function Fondo({ f, onCambio }) {
   const [modo, setModo] = useState(null);          // null | "liberar" | "descartar"
   const [monto, setMonto] = useState("");
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyISO());
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -96,7 +106,7 @@ function Fondo({ f, onCambio }) {
   const pendiente = Number(f.pendiente || 0);
   const liberado = Number(f.liberado || 0);
   const pct = f.monto > 0 ? Math.round((liberado / Number(f.monto)) * 100) : 0;
-  const vencido = f.fecha_esperada && f.fecha_esperada < new Date().toISOString().slice(0, 10);
+  const vencido = f.fecha_esperada && f.fecha_esperada < hoyISO();
 
   const liberar = async () => {
     setError(""); setGuardando(true);

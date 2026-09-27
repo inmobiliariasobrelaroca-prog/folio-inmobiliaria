@@ -11,6 +11,16 @@ import { supabase } from "../supabaseClient";
 import { Plus, CheckCircle2, Upload, FileText, X, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { fmt, fmtDate, llamarFuncionSesion, C_BOLSA, C_GASTO, Campo, CampoMoneda } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 export default function Anticipos({ bolsas, onCambio }) {
   const [cuentas, setCuentas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -141,7 +151,7 @@ export default function Anticipos({ bolsas, onCambio }) {
 function FormAdelanto({ cuenta, bolsas, onCancelar, onListo }) {
   const [monto, setMonto] = useState(Number(cuenta.anticipo_mensual) || 0);
   const [bolsa, setBolsa] = useState("");
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyISO());
   const [descripcion, setDescripcion] = useState("");
   const [archivo, setArchivo] = useState(null);
   const [paso, setPaso] = useState("");
@@ -290,7 +300,7 @@ function FormAdelanto({ cuenta, bolsas, onCancelar, onListo }) {
 function FormDescuento({ cuenta, onCancelar, onListo }) {
   const [monto, setMonto] = useState(Number(cuenta.por_recuperar) || 0);
   const [propiedad, setPropiedad] = useState("");
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyISO());
   const [nota, setNota] = useState("");
   const [props, setProps] = useState([]);
   const [guardando, setGuardando] = useState(false);

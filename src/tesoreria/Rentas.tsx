@@ -14,6 +14,16 @@ import { supabase } from "../supabaseClient";
 import { Upload, FileText, X, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { fmt, fmtDate, C_ORIGEN, C_BOLSA, Campo, CampoMoneda } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 // La carpeta del comprobante es el id de la propiedad. Así lo exige
 // la política del bucket, que compara el primer tramo de la ruta.
 async function subirBoleta(propiedadId, archivo) {
@@ -177,7 +187,7 @@ function FormCobro({ local, cuota, comprobante, onCancelar, onListo }) {
   const yaPagada = cuota.estado === "pagado";
   const [monto, setMonto] = useState(Number(cuota.pago) || 0);
   const [fecha, setFecha] = useState(
-    cuota.fecha_pago_real || new Date().toISOString().slice(0, 10));
+    cuota.fecha_pago_real || hoyISO());
   const [nota, setNota] = useState("");
   const [archivo, setArchivo] = useState(null);
   const [paso, setPaso] = useState("");

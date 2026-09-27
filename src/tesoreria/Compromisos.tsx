@@ -7,6 +7,16 @@ import { supabase } from "../supabaseClient";
 import { Plus } from "lucide-react";
 import { fmt, Campo, CampoMoneda, SelectorCategoria, C_BOLSA, C_GASTO } from "./comun";
 
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+
 // ---------- Cuentas por pagar ----------
 //
 // Compras donde se acordó un total pero solo se ha desembolsado parte,
@@ -101,7 +111,7 @@ export function Compromisos({ bolsas, onCambio }) {
 function AbonoCompromiso({ compromiso, bolsas, onCancelar, onListo }) {
   const [monto, setMonto] = useState(Number(compromiso.saldo));
   const [bolsa, setBolsa] = useState("");
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyISO());
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 

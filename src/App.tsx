@@ -2363,12 +2363,39 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const componentesTotalMensual = ["cuota", aplicaLuz && "luz", aplicaMantenimiento && "mantenimiento"].filter(Boolean).join(" + ");
 
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
-  const listoParaEnviar = datosCompletos && !fueraDeRango;
+  // Se permite enviar fuera de rango: la cotización sale con la advertencia
+  // de que esos valores están pendientes de autorización. Lo que no se
+  // permite es que salga sin decirlo.
+  const listoParaEnviar = datosCompletos;
+
+  // Lo que se salió de lo autorizado. El vendedor puede cotizarlo igual,
+  // pero tiene que ir dicho en la cotización: el cliente no puede quedarse
+  // con un papel que promete algo que todavía nadie aprobó.
+  const pendientes = [];
+  if (precioDeLista != null && precioNum > 0 && precioNum < precioDeLista)
+    pendientes.push(`el precio de ${fmt(precioNum)}, que está ${fmt(precioDeLista - precioNum)} abajo del de lista`);
+  if (precioMax != null && precioNum > precioMax)
+    pendientes.push(`el precio de ${fmt(precioNum)}, arriba del autorizado`);
+  if (engancheMin != null && engancheNum > 0 && engancheNum < engancheMin)
+    pendientes.push(`el enganche de ${fmt(engancheNum)}, menor al mínimo de ${fmt(engancheMin)}`);
+  if (tasaMin != null && tasaNum > 0 && tasaNum < tasaMin)
+    pendientes.push(`la tasa del ${fmtNum(tasaNum)}%, abajo del ${fmtNum(tasaMin)}% autorizado`);
+  if (tasaMax != null && tasaNum > tasaMax)
+    pendientes.push(`la tasa del ${fmtNum(tasaNum)}%, arriba del ${fmtNum(tasaMax)}%`);
+  if (plazoMaxProducto != null && Number(anios) > Number(plazoMaxProducto))
+    pendientes.push(`el plazo de ${anios} años, mayor al máximo de ${plazoMaxProducto}`);
+
+  const textoPendientes = pendientes.length
+    ? `SUJETO A AUTORIZACIÓN: ${pendientes.join("; ")}. Esta cotización no es válida hasta que la inmobiliaria lo apruebe por escrito.`
+    : "";
 
   const telLimpio = whatsapp.replace(/\D/g, "");
   const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
   const mensajeWhatsapp =
-    `Cotización · Sobre la Roca\n${propiedad.nombre}\n` +
+    `Cotización · Sobre la Roca\n` +
+    (lote ? `Lote ${lote.numero}${lote.sector ? ` · sector ${lote.sector}` : ""}` +
+            `${esLote ? " · terreno" : " · con casa"}\n`
+          : `${propiedad.nombre}\n`) +
     (cliente ? `Cliente: ${cliente}\n` : "") +
     `\nPrecio: ${fmt(precioNum)}` +
     `\nEnganche: ${fmt(engancheNum)}` +
@@ -2380,7 +2407,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
     `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
     `\n\nAquí puedes ver tu propiedad: ${linkPropiedadVenta(propiedad)}` +
-    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "");
+    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "") +
+    (textoPendientes ? `\n\n${textoPendientes}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -2416,7 +2444,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // Junta todo lo que necesita construirPdfCotizacion, ya formateado — así esa
   // función solo dibuja, sin tener que conocer el estado de este componente.
   const armarDatosPdf = () => ({
-    propiedadNombre: propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
+    propiedadNombre: lote
+      ? `${propiedad.codigo || "LR"} · Lote ${lote.numero}` +
+        (lote.sector ? ` (sector ${lote.sector})` : "") +
+        (esLote ? " · terreno" : " · con casa")
+      : propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
     fecha: fmtDate(hoy),
     cliente,
     sistemaTexto: esSaldos ? "Sobre saldos" : "Cuota nivelada",
@@ -2437,6 +2469,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     notaTablaParcial: meses > mesesTabla ? `primeros ${mesesTabla} meses de ${meses}` : "",
     filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
     disclaimerTexto:
+      (textoPendientes ? textoPendientes + " " : "") +
       `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.` +
       (meses > mesesTabla ? ` La tabla completa tiene ${meses} cuotas — arriba se muestra una muestra de los primeros ${mesesTabla} meses; pide la tabla completa a la inmobiliaria.` : ""),
     asesorNombre: asesor?.nombre || "—",
@@ -2687,6 +2720,15 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                   el precio de lista y todavía falta autorizarlo.
                 </div>
               )}
+            </div>
+          )}
+
+          {textoPendientes && (
+            <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2.5 leading-relaxed">
+              <div className="font-medium mb-0.5">Esto necesita autorización</div>
+              Se sale de lo permitido {pendientes.join("; ")}. Podés enviarla, pero
+              va a salir escrito en la cotización que esos valores están sujetos
+              a autorización.
             </div>
           )}
 
@@ -5792,6 +5834,17 @@ function Campo({ label, ...props }) {
 function CampoMoneda({ label, value, onChange, placeholder, disabled, hint, invalid }) {
   const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT", { maximumFractionDigits: 2 }) : "";
   const [texto, setTexto] = useState(formatear(value));
+
+  // Si el valor cambia desde afuera (por ejemplo al pasar de casa a terreno),
+  // la casilla tiene que seguirlo. Antes guardaba su propio texto y solo lo
+  // fijaba al aparecer, así que mostraba el precio viejo mientras el cálculo
+  // usaba el nuevo: dos números distintos en la misma pantalla.
+  useEffect(() => {
+    const numeroTexto = texto === "" ? "" : Number(texto.replace(/,/g, ""));
+    if (numeroTexto !== (value === "" || value == null ? "" : Number(value))) {
+      setTexto(formatear(value));
+    }
+  }, [value]);
 
   const manejarCambio = (e) => {
     let crudo = e.target.value.replace(/[^0-9.]/g, "");

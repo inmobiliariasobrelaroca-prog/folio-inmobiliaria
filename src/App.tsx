@@ -2493,26 +2493,38 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="print:hidden">
-        <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center gap-3">
-          <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Cotizador</div>
-            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}{propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}</div>
+        {/* Todo el encabezado es el botón de volver: la flechita sola era
+            un blanco muy chico y quedaba pegada bajo la barra de la app. */}
+        <button onClick={onVolver}
+          className="sticky top-0 z-10 w-full text-left bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center gap-3 hover:bg-[#121a28]">
+          <ChevronLeft size={20} className="text-[#C9A227] shrink-0" />
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
+              Volver a las propiedades
+            </div>
+            <div className="font-serif text-lg -mt-0.5 truncate">
+              {esLote && lote ? `Lote ${lote.numero} · terreno`
+                : (lote ? `Casa sobre el lote ${lote.numero}` : propiedad.nombre)}
+              {!lote && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
+            </div>
           </div>
-        </div>
+        </button>
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
           {/* Lo que está guardado para esta casa. Sirve de referencia sin
               tener que salir a buscarlo al catálogo. */}
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
-              Lo que está guardado para esta casa
+              {esLote
+                ? `Lo que está guardado para el lote ${lote.numero}`
+                : (lote ? `Casa sobre el lote ${lote.numero}` : "Lo que está guardado para esta casa")}
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-              <Dato k="Precio de lista" v={propiedad.precio != null ? fmt(propiedad.precio) : "sin cargar"} />
-              <Dato k="Tasa sugerida" v={cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar"} />
+              <Dato k="Precio de lista" v={precioDeLista != null ? fmt(precioDeLista) : "sin cargar"} />
+              <Dato k="Tasa sugerida" v={esLote ? "12%" : (cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar")} />
               <Dato k="Enganche desde" v={engancheMin != null ? fmt(engancheMin) : "sin mínimo"} />
-              <Dato k="Plazo máximo" v={propiedad.financiamiento_plazo_max_anios ? `${propiedad.financiamiento_plazo_max_anios} años` : "sin tope"} />
+              <Dato k="Plazo máximo" v={plazoMaxProducto ? `${plazoMaxProducto} años` : "sin tope"} />
+              {esLote && <Dato k="Terreno" v={lote.area_m2 ? `${lote.area_m2} m²` : "112 m²"} />}
               {verPiso && puedeVerMinimo && (precioMin != null || precioMax != null) && (
                 <Dato k="Rango de precio"
                       v={`${precioMin != null ? fmt(precioMin) : "—"} a ${precioMax != null ? fmt(precioMax) : "—"}`} />
@@ -2521,20 +2533,20 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 <Dato k="Rango de tasa"
                       v={`${tasaMin != null ? fmtNum(tasaMin) : "—"}% a ${tasaMax != null ? fmtNum(tasaMax) : "—"}%`} />
               )}
-              {propiedad.aplica_luz && (
+              {!esLote && propiedad.aplica_luz && (
                 <Dato k="Luz" v={`${fmt(propiedad.monto_luz_mensual || 0)} al mes`} />
               )}
-              {propiedad.aplica_mantenimiento && (
+              {!esLote && propiedad.aplica_mantenimiento && (
                 <Dato k="Mantenimiento" v={`${fmt(propiedad.monto_mantenimiento_mensual || 0)} al mes`} />
               )}
-              {propiedad.metros_construccion && (
+              {!esLote && propiedad.metros_construccion && (
                 <Dato k="Construcción" v={`${propiedad.metros_construccion} m²`} />
               )}
-              {propiedad.metros_terreno && (
+              {!esLote && propiedad.metros_terreno && (
                 <Dato k="Terreno" v={`${propiedad.metros_terreno} m²`} />
               )}
-              {propiedad.habitaciones && <Dato k="Habitaciones" v={propiedad.habitaciones} />}
-              {propiedad.banos && <Dato k="Baños" v={propiedad.banos} />}
+              {!esLote && propiedad.habitaciones && <Dato k="Habitaciones" v={propiedad.habitaciones} />}
+              {!esLote && propiedad.banos && <Dato k="Baños" v={propiedad.banos} />}
             </div>
             {sinRestriccionDeRango && (
               <div className="text-[10px] text-[#6b7280] mt-2">
@@ -4864,6 +4876,19 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
   // el piso del precio y sin los conteos del plano. Mirarlo como interno
   // no sirve para eso, porque interno no tiene ninguna de esas limitaciones.
   const [comoVendedor, setComoVendedor] = useState(false);
+  // Proyectos que tienen lotes: ahí se entra por el plano, no por una casa.
+  const [conLotes, setConLotes] = useState({});
+  useEffect(() => {
+    supabase.from("lotes").select("proyecto_venta_id, estado").then(({ data }) => {
+      const m = {};
+      (data || []).forEach((l) => {
+        m[l.proyecto_venta_id] = m[l.proyecto_venta_id] || { total: 0, libres: 0 };
+        m[l.proyecto_venta_id].total++;
+        if (l.estado === "disponible") m[l.proyecto_venta_id].libres++;
+      });
+      setConLotes(m);
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -4892,9 +4917,11 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
           // La relación es uno a uno (propiedad_venta_id es único), así que la
           // base devuelve un objeto, no una lista. Leerlo con [0] lo dejaba
           // vacío y la tasa salía "sin cargar".
-          propiedad={{ ...sel, condiciones: (Array.isArray(sel.propiedades_venta_condiciones)
-            ? sel.propiedades_venta_condiciones[0]
-            : sel.propiedades_venta_condiciones) || {} }}
+          propiedad={{ ...sel,
+            entrarPorPlano: !!conLotes[sel.proyecto_venta_id],
+            condiciones: (Array.isArray(sel.propiedades_venta_condiciones)
+              ? sel.propiedades_venta_condiciones[0]
+              : sel.propiedades_venta_condiciones) || {} }}
           puedeEnviar={true}
           puedeVerMinimo={!comoVendedor}
           asesor={{ ...(usuario || {}), tipo: comoVendedor ? "asesor_externo" : "asesor_interno" }}
@@ -4944,6 +4971,15 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
               {c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}
             </div>
             <div className="text-[11px] text-[#8A93A3] mb-1.5">{c.proyectos_venta?.nombre}</div>
+            {/* Si el proyecto tiene lotes, se entra al plano y ahí se decide
+                si es terreno o casa; la casa es solo una de las dos salidas. */}
+            {conLotes[c.proyecto_venta_id] && (
+              <div className="text-[11px] text-[#C9A227] mb-1.5">
+                {conLotes[c.proyecto_venta_id].libres} lote
+                {conLotes[c.proyecto_venta_id].libres === 1 ? "" : "s"} disponible
+                {conLotes[c.proyecto_venta_id].libres === 1 ? "" : "s"} · abre el plano
+              </div>
+            )}
             {c.precio != null && (
               <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
             )}

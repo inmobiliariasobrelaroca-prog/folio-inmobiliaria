@@ -6,6 +6,7 @@ import GuardiaSesion from "./GuardiaSesion";
 import MapaLotes from "./MapaLotes";
 import BoletasBandeja from "./BoletasBandeja";
 import Ofertas from "./Ofertas";
+import Propietario from "./Propietario";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
@@ -25,7 +26,7 @@ import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
   FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
-  Tag, Inbox
+  Tag, Inbox, Home
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -2959,6 +2960,13 @@ function AppInterno({ perfil, cerrarSesion }) {
   // pantalla ya era esa. Este contador lo vuelve a montar, así regresa a la
   // lista de propiedades en vez de quedarse en la casa abierta.
   const [cotizadorNonce, setCotizadorNonce] = useState(0);
+  // Hay gente que no es cliente ni vende: es dueña de una casa que nosotros
+  // administramos. Si tiene cuenta, se le muestra su acceso en la barra.
+  const [tieneCuentaPropietario, setTieneCuentaPropietario] = useState(false);
+  useEffect(() => {
+    supabase.from("v_propietario_saldos").select("cuenta_id").limit(1)
+      .then(({ data }) => setTieneCuentaPropietario((data || []).length > 0));
+  }, [perfil?.usuario?.id]);
   const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [actualizando, setActualizando] = useState(false);
@@ -3223,6 +3231,7 @@ function AppInterno({ perfil, cerrarSesion }) {
           onCotizar={() => { setPantalla("cotizadorDirecto"); setCotizadorNonce((n) => n + 1); }}
           onBoletas={() => setPantalla("bandejaBoletas")}
           onOfertas={() => setPantalla("ofertas")}
+          onPropietario={tieneCuentaPropietario ? () => setPantalla("propietario") : null}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
@@ -3243,6 +3252,13 @@ function AppInterno({ perfil, cerrarSesion }) {
             onAsesores={() => setPantalla("catalogoAsesores")}
             onActividad={() => setPantalla("catalogoActividad")}
           />
+        )}
+
+        {pantalla === "propietario" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <Propietario esAdmin={!!perfil?.usuario?.roles?.es_administrador}
+                         onVolver={() => setPantalla("proyectos")} />
+          </div>
         )}
 
         {modo === "inmobiliaria" && pantalla === "ofertas" && (
@@ -3348,7 +3364,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onPropietario, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -3395,6 +3411,11 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
             </button>
           )}
           {/* Ofertas por debajo del precio de lista, esperando respuesta */}
+          {onPropietario && (
+            <button onClick={onPropietario} title="Casas administradas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Home size={16} />
+            </button>
+          )}
           {puedeVerCatalogo && modo === "inmobiliaria" && onOfertas && (
             <button onClick={onOfertas} title="Ofertas por autorizar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
               <Sparkles size={16} />

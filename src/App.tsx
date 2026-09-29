@@ -6668,8 +6668,22 @@ function AdjuntarBoleta({ f, propiedadId, actualizar }) {
       const { error: e2 } = await supabase.from("comprobantes")
         .update({ imagen_url: path }).eq("id", comp.id);
       if (e2) throw new Error(e2.message);
+
+      // actualizar espera una función que transforme la propiedad. Llamarla
+      // vacía reventaba la pantalla justo después de guardar: el archivo ya
+      // había subido, pero la app se caía y parecía que no se había hecho nada.
+      const { data: firmada } = await supabase.storage
+        .from("comprobantes").createSignedUrl(path, 3600);
+
       setAbierto(false); setArchivo(null);
-      actualizar && actualizar();
+      actualizar && actualizar((p) => {
+        const fila = p.tabla.find((x) => x.numero === f.numero);
+        if (fila?.comprobante) {
+          fila.comprobante.imagenUrlCruda = path;
+          fila.comprobante.imagen = firmada?.signedUrl || fila.comprobante.imagen;
+        }
+        return p;
+      });
     } catch (e) {
       setError(e.message); setGuardando(false);
     }

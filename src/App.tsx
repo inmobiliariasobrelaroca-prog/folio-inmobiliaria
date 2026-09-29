@@ -1417,15 +1417,30 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
           {propiedades.map((p) => (
             <button
               key={p.id}
-              onClick={() => puedeCotizar && setSeleccionada(
+              // Una casa vendida se sigue mostrando, para que el vendedor sepa
+              // que existe y no la busque, pero no se puede cotizar.
+              onClick={() => puedeCotizar && p.estado !== "vendida" && setSeleccionada(
                 lotesPorProyecto[p.proyecto_venta_id]
                   ? { ...p, entrarPorPlano: true }
                   : p)}
-              disabled={!puedeCotizar}
-              className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden hover:border-[#C9A227] transition disabled:opacity-60"
+              disabled={!puedeCotizar || p.estado === "vendida"}
+              className={`text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden transition ${
+                p.estado === "vendida"
+                  ? "opacity-70 cursor-not-allowed"
+                  : "hover:border-[#C9A227] disabled:opacity-60"}`}
             >
-              <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden">
-                {p.fotoPortada ? <img src={p.fotoPortada} alt={p.nombre} className="w-full h-full object-cover" /> : <Building2 size={28} className="text-[#3a4864]" />}
+              <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden relative">
+                {p.fotoPortada
+                  ? <img src={p.fotoPortada} alt={p.nombre}
+                         className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
+                  : <Building2 size={28} className="text-[#3a4864]" />}
+                {p.estado === "vendida" && (
+                  <div className="absolute inset-0 bg-[#101826]/55 flex items-center justify-center">
+                    <span className="text-[11px] tracking-widest uppercase bg-[#C0392B] text-white px-3 py-1 rounded">
+                      Vendida
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="p-3">
                 <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
@@ -5052,8 +5067,11 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {casas.map((c) => (
-          <button key={c.id} onClick={() => setSel(c)}
-            className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 hover:border-[#C9A227] transition">
+          <button key={c.id}
+            onClick={() => c.estado !== "vendida" && setSel(c)}
+            disabled={c.estado === "vendida"}
+            className={`text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 transition ${
+              c.estado === "vendida" ? "opacity-70 cursor-not-allowed" : "hover:border-[#C9A227]"}`}>
             <div className="text-sm font-medium">
               {conLotes[c.proyecto_venta_id]
                 ? (c.proyectos_venta?.nombre || c.nombre)
@@ -5079,11 +5097,19 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
                 {c.precio != null && (
                   <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
                 )}
-                <div className="text-[10px] text-[#6b7280] mt-0.5">
-                  {c.estado === "vendida" ? "Vendida" : "Disponible"}
-                  {c.financiamiento_enganche_desde
-                    ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
-                </div>
+                {c.estado === "vendida" ? (
+                  <div className="mt-1">
+                    <span className="text-[10px] tracking-widest uppercase bg-[#C0392B] text-white px-2 py-0.5 rounded">
+                      Vendida
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-[#6b7280] mt-0.5">
+                    Disponible
+                    {c.financiamiento_enganche_desde
+                      ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
+                  </div>
+                )}
               </>
             )}
           </button>

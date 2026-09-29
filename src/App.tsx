@@ -1331,6 +1331,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   const [error, setError] = useState("");
   const [seleccionada, setSeleccionada] = useState(null);
   const [lotesPorProyecto, setLotesPorProyecto] = useState({});
+  const [esPropietario, setEsPropietario] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1368,6 +1369,13 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
       setLotesPorProyecto(porProyecto);
 
       setPropiedades(combinadas);
+
+      // Hay asesores que además son dueños de una casa que nosotros
+      // administramos. A ellos se les agrega su pestaña; al resto no.
+      const { data: cuentas } = await supabase
+        .from("v_propietario_saldos").select("cuenta_id").limit(1);
+      setEsPropietario((cuentas || []).length > 0);
+
       setCargando(false);
     })();
   }, []);
@@ -1395,6 +1403,13 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
               ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
             Tus propiedades
           </button>
+          {esPropietario && (
+            <button onClick={() => setSeccion("propietario")}
+              className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "propietario"
+                ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+              Tus casas
+            </button>
+          )}
           <button onClick={() => setSeccion("reporte")}
             className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "reporte"
               ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
@@ -1403,6 +1418,10 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         </div>
 
         {seccion === "reporte" && <MiReporte asesor={usuario} />}
+
+        {seccion === "propietario" && (
+          <Propietario esAdmin={!!usuario?.roles?.es_administrador} />
+        )}
 
         {seccion === "propiedades" && (<>
         <h1 className="font-serif text-2xl mb-1">Tus propiedades</h1>

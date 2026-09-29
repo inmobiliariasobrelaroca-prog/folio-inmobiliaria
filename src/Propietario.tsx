@@ -40,7 +40,7 @@ export default function Propietario({ esAdmin = false, onVolver }) {
     if (elegida) {
       const [{ data: props }, { data: ms }] = await Promise.all([
         supabase.from("cuentas_propietario_propiedades")
-          .select("propiedad_id, propiedades(id, folio, direccion, cliente_nombre, precio)")
+          .select("propiedad_id, propiedades(*)")
           .eq("cuenta_id", elegida.cuenta_id),
         supabase.from("propietario_movimientos").select("*")
           .eq("cuenta_id", elegida.cuenta_id)
@@ -145,13 +145,46 @@ function Tarjeta({ rotulo, valor, nota, color }) {
 function Casa({ casa }) {
   const [cuotas, setCuotas] = useState([]);
   const [todo, setTodo] = useState(false);
+  // Recibo abierto y su enlace ya firmado. Se pide solo al tocarlo: firmar
+  // todos de una vez sería pedirle al servidor decenas de enlaces que nadie
+  // va a mirar.
+  const [abierta, setAbierta] = useState(null);
+  const [recibos, setRecibos] = useState({});
+  const [vista, setVista] = useState("pagos");
+  const [docs, setDocs] = useState([]);
+
+  useEffect(() => {
+    supabase.from("documentos")
+      .select("id, nombre, archivo_url, tipo, created_at")
+      .eq("propiedad_id", casa.id).order("created_at", { ascending: false })
+      .then(({ data }) => setDocs(data || []));
+  }, [casa.id]);
 
   useEffect(() => {
     supabase.from("cuotas")
-      .select("id, numero, fecha, pago, estado, fecha_pago_real, saldo_final, comprobantes(id, estado)")
+      .select("id, numero, fecha, pago, estado, fecha_pago_real, saldo_final, comprobantes(id, estado, imagen_url)")
       .eq("propiedad_id", casa.id).order("numero")
       .then(({ data }) => setCuotas(data || []));
   }, [casa.id]);
+
+  const verRecibo = async (cuota) => {
+    if (abierta === cuota.id) { setAbierta(null); return; }
+    setAbierta(cuota.id);
+    if (recibos[cuota.id]) return;
+    const ruta = (cuota.comprobantes || [])[0]?.imagen_url;
+    if (!ruta) return;
+    // Las boletas viejas quedaron como enlace de Drive; las nuevas viven
+    // dentro de la app y hay que firmarlas para poder verlas.
+    if (/^https?:\/\//i.test(ruta)) {
+      setRecibos((r) => ({ ...r, [cuota.id]: { url: ruta, externo: true } }));
+      return;
+    }
+    const { data } = await supabase.storage.from("comprobantes").createSignedUrl(ruta, 3600);
+    setRecibos((r) => ({ ...r, [cuota.id]: {
+      url: data?.signedUrl || null,
+      esPdf: /\.pdf($|\?)/i.test(ruta),
+    } }));
+  };
 
   const pagadas = cuotas.filter((c) => c.estado === "pagado");
   const ultima = pagadas[pagadas.length - 1];
@@ -190,28 +223,148 @@ function Casa({ casa }) {
         </div>
       )}
 
-      <div className="border-t border-[#2A3547] pt-2 space-y-1">
-        {verlas.map((c) => (
-          <div key={c.id} className="flex items-center gap-2 text-[10px]">
-            <span className="w-7 text-[#6b7280]">#{c.numero}</span>
-            <span className="w-16 text-[#8A93A3]">{fmtDate(c.fecha)}</span>
-            <span className="flex-1 font-mono">{fmt(c.pago)}</span>
-            {(c.comprobantes || []).length > 0 && (
-              <FileText size={10} className="text-[#C9A227]" />
-            )}
-            <span style={{ color: c.estado === "pagado" ? VERDE : c.fecha < hoy ? ROJO : "#8A93A3" }}>
-              {c.estado === "pagado"
-                ? `pagada ${c.fecha_pago_real ? fmtDate(c.fecha_pago_real) : ""}`
-                : c.fecha < hoy ? "sin pagar" : "pendiente"}
-            </span>
-          </div>
+      <div className="flex gap-1.5 border-t border-[#2A3547] pt-2">
+        {[["pagos", "Pagos"], ["condiciones", "Condiciones"], ["papeles", `Papeles (${docs.length})`]].map(([k, t]) => (
+          <button key={k} onClick={() => setVista(k)}
+            className={`text-[10px] px-2.5 py-1 rounded ${vista === k
+              ? "bg-[#2A3547] text-[#EDE7D9]" : "text-[#8A93A3]"}`}>
+            {t}
+          </button>
         ))}
+      </div>
+
+      {vista === "condiciones" && <Condiciones casa={casa} />}
+      {vista === "papeles" && <Papeles docs={docs} />}
+
+      {vista === "pagos" && (
+      <div className="pt-1 space-y-1">
+        {verlas.map((c) => {
+          const tiene = (c.comprobantes || []).length > 0;
+          const rec = recibos[c.id];
+          return (
+            <div key={c.id}>
+              <div className="flex items-center gap-2 text-[10px]">
+                <span className="w-7 text-[#6b7280]">#{c.numero}</span>
+                <span className="w-16 text-[#8A93A3]">{fmtDate(c.fecha)}</span>
+                <span className="flex-1 font-mono">{fmt(c.pago)}</span>
+                {tiene && (
+                  <button onClick={() => verRecibo(c)} title="Ver la boleta del pago"
+                    className="text-[#C9A227] hover:text-[#EDE7D9] shrink-0">
+                    <FileText size={11} />
+                  </button>
+                )}
+                <span style={{ color: c.estado === "pagado" ? VERDE : c.fecha < hoy ? ROJO : "#8A93A3" }}>
+                  {c.estado === "pagado"
+                    ? `pagada ${c.fecha_pago_real ? fmtDate(c.fecha_pago_real) : ""}`
+                    : c.fecha < hoy ? "sin pagar" : "pendiente"}
+                </span>
+              </div>
+
+              {abierta === c.id && (
+                <div className="mt-1.5 mb-2 ml-7">
+                  {!rec ? (
+                    <div className="text-[10px] text-[#8A93A3]">Abriendo la boleta...</div>
+                  ) : !rec.url ? (
+                    <div className="text-[10px] text-[#8A93A3]">Esa cuota no tiene boleta adjunta.</div>
+                  ) : rec.esPdf || rec.externo ? (
+                    <a href={rec.url} target="_blank" rel="noopener noreferrer"
+                       className="text-[10px] text-[#C9A227] underline">
+                      Abrir la boleta{rec.externo ? " (está en Drive)" : " en PDF"}
+                    </a>
+                  ) : (
+                    <a href={rec.url} target="_blank" rel="noopener noreferrer">
+                      <img src={rec.url} alt={`Boleta de la cuota ${c.numero}`}
+                           className="max-h-60 rounded border border-[#2A3547]" />
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {cuotas.length > 14 && (
           <button onClick={() => setTodo(!todo)} className="text-[10px] text-[#C9A227] pt-1">
             {todo ? "Ver menos" : `Ver las ${cuotas.length} cuotas`}
           </button>
         )}
       </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Lo que dice el contrato, en números ----------
+
+function Condiciones({ casa }) {
+  const filas = [
+    ["Precio de venta", casa.precio != null ? fmt(casa.precio) : "—"],
+    ["Enganche", casa.enganche != null ? fmt(casa.enganche) : "—"],
+    ["Monto financiado", casa.precio != null && casa.enganche != null
+      ? fmt(Math.max(0, Number(casa.precio) - Number(casa.enganche))) : "—"],
+    ["Tasa de interés anual", casa.tasa_anual != null ? `${casa.tasa_anual}%` : "—"],
+    ["Plazo", casa.plazo_anios ? `${casa.plazo_anios} años` : "—"],
+    ["Sistema", casa.sistema_amortizacion === "saldos" ? "Sobre saldos" : "Cuota nivelada"],
+    ["Forma de pago", casa.sistema_pago === "vencido" ? "Mes vencido" : "Mes adelantado"],
+    ["Días de gracia", casa.dias_gracia != null ? `${casa.dias_gracia} días` : "—"],
+    ["Mora diaria", casa.mora_diaria ? `${fmt(casa.mora_diaria)} por día` : "Sin mora"],
+    ...(casa.aplica_luz
+      ? [["Luz mensual", `${fmt(casa.monto_luz_mensual)} · ${casa.dias_gracia_luz ?? 0} días de gracia`]]
+      : []),
+    ...(casa.aplica_mantenimiento
+      ? [["Mantenimiento", fmt(casa.monto_mantenimiento_mensual)]] : []),
+    ["Fecha de inicio", casa.fecha_inicio ? fmtDate(casa.fecha_inicio) : "—"],
+  ];
+  return (
+    <div className="pt-2 space-y-1">
+      {filas.map(([k, v]) => (
+        <div key={k} className="flex justify-between gap-3 text-[11px] border-b border-[#2A3547] pb-1">
+          <span className="text-[#8A93A3]">{k}</span>
+          <span className="font-mono text-right">{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Contrato y demás papeles ----------
+
+function Papeles({ docs }) {
+  const [urls, setUrls] = useState({});
+
+  const abrir = async (d) => {
+    if (urls[d.id]) return;
+    if (/^https?:\/\//i.test(d.archivo_url)) {
+      setUrls((u) => ({ ...u, [d.id]: d.archivo_url }));
+      return;
+    }
+    const { data } = await supabase.storage.from("documentos")
+      .createSignedUrl(d.archivo_url, 3600);
+    setUrls((u) => ({ ...u, [d.id]: data?.signedUrl || null }));
+  };
+
+  if (docs.length === 0) {
+    return <div className="text-[11px] text-[#8A93A3] pt-2">No hay papeles cargados todavía.</div>;
+  }
+
+  return (
+    <div className="pt-2 space-y-1.5">
+      {docs.map((d) => (
+        <div key={d.id} className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+          <FileText size={13} className="text-[#C9A227] shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] truncate">{d.nombre}</div>
+            <div className="text-[10px] text-[#6b7280]">
+              {d.tipo || "documento"} · {fmtDate(String(d.created_at).slice(0, 10))}
+            </div>
+          </div>
+          {urls[d.id] ? (
+            <a href={urls[d.id]} target="_blank" rel="noopener noreferrer"
+               className="text-[10px] text-[#C9A227] shrink-0">Abrir</a>
+          ) : (
+            <button onClick={() => abrir(d)} className="text-[10px] text-[#8A93A3] shrink-0">Ver</button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

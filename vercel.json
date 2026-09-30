@@ -1,0 +1,50 @@
+{
+  "$comentario": [
+    "Este archivo va en la RAÍZ del repositorio, no dentro de src/.",
+    "Vercel solo lo lee desde la raíz; el que estaba en src/ nunca se aplicó.",
+    "",
+    "La idea: el index y el service worker nunca se guardan en caché, para que",
+    "un cambio se vea de inmediato. Los archivos de assets sí se guardan para",
+    "siempre, porque su nombre cambia con cada versión y no hay riesgo de que",
+    "queden viejos."
+  ],
+  "headers": [
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    }
+  ]
+}

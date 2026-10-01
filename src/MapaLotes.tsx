@@ -198,6 +198,8 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
   const [error, setError] = useState("");
 
   const precioLote = lote.precio_lote != null ? Number(lote.precio_lote) : null;
+  // Sobre algunos lotes la casa vale más; si el lote no dice nada, el general
+  const precioCasaAqui = lote.precio_casa != null ? Number(lote.precio_casa) : precioCasa;
   // Si ya se definió que ahí va casa, no se puede vender como terreno pelado
   const soloCasa = lote.destino === "casa";
   const puedeLote = !soloCasa && precioLote != null;
@@ -211,7 +213,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
         p_cliente: nombre.trim(),
         p_telefono: tel.trim() || null,
         p_monto: Number(monto),
-        p_precio: destino === "lote" ? precioLote : precioCasa,
+        p_precio: destino === "lote" ? precioLote : precioCasaAqui,
         p_vence: vence || null,
         p_nota: null,
       });
@@ -261,6 +263,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
               </div>
               <div className="text-[10px] text-[#8A93A3] mb-1.5">
                 Enganche desde {fmtQ(8000)} · hasta 10 años
+                <br/>Precio fijo. Cualquier rebaja la autoriza la inmobiliaria.
               </div>
               <div className="flex gap-2">
                 <button onClick={() => onCotizar && onCotizar(lote, "lote")}
@@ -280,10 +283,11 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
             <div className="flex items-baseline justify-between">
               <span className="text-[11px]">Casa construida</span>
-              <span className="font-mono text-sm" style={{ color: COLOR.apartado }}>{fmtQ(precioCasa)}</span>
+              <span className="font-mono text-sm" style={{ color: COLOR.apartado }}>{fmtQ(precioCasaAqui)}</span>
             </div>
             <div className="text-[10px] text-[#8A93A3] mb-1.5">
               Enganche desde {fmtQ(40000)} · hasta 25 años
+              <br/>Precio fijo. Cualquier rebaja la autoriza la inmobiliaria.
             </div>
             <div className="flex gap-2">
               <button onClick={() => onCotizar && onCotizar(lote, "casa")}
@@ -305,7 +309,7 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
         <div className="mt-3 space-y-2">
           <p className="text-[10px] text-[#8A93A3]">
             Se aparta <b>para {destino === "casa" ? "casa" : "terreno"}</b>, a{" "}
-            {fmtQ(destino === "casa" ? precioCasa : precioLote)}. Queda bloqueado
+            {fmtQ(destino === "casa" ? precioCasaAqui : precioLote)}. Queda bloqueado
             para los demás vendedores.
           </p>
           <input value={nombre} onChange={(e) => setNombre(e.target.value)}

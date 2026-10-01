@@ -2318,13 +2318,24 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
   const esLote = modoVenta === "lote" && lote;
   const soloLoteElegido = lote && !modoVenta;
+  // Hay lotes donde la casa vale más: los 3 y 4, sobre la calle principal.
+  // Si el lote no trae precio propio, manda el de la propiedad.
+  const precioCasaDelLote = lote?.precio_casa != null
+    ? Number(lote.precio_casa)
+    : (propiedad.precio != null ? Number(propiedad.precio) : null);
+  // Un lote con precio propio de casa se vende a ese precio, sin margen:
+  // es el caso de los lotes 3 y 4, sobre la calle principal. El margen del
+  // precio general solo aplica a los demás.
+  const casaConPrecioPropio = lote?.precio_casa != null;
 
   // Los lotes no tienen rango de negociación: el precio es el que es, y
   // cualquier rebaja pasa por una solicitud que Carlos aprueba.
   const precioMin = esLote ? Number(lote.precio_lote || 0)
-    : (cond.precio_minimo != null ? Number(cond.precio_minimo) : null);
+    : (casaConPrecioPropio ? precioCasaDelLote
+        : (cond.precio_minimo != null ? Number(cond.precio_minimo) : null));
   const precioMax = esLote ? Number(lote.precio_lote || 0)
-    : (cond.precio_maximo != null ? Number(cond.precio_maximo) : null);
+    : (precioCasaDelLote != null ? precioCasaDelLote
+        : (cond.precio_maximo != null ? Number(cond.precio_maximo) : null));
   const engancheMin = esLote ? 8000
     : (propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null);
   const tasaMin = esLote ? 12 : (cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null);
@@ -2337,7 +2348,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     if (modo === "lote") {
       setPrecio(l.precio_lote ?? ""); setEnganche(8000); setTasaAnual(12); setAnios(10);
     } else {
-      setPrecio(propiedad.precio ?? "");
+      setPrecio((l?.precio_casa ?? propiedad.precio) ?? "");
       setEnganche(propiedad.financiamiento_enganche_desde ?? "");
       setTasaAnual(cond.financiamiento_tasa_anual ?? "");
       setAnios(propiedad.financiamiento_plazo_max_anios ?? "");
@@ -2367,7 +2378,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // no está autorizado. Distinto de estar fuera de rango, que sí bloquea.
   const precioDeLista = esLote
     ? (lote.precio_lote != null ? Number(lote.precio_lote) : null)
-    : (propiedad.precio != null ? Number(propiedad.precio) : null);
+    : precioCasaDelLote;
   const precioNecesitaAutorizacion =
     !sinRestriccionDeRango && !precioFueraDeRango &&
     precioDeLista != null && precioNum > 0 && precioNum < precioDeLista;
@@ -2619,7 +2630,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 {lote.precio_lote != null && lote.destino !== "casa" && (
                   <Dato k="Como terreno" v={`${fmt(lote.precio_lote)} · enganche ${fmt(8000)} · 10 años`} />
                 )}
-                <Dato k="Con casa" v={`${fmt(propiedad.precio)} · enganche ${fmt(propiedad.financiamiento_enganche_desde || 40000)} · ${propiedad.financiamiento_plazo_max_anios || 25} años`} />
+                <Dato k="Con casa" v={`${fmt(lote.precio_casa ?? propiedad.precio)} · enganche ${fmt(propiedad.financiamiento_enganche_desde || 40000)} · ${propiedad.financiamiento_plazo_max_anios || 25} años`} />
                 <div className="text-[10px] text-[#8A93A3] pt-1">
                   Elegí abajo si lo vas a cotizar como terreno o como casa.
                 </div>

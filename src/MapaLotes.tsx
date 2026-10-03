@@ -76,7 +76,11 @@ const fmtQ = (n) =>
 
 // verConteos: el asesor externo no necesita saber cuántos van vendidos ni
 // apartados. Le basta el color de cada lote. La inmobiliaria sí lo ve.
-export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, puedeApartar, asesorId, verConteos = false, precioCasa = 580000 }) {
+//
+// miniatura: vista decorativa y sin clicks, para la tarjeta de "Tus
+// propiedades" (pedido de Carlos, 2026-10-03). No trae los apartados (no
+// hacen falta sin panel de selección) y no muestra leyenda ni "Agrandar".
+export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, puedeApartar, asesorId, verConteos = false, precioCasa = 580000, miniatura = false }) {
   const [lotes, setLotes] = useState([]);
   const [apartados, setApartados] = useState([]);
   const [sel, setSel] = useState(null);
@@ -85,6 +89,12 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
   const [zoom, setZoom] = useState(false);
 
   const cargar = async () => {
+    if (miniatura) {
+      const { data: ls } = await supabase.from("lotes").select("*").eq("proyecto_venta_id", proyectoVentaId).order("numero");
+      setLotes(ls || []);
+      setCargando(false);
+      return;
+    }
     const [{ data: ls }, { data: aps }] = await Promise.all([
       supabase.from("lotes").select("*").eq("proyecto_venta_id", proyectoVentaId).order("numero"),
       supabase.from("lote_apartados").select("*").order("created_at", { ascending: false }),
@@ -95,7 +105,9 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
   };
   useEffect(() => { cargar(); }, [proyectoVentaId]);
 
-  if (cargando) return <div className="text-sm text-[#8A93A3]">Cargando el plano...</div>;
+  if (cargando) {
+    return miniatura ? null : <div className="text-sm text-[#8A93A3]">Cargando el plano...</div>;
+  }
 
   const porNumero = {};
   lotes.forEach((l) => { porNumero[l.numero] = l; });
@@ -106,6 +118,26 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
     : null;
 
   const cuenta = (e) => lotes.filter((l) => l.estado === e).length;
+
+  if (miniatura) {
+    // Solo el dibujo con los colores, sin leyenda, sin zoom y sin que se
+    // pueda tocar un lote: es una vista previa dentro de un carrusel que
+    // cicla solo, no la herramienta para apartar.
+    return (
+      <div className="relative w-full h-full bg-[#F6F2EA] pointer-events-none select-none">
+        <img src="/plano-reu.svg" alt="Plano de distribución de Las Luces Retalhuleu"
+             className="absolute inset-0 w-full h-full object-cover" draggable="false" />
+        <svg viewBox={`0 0 ${VISTA.w} ${VISTA.h}`} className="absolute inset-0 w-full h-full"
+             preserveAspectRatio="xMidYMid slice">
+          {Object.entries(GEO).map(([num, g]) => {
+            const l = porNumero[num];
+            if (!l) return null;
+            return <path key={num} d={g.d} fill={COLOR[l.estado]} fillOpacity={0.45} />;
+          })}
+        </svg>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

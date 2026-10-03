@@ -1465,10 +1465,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                   : "hover:border-[#C9A227] disabled:opacity-60"}`}
             >
               <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden relative">
-                {p.fotoPortada
-                  ? <img src={p.fotoPortada} alt={p.nombre}
-                         className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
-                  : <Building2 size={28} className="text-[#3a4864]" />}
+                <TarjetaFoto p={p} tieneMapa={!!lotesPorProyecto[p.proyecto_venta_id]} />
                 {p.estado === "vendida" && (
                   <div className="absolute inset-0 bg-[#101826]/55 flex items-center justify-center">
                     <span className="text-[11px] tracking-widest uppercase bg-[#C0392B] text-white px-3 py-1 rounded">
@@ -1518,6 +1515,53 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         </>)}
       </div>
     </div>
+  );
+}
+
+// Miniatura de la tarjeta en "Tus propiedades". Si el proyecto es de lotes,
+// es un carrusel automático (sin flechas ni botones) que va mostrando las
+// fotos de la casa y, al final, una vista del plano — así el vendedor ve de
+// un vistazo qué hay sin tener que entrar. El plano real, para elegir lote,
+// solo se ve adentro, en el cotizador (pedido de Carlos, 2026-10-03).
+function TarjetaFoto({ p, tieneMapa }) {
+  const fotos = (p.fotos_propiedad_venta || []).slice().sort((a, b) => a.orden - b.orden);
+  const slides = tieneMapa ? [...fotos.map((f) => f.archivo_url), "__mapa__"] : [];
+  const [i, setI] = useState(0);
+
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const t = setInterval(() => setI((v) => (v + 1) % slides.length), 3500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides.length, p.id]);
+
+  if (!tieneMapa) {
+    return p.fotoPortada
+      ? <img src={p.fotoPortada} alt={p.nombre}
+             className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
+      : <Building2 size={28} className="text-[#3a4864]" />;
+  }
+
+  return (
+    <>
+      <div className={`flex h-full w-full transition-transform duration-700 ease-in-out ${p.estado === "vendida" ? "grayscale" : ""}`}
+           style={{ transform: `translateX(-${i * 100}%)` }}>
+        {slides.map((s, idx) => (
+          <div key={idx} className="w-full h-full shrink-0">
+            {s === "__mapa__"
+              ? <MapaLotes proyectoVentaId={p.proyecto_venta_id} miniatura />
+              : <img src={s} alt={p.proyectos_venta?.nombre || p.nombre} className="w-full h-full object-cover" />}
+          </div>
+        ))}
+      </div>
+      {slides.length > 1 && (
+        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+          {slides.map((_, idx) => (
+            <span key={idx} className={`w-1 h-1 rounded-full ${idx === i ? "bg-[#C9A227]" : "bg-white/40"}`} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2337,11 +2381,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // null mientras no se elija: al tocar un lote primero se ve el lote, y
   // recién al cotizar o apartar se decide si es terreno o casa.
   const [modoVenta, setModoVenta] = useState(propiedad.entrarPorPlano ? null : "casa");
-  // Cuando el proyecto tiene lotes, la portada es un carrusel: primero la
-  // foto de la casa y, deslizando, el plano para elegir lote (pedido de
-  // Carlos, 2026-10-03).
+  // Fuera de un proyecto de lotes, el plano queda detrás de un botón
+  // ("Ver el plano y elegir lote"); en uno de lotes se ve directo, así que
+  // acá solo hace falta para ese caso simple.
   const [verMapa, setVerMapa] = useState(false);
-  const carruselTouchX = React.useRef(null);
   const esLote = modoVenta === "lote" && lote;
   const soloLoteElegido = lote && !modoVenta;
   // Hay lotes donde la casa vale más: los 3 y 4, sobre la calle principal.
@@ -2648,7 +2691,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
           {/* Lo que está guardado para esta casa. Sirve de referencia sin
-              tener que salir a buscarlo al catálogo. */}
+              tener que salir a buscarlo al catálogo. En un proyecto de
+              lotes esto depende de si se vende como terreno o con casa, así
+              que no se muestra hasta elegir lote (pedido de Carlos,
+              2026-10-03). */}
+          {(!propiedad.entrarPorPlano || lote) && (
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
               {lote ? `Lote ${lote.numero} · sector ${lote.sector}`
@@ -2706,67 +2753,24 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               </div>
             )}
           </div>
+          )}
 
           {propiedad.proyecto_venta_id && (propiedad.entrarPorPlano ? (
-            // Portada tipo carrusel: primero la foto de la casa del proyecto,
-            // deslizando (o con las flechas) se pasa al plano para elegir
-            // lote (pedido de Carlos, 2026-10-03).
-            <div className="space-y-1.5">
-              <div className="relative overflow-hidden rounded-lg border border-[#2A3547] bg-[#0C121C]"
-                onTouchStart={(e) => { carruselTouchX.current = e.touches[0].clientX; }}
-                onTouchEnd={(e) => {
-                  const inicio = carruselTouchX.current;
-                  carruselTouchX.current = null;
-                  if (inicio == null) return;
-                  const dx = e.changedTouches[0].clientX - inicio;
-                  if (dx < -40 && !verMapa) setVerMapa(true);
-                  if (dx > 40 && verMapa) setVerMapa(false);
-                }}>
-                <div className="flex transition-transform duration-300 ease-out"
-                  style={{ transform: `translateX(${verMapa ? "-100%" : "0%"})` }}>
-                  <div className="w-full shrink-0 h-44">
-                    {propiedad.fotoPortada
-                      ? <img src={propiedad.fotoPortada}
-                             alt={propiedad.proyectos_venta?.nombre || propiedad.nombre}
-                             className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center">
-                          <Building2 size={28} className="text-[#3a4864]" />
-                        </div>}
-                  </div>
-                  <div className="w-full shrink-0">
-                    <MapaLotes
-                      proyectoVentaId={propiedad.proyecto_venta_id}
-                      asesorId={asesor?.id}
-                      puedeApartar={true}
-                      verConteos={asesor?.tipo !== "asesor_externo"}
-                      precioCasa={Number(propiedad.precio) || 580000}
-                      onCotizar={(l, modo) => { aplicarProducto(l, modo); setVerMapa(false); }}
-                      onSeleccionar={soloVerLote}
-                    />
-                  </div>
-                </div>
-                {verMapa && (
-                  <button type="button" onClick={() => setVerMapa(false)} aria-label="Ver la foto"
-                    className="absolute left-1.5 top-1.5 w-7 h-7 rounded-full bg-[#101826]/85 border border-[#2A3547] flex items-center justify-center">
-                    <ChevronLeft size={16} className="text-[#C9A227]" />
-                  </button>
-                )}
-                {!verMapa && (
-                  <button type="button" onClick={() => setVerMapa(true)} aria-label="Ver el plano"
-                    className="absolute right-1.5 top-1.5 w-7 h-7 rounded-full bg-[#101826]/85 border border-[#2A3547] flex items-center justify-center">
-                    <ChevronRight size={16} className="text-[#C9A227]" />
-                  </button>
-                )}
-                <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${!verMapa ? "bg-[#C9A227]" : "bg-[#101826]/60 border border-[#2A3547]"}`} />
-                  <span className={`w-1.5 h-1.5 rounded-full ${verMapa ? "bg-[#C9A227]" : "bg-[#101826]/60 border border-[#2A3547]"}`} />
-                </div>
-              </div>
-              <div className="text-center text-[10px] text-[#8A93A3]">
-                {verMapa ? "Deslizá o tocá ← para ver la foto de la casa"
-                         : "Deslizá o tocá → para ver el plano y elegir lote"}
-              </div>
-              {lote && !verMapa && (
+            // La foto ya se vio en la tarjeta de "Tus propiedades" (ahí es
+            // donde cicla sola); acá directo el plano para elegir lote, sin
+            // encabezado de arriba hasta que haya uno elegido (pedido de
+            // Carlos, 2026-10-03).
+            <div className="space-y-2">
+              <MapaLotes
+                proyectoVentaId={propiedad.proyecto_venta_id}
+                asesorId={asesor?.id}
+                puedeApartar={true}
+                verConteos={asesor?.tipo !== "asesor_externo"}
+                precioCasa={Number(propiedad.precio) || 580000}
+                onCotizar={(l, modo) => aplicarProducto(l, modo)}
+                onSeleccionar={soloVerLote}
+              />
+              {lote && (
                 <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
                   {esLote
                     ? <>Vendiendo el <b>lote {lote.numero}</b> como terreno

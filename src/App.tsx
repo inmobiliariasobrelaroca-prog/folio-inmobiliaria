@@ -38,6 +38,15 @@ const fmt = (n) =>
 
 const fmtNum = (n) => (isFinite(n) ? n : 0).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 
+// usuarios.foto_url puede ser una URL normal (Storage) o, para fotos cargadas
+// a mano, el base64 crudo de la imagen sin el prefijo "data:...;base64,".
+// Esta función arma el src correcto para un <img> en cualquiera de los casos.
+const fotoSrc = (foto_url) => {
+  if (!foto_url) return null;
+  if (foto_url.startsWith("http") || foto_url.startsWith("data:")) return foto_url;
+  return `data:image/jpeg;base64,${foto_url}`;
+};
+
 const fmtDate = (iso) => {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" });
@@ -1387,13 +1396,19 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center justify-between">
-        <div>
-          <div className="font-serif text-xl">Sobre la Roca</div>
-          <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
-            {usuario?.tipo === "asesor_interno" ? "Asesor interno" : "Asesor externo"} · {usuario?.nombre}
+        <div className="flex items-center gap-2.5 min-w-0">
+          {fotoSrc(usuario?.foto_url) && (
+            <img src={fotoSrc(usuario?.foto_url)} alt={usuario?.nombre}
+                 className="w-9 h-9 rounded-full object-cover border border-[#2A3547] shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="font-serif text-xl truncate">Sobre la Roca</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] truncate">
+              {usuario?.tipo === "asesor_interno" ? "Asesor interno" : "Asesor externo"} · {usuario?.nombre}
+            </div>
           </div>
         </div>
-        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] flex items-center gap-1"><LogOut size={14} /> Salir</button>
+        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] flex items-center gap-1 shrink-0"><LogOut size={14} /> Salir</button>
       </div>
 
       <div className="max-w-2xl mx-auto p-5 pb-24">
@@ -1463,8 +1478,17 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                 )}
               </div>
               <div className="p-3">
-                <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
-                <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
+                {/* Si el proyecto tiene lotes, lo que se vende depende del lote
+                    que elija el cliente: no tiene sentido mostrar el nombre de
+                    una sola "Casa 1" interna, así que se muestra el proyecto. */}
+                <div className="text-sm font-medium">
+                  {lotesPorProyecto[p.proyecto_venta_id]
+                    ? p.proyectos_venta?.nombre
+                    : <>{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</>}
+                </div>
+                {!lotesPorProyecto[p.proyecto_venta_id] && (
+                  <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
+                )}
                 {/* Si el proyecto tiene lotes, se anuncia el plano: lo que se
                     vende ahí depende del lote que elija el cliente. */}
                 {lotesPorProyecto[p.proyecto_venta_id] && (
@@ -2313,9 +2337,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // null mientras no se elija: al tocar un lote primero se ve el lote, y
   // recién al cotizar o apartar se decide si es terreno o casa.
   const [modoVenta, setModoVenta] = useState(propiedad.entrarPorPlano ? null : "casa");
-  // Cuando el proyecto tiene lotes, lo primero que se ve es el plano: qué se
-  // vende depende del lote, no al revés.
-  const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
+  // Cuando el proyecto tiene lotes, la portada es un carrusel: primero la
+  // foto de la casa y, deslizando, el plano para elegir lote (pedido de
+  // Carlos, 2026-10-03).
+  const [verMapa, setVerMapa] = useState(false);
+  const carruselTouchX = React.useRef(null);
   const esLote = modoVenta === "lote" && lote;
   const soloLoteElegido = lote && !modoVenta;
   // Hay lotes donde la casa vale más: los 3 y 4, sobre la calle principal.
@@ -2604,12 +2630,19 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               Volver a las propiedades
             </div>
             <div className="font-serif text-lg -mt-0.5 truncate">
-              {!lote ? propiedad.nombre
+              {/* Si el proyecto es de lotes (se entró por el plano), lo que
+                  se vende depende del lote que se elija: se muestra el
+                  nombre del proyecto, no el de una sola "Casa 1" interna. */}
+              {!lote
+                ? (propiedad.entrarPorPlano ? propiedad.proyectos_venta?.nombre : propiedad.nombre)
                 : esLote ? `Lote ${lote.numero} · terreno`
                 : modoVenta === "casa" ? `Casa sobre el lote ${lote.numero}`
                 : `Lote ${lote.numero}`}
-              {!lote && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
+              {!lote && !propiedad.entrarPorPlano && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
             </div>
+            {asesor?.nombre && (
+              <div className="text-[10px] text-[#8A93A3] truncate">Asesor: {asesor.nombre}</div>
+            )}
           </div>
         </button>
 
@@ -2674,7 +2707,77 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             )}
           </div>
 
-          {propiedad.proyecto_venta_id && (
+          {propiedad.proyecto_venta_id && (propiedad.entrarPorPlano ? (
+            // Portada tipo carrusel: primero la foto de la casa del proyecto,
+            // deslizando (o con las flechas) se pasa al plano para elegir
+            // lote (pedido de Carlos, 2026-10-03).
+            <div className="space-y-1.5">
+              <div className="relative overflow-hidden rounded-lg border border-[#2A3547] bg-[#0C121C]"
+                onTouchStart={(e) => { carruselTouchX.current = e.touches[0].clientX; }}
+                onTouchEnd={(e) => {
+                  const inicio = carruselTouchX.current;
+                  carruselTouchX.current = null;
+                  if (inicio == null) return;
+                  const dx = e.changedTouches[0].clientX - inicio;
+                  if (dx < -40 && !verMapa) setVerMapa(true);
+                  if (dx > 40 && verMapa) setVerMapa(false);
+                }}>
+                <div className="flex transition-transform duration-300 ease-out"
+                  style={{ transform: `translateX(${verMapa ? "-100%" : "0%"})` }}>
+                  <div className="w-full shrink-0 h-44">
+                    {propiedad.fotoPortada
+                      ? <img src={propiedad.fotoPortada}
+                             alt={propiedad.proyectos_venta?.nombre || propiedad.nombre}
+                             className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center">
+                          <Building2 size={28} className="text-[#3a4864]" />
+                        </div>}
+                  </div>
+                  <div className="w-full shrink-0">
+                    <MapaLotes
+                      proyectoVentaId={propiedad.proyecto_venta_id}
+                      asesorId={asesor?.id}
+                      puedeApartar={true}
+                      verConteos={asesor?.tipo !== "asesor_externo"}
+                      precioCasa={Number(propiedad.precio) || 580000}
+                      onCotizar={(l, modo) => { aplicarProducto(l, modo); setVerMapa(false); }}
+                      onSeleccionar={soloVerLote}
+                    />
+                  </div>
+                </div>
+                {verMapa && (
+                  <button type="button" onClick={() => setVerMapa(false)} aria-label="Ver la foto"
+                    className="absolute left-1.5 top-1.5 w-7 h-7 rounded-full bg-[#101826]/85 border border-[#2A3547] flex items-center justify-center">
+                    <ChevronLeft size={16} className="text-[#C9A227]" />
+                  </button>
+                )}
+                {!verMapa && (
+                  <button type="button" onClick={() => setVerMapa(true)} aria-label="Ver el plano"
+                    className="absolute right-1.5 top-1.5 w-7 h-7 rounded-full bg-[#101826]/85 border border-[#2A3547] flex items-center justify-center">
+                    <ChevronRight size={16} className="text-[#C9A227]" />
+                  </button>
+                )}
+                <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${!verMapa ? "bg-[#C9A227]" : "bg-[#101826]/60 border border-[#2A3547]"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${verMapa ? "bg-[#C9A227]" : "bg-[#101826]/60 border border-[#2A3547]"}`} />
+                </div>
+              </div>
+              <div className="text-center text-[10px] text-[#8A93A3]">
+                {verMapa ? "Deslizá o tocá ← para ver la foto de la casa"
+                         : "Deslizá o tocá → para ver el plano y elegir lote"}
+              </div>
+              {lote && !verMapa && (
+                <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+                  {esLote
+                    ? <>Vendiendo el <b>lote {lote.numero}</b> como terreno
+                        {lote.area_m2 ? `, ${lote.area_m2} m²` : ""}. Enganche desde {fmt(8000)},
+                        hasta 10 años.</>
+                    : <>Casa sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
+                        {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.</>}
+                </div>
+              )}
+            </div>
+          ) : (
             <div className="space-y-2">
               <button type="button" onClick={() => setVerMapa(!verMapa)}
                 className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
@@ -2704,7 +2807,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 </div>
               )}
             </div>
-          )}
+          ))}
 
           <div className="grid grid-cols-2 gap-3">
             <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />

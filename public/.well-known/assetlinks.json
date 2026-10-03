@@ -1,1 +1,8 @@
-
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.sobrelaroca_pagos.twa",
+        "sha256_cert_fingerprints": ["86:19:B8:C4:6A:C4:88:45:08:03:C0:80:18:A5:AD:C0:E6:8F:D1:38:26:0D:C2:EA:E6:86:68:D1:87:58:CC:F6"]
+      }
+    }]

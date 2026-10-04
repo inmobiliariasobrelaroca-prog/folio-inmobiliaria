@@ -1845,7 +1845,11 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       mora > 0 ? fmt(mora) : (Number(f.moraCondonada || 0) > 0 ? `${fmt(f.moraCondonada)}~` : "-"),
     ];
     if (prop.aplicaLuz) {
-      fila.push(f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
+      const luzFalta = Math.max(0, Number(prop.montoLuzMensual || 0) - Number(f.luzAbonado || 0));
+      fila.push(
+        f.luzPagado ? "Pagada"
+        : prop.luzEnRevision ? `${fmt(luzFalta)} en revisión`
+        : `${fmt(luzFalta)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
     }
     fila.push(fmt(f.saldoFinal));
     fila.push(estadoTxt[est] || est);
@@ -6340,9 +6344,22 @@ function DetalleFila({ f, mora, prop, hoy }) {
       )}
       {prop?.aplicaLuz && (
         <div className="col-span-2 sm:col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
-          <span className="flex items-center gap-1.5 text-[#8A93A3]"><Zap size={12} className="text-[#C9A227]" /> Luz de este mes: <span className="font-mono text-[#EDE7D9]">{fmt(prop.montoLuzMensual)}</span></span>
+          <span className="flex items-center gap-1.5 text-[#8A93A3]">
+            <Zap size={12} className="text-[#C9A227]" /> Luz de este mes:{" "}
+            <span className="font-mono text-[#EDE7D9]">
+              {fmt(Math.max(0, Number(prop.montoLuzMensual || 0) - Number(f.luzAbonado || 0)))}
+            </span>
+            {Number(f.luzAbonado || 0) > 0 && (
+              <span className="text-[10px] text-[#6b7280]">
+                (ya se aplicaron {fmt(f.luzAbonado)})
+              </span>
+            )}
+          </span>
           {f.luzPagado ? (
             <span className="text-emerald-400">Pagada</span>
+          ) : prop.luzEnRevision ? (
+            // Mientras no se validen las boletas no es una deuda confirmada
+            <span className="text-red-400 font-medium">EN REVISIÓN</span>
           ) : (
             <span className="text-red-400">{luzMora > 0 ? `Pendiente + ${fmt(luzMora)} mora` : "Pendiente"}</span>
           )}

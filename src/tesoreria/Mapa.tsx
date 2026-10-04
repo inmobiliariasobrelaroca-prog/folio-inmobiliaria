@@ -207,20 +207,20 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
           {listaOrigen.map((n) => (
             <Nodo key={`o-${n.id}`} x={COL.origen} y={yOri[n.id]} nombre={n.nombre} monto={n.monto}
               color={C_ORIGEN} fondo="#0F2119" atenuado={!vivo("origen", n.id)}
-              onClick={() => setSel(sel?.tipo === "origen" && sel.id === n.id ? null : { tipo: "origen", ...n })} />
+              onClick={() => setSel(sel?.tipo === "origen" && sel.id === n.id ? null : { ...n, tipo: "origen" })} />
           ))}
 
           {listaBolsa.map((n) => (
             <Nodo key={`b-${n.id}`} x={COL.bolsa} y={yBol[n.id]} nombre={n.nombre} monto={n.monto}
               color={C_BOLSA} fondo="#1C1B10" atenuado={!vivo("bolsa", n.id)}
               sub={n.apartada ? "apartado" : n.delegada ? "delegado" : null}
-              onClick={() => setSel(sel?.tipo === "bolsa" && sel.id === n.id ? null : { tipo: "bolsa", ...n })} />
+              onClick={() => setSel(sel?.tipo === "bolsa" && sel.id === n.id ? null : { ...n, tipo: "bolsa" })} />
           ))}
 
           {listaGasto.map((n) => (
             <Nodo key={`g-${n.id}`} x={COL.gasto} y={yGas[n.id]} nombre={n.nombre} monto={n.monto}
               color={C_GASTO} fondo="#22110F" atenuado={!vivo("gasto", n.id)}
-              onClick={() => setSel(sel?.tipo === "gasto" && sel.id === n.id ? null : { tipo: "gasto", ...n })} />
+              onClick={() => setSel(sel?.tipo === "gasto" && sel.id === n.id ? null : { ...n, tipo: "gasto" })} />
           ))}
         </svg>
       </div>

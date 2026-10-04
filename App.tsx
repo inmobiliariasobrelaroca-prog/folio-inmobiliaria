@@ -4,15 +4,29 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import GuardiaSesion from "./GuardiaSesion";
 import MapaLotes from "./MapaLotes";
+import BoletasBandeja from "./BoletasBandeja";
+import Ofertas from "./Ofertas";
+import Propietario from "./Propietario";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
 import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";
+
+// La fecha de hoy SEGÚN EL RELOJ DE QUIEN MIRA, no en hora universal.
+// toISOString() devuelve la fecha en UTC, y Guatemala va seis horas atrás:
+// a partir de las seis de la tarde la app creía que ya era el día siguiente
+// y cobraba un día de mora de más. Se notaba de noche y desaparecía de día.
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
-  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw
+  FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
+  Tag, Inbox, Home
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -48,16 +62,20 @@ const fmtDateTime = (iso) => {
 // perfecto en cualquier navegador.
 const pdfSafe = (s) => String(s).replace(/→/g, "->").replace(/×/g, "x");
 
+// Fecha a texto leyendo el reloj local, sin pasar por hora universal.
+const aISO = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 const addMonths = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setMonth(d.getMonth() + n);
-  return d.toISOString().slice(0, 10);
+  return aISO(d);
 };
 
 const addDays = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return aISO(d);
 };
 
 const daysBetween = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
@@ -435,6 +453,9 @@ function propiedadDesdeFila(row) {
     diasGraciaLuz: row.dias_gracia_luz,
     moraDiariaLuz: Number(row.mora_diaria_luz),
     aplicaLuz: !!row.aplica_luz,
+    // Qué hacer con lo que el cliente deposita de más. Por acuerdo, algunas
+    // propiedades lo mandan siempre a la luz en vez de preguntar.
+    destinoExcedenteDefault: row.destino_excedente_default || "preguntar",
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     // "vencido" (default): el pago del mes cae un mes después de la fecha base — así pagan casi
@@ -451,6 +472,14 @@ function propiedadDesdeFila(row) {
     esRenta: !!row.es_renta,
     saldoAFavor: Number(row.saldo_a_favor || 0),
     saldoAdicionalSinInteres: Number(row.saldo_adicional_sin_interes || 0),
+    // Deuda aparte del crédito, sin intereses. Distinta del enganche.
+    cargoExtraMonto: Number(row.cargo_extra_monto || 0),
+    // Tasa anterior, para mostrarla tachada junto a la vigente.
+    tasaAnterior: row.tasa_anterior != null ? Number(row.tasa_anterior) : null,
+    // Al cliente se le muestra un solo monto, sin desglosar cuota y luz.
+    cuotaUnificada: !!row.cuota_unificada,
+    cargoExtraConcepto: row.cargo_extra_concepto || null,
+    cargoExtraVence: row.cargo_extra_vence || null,
     mensualidadAjustada: Number(row.mensualidad_ajustada || 0),
     contratoTranscrito: row.contrato_transcrito || "",
     clienteUserId: row.cliente_user_id,
@@ -482,6 +511,7 @@ function propiedadHaciaFila(p) {
     dias_gracia_luz: p.diasGraciaLuz,
     mora_diaria_luz: p.moraDiariaLuz,
     aplica_luz: !!p.aplicaLuz,
+    destino_excedente_default: p.destinoExcedenteDefault || "preguntar",
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     sistema_pago: p.sistemaPago || "vencido",
@@ -902,7 +932,7 @@ async function eliminarFotoPropiedadStorage(fotoId, storagePath) {
 
 function datosIniciales() {
   const proyectoId = crypto.randomUUID();
-  const fechaInicio = new Date().toISOString().slice(0, 10);
+  const fechaInicio = hoyISO();
   const propiedad = {
     id: crypto.randomUUID(),
     proyectoId,
@@ -1304,6 +1334,8 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [seleccionada, setSeleccionada] = useState(null);
+  const [lotesPorProyecto, setLotesPorProyecto] = useState({});
+  const [esPropietario, setEsPropietario] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1328,7 +1360,26 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         condiciones: condiciones.find((c) => c.propiedad_venta_id === p.id) || null,
         fotoPortada: (p.fotos_propiedad_venta || []).slice().sort((a, b) => a.orden - b.orden)[0]?.archivo_url || null,
       }));
+      // Si el proyecto tiene lotes, el vendedor entra por el plano y no por
+      // una casa: el producto (terreno o casa) se decide al tocar el lote.
+      const { data: ls } = await supabase
+        .from("lotes").select("proyecto_venta_id, estado");
+      const porProyecto = {};
+      (ls || []).forEach((l) => {
+        porProyecto[l.proyecto_venta_id] = porProyecto[l.proyecto_venta_id] || { total: 0, libres: 0 };
+        porProyecto[l.proyecto_venta_id].total++;
+        if (l.estado === "disponible") porProyecto[l.proyecto_venta_id].libres++;
+      });
+      setLotesPorProyecto(porProyecto);
+
       setPropiedades(combinadas);
+
+      // Hay asesores que además son dueños de una casa que nosotros
+      // administramos. A ellos se les agrega su pestaña; al resto no.
+      const { data: cuentas } = await supabase
+        .from("v_propietario_saldos").select("cuenta_id").limit(1);
+      setEsPropietario((cuentas || []).length > 0);
+
       setCargando(false);
     })();
   }, []);
@@ -1356,6 +1407,13 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
               ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
             Tus propiedades
           </button>
+          {esPropietario && (
+            <button onClick={() => setSeccion("propietario")}
+              className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "propietario"
+                ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+              Tus casas
+            </button>
+          )}
           <button onClick={() => setSeccion("reporte")}
             className={`text-[11px] px-3 py-1.5 rounded-md ${seccion === "reporte"
               ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
@@ -1364,6 +1422,10 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         </div>
 
         {seccion === "reporte" && <MiReporte asesor={usuario} />}
+
+        {seccion === "propietario" && (
+          <Propietario esAdmin={!!usuario?.roles?.es_administrador} />
+        )}
 
         {seccion === "propiedades" && (<>
         <h1 className="font-serif text-2xl mb-1">Tus propiedades</h1>
@@ -1379,16 +1441,43 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
           {propiedades.map((p) => (
             <button
               key={p.id}
-              onClick={() => puedeCotizar && setSeleccionada(p)}
-              disabled={!puedeCotizar}
-              className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden hover:border-[#C9A227] transition disabled:opacity-60"
+              // Una casa vendida se sigue mostrando, para que el vendedor sepa
+              // que existe y no la busque, pero no se puede cotizar.
+              onClick={() => puedeCotizar && p.estado !== "vendida" && setSeleccionada(
+                lotesPorProyecto[p.proyecto_venta_id]
+                  ? { ...p, entrarPorPlano: true }
+                  : p)}
+              disabled={!puedeCotizar || p.estado === "vendida"}
+              className={`text-left bg-[#161F2E] border border-[#2A3547] rounded-lg overflow-hidden transition ${
+                p.estado === "vendida"
+                  ? "opacity-70 cursor-not-allowed"
+                  : "hover:border-[#C9A227] disabled:opacity-60"}`}
             >
-              <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden">
-                {p.fotoPortada ? <img src={p.fotoPortada} alt={p.nombre} className="w-full h-full object-cover" /> : <Building2 size={28} className="text-[#3a4864]" />}
+              <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden relative">
+                {p.fotoPortada
+                  ? <img src={p.fotoPortada} alt={p.nombre}
+                         className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
+                  : <Building2 size={28} className="text-[#3a4864]" />}
+                {p.estado === "vendida" && (
+                  <div className="absolute inset-0 bg-[#101826]/55 flex items-center justify-center">
+                    <span className="text-[11px] tracking-widest uppercase bg-[#C0392B] text-white px-3 py-1 rounded">
+                      Vendida
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="p-3">
                 <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
                 <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
+                {/* Si el proyecto tiene lotes, se anuncia el plano: lo que se
+                    vende ahí depende del lote que elija el cliente. */}
+                {lotesPorProyecto[p.proyecto_venta_id] && (
+                  <div className="text-[11px] text-[#C9A227] mb-1.5">
+                    {lotesPorProyecto[p.proyecto_venta_id].libres} lote
+                    {lotesPorProyecto[p.proyecto_venta_id].libres === 1 ? "" : "s"} disponible
+                    {lotesPorProyecto[p.proyecto_venta_id].libres === 1 ? "" : "s"} · entrás al plano
+                  </div>
+                )}
                 {puedeVerLista && p.precio != null && (
                   <div className="text-[#C9A227] font-serif text-lg">{fmt(p.precio)}</div>
                 )}
@@ -1441,7 +1530,7 @@ function MiReporte({ asesor }) {
 
   const conDatos = filas.filter((f) => f.cliente_nombre && f.cliente_nombre.trim()).length;
   const lotes = new Set(filas.filter((f) => f.lote_numero).map((f) => f.lote_numero));
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   const deHoy = filas.filter((f) => String(f.created_at).slice(0, 10) === hoy).length;
   const mes = hoy.slice(0, 7);
   const delMes = filas.filter((f) => String(f.created_at).slice(0, 7) === mes).length;
@@ -1687,6 +1776,13 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       ? ["Mensualidad", fmt(ea.mensualidadReal), fmt(ea.mensualidadOriginal)]
       : ["Mensualidad", prop.sistemaAmortizacion === "saldos" ? pdfSafe(`${fmt(prop.tabla[0]?.pago ?? 0)} → ${fmt(prop.tabla[prop.tabla.length - 1]?.pago ?? 0)}`) : fmt(prop.tabla[0]?.pago ?? 0)],
     [prop.esRenta ? "Renta por devengar" : "Saldo actual", fmt(saldoActual)],
+    // Deuda pactada aparte del crédito: obra extra, mejoras. No es enganche
+    // y no toca el monto financiado, por eso va en su propio campo y no en
+    // saldoAdicionalSinInteres, que la app lee como enganche por recibir.
+    ...(Number(prop.cargoExtraMonto || 0) > 0
+      ? [["Cargo adicional sin interés", fmt(prop.cargoExtraMonto)],
+         ["Total adeudado", fmt(saldoActual + Number(prop.cargoExtraMonto))]]
+      : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
     ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
   ];
@@ -1752,7 +1848,13 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
     proyectoNombre: proyecto?.nombre || "",
     fechaGenerado: fmtDate(hoy),
     tarjetas,
-    notaCargoPendiente: ea?.cargo > 0 ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.` : null,
+    notaCargoPendiente: ea?.cargo > 0
+      ? `Nota: ${fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.`
+      : (Number(prop.cargoExtraMonto || 0) > 0
+          // El rótulo del encabezado va corto para que quepa; el concepto
+          // completo se explica aquí, donde el texto sí se acomoda solo.
+          ? `Nota: el cargo adicional de ${fmt(prop.cargoExtraMonto)} corresponde a ${prop.cargoExtraConcepto || "un concepto pactado aparte"}. No genera interés ni mora${prop.cargoExtraVence ? ` y debe quedar pagado antes del ${fmtDate(prop.cargoExtraVence)}` : ""}.`
+          : null),
     abonosProgramados: abonosProgramadosTexto,
     vencidas: vencidasTexto,
     totalParaPonerseAlDiaTexto: fmt(totalParaPonerseAlDia),
@@ -1831,21 +1933,37 @@ async function construirPdfTablaPagos(d) {
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.2);
     doc.rect(x, yy, colAncho - 2, filaAlto - 2);
-    doc.setFont(undefined, "normal"); doc.setFontSize(6.3); doc.setTextColor(130, 130, 130);
-    doc.text(String(label).toUpperCase(), x + 2, yy + 3.8);
+    // El texto se achica hasta caber dentro de la casilla. Antes se dibujaba
+    // al tamaño fijo y los valores largos, como "Q 15,312.50 -> Q 3,694.44" o
+    // la línea de la luz, se salían del cuadro y quedaban ilegibles.
+    const anchoCasilla = colAncho - 6;
+    const escribirAjustado = (texto, px, py, tamanoBase, negrita) => {
+      let t = tamanoBase;
+      doc.setFont(undefined, negrita ? "bold" : "normal");
+      doc.setFontSize(t);
+      while (doc.getTextWidth(String(texto)) > anchoCasilla && t > 4.6) {
+        t -= 0.25;
+        doc.setFontSize(t);
+      }
+      doc.text(String(texto), px, py);
+      return t;
+    };
+
+    doc.setTextColor(130, 130, 130);
+    escribirAjustado(String(label).toUpperCase(), x + 2, yy + 3.8, 6.3, false);
     if (valorTachado) {
       const textoViejo = String(valorTachado);
-      doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(190, 60, 60);
-      doc.text(textoViejo, x + 2, yy + 7.4);
+      doc.setTextColor(190, 60, 60);
+      escribirAjustado(textoViejo, x + 2, yy + 7.4, 6.8, false);
       const anchoViejo = doc.getTextWidth(textoViejo);
       doc.setDrawColor(190, 60, 60);
       doc.setLineWidth(0.3);
       doc.line(x + 2, yy + 6.4, x + 2 + anchoViejo, yy + 6.4);
-      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-      doc.text(String(valor), x + 2, yy + 12);
+      doc.setTextColor(20, 20, 20);
+      escribirAjustado(String(valor), x + 2, yy + 12, 8, true);
     } else {
-      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-      doc.text(String(valor), x + 2, yy + (algunaTachada ? 11 : 8.5));
+      doc.setTextColor(20, 20, 20);
+      escribirAjustado(String(valor), x + 2, yy + (algunaTachada ? 11 : 8.5), 8, true);
     }
   });
   y += Math.ceil(d.tarjetas.length / 3) * filaAlto + 4;
@@ -2109,6 +2227,93 @@ function linkPropiedadVenta(propiedad) {
   return codigo ? `${LINK_SITIO_VENTAS}/#/casa/${encodeURIComponent(codigo)}` : `${LINK_SITIO_VENTAS}/#/propiedad/${propiedad.id}`;
 }
 
+// Un par etiqueta/valor de una línea, para la ficha de datos guardados.
+// El vendedor no puede bajar el precio por su cuenta. Cuando el cliente
+// ofrece menos, manda la oferta con su motivo y Carlos la aprueba o la
+// rechaza. Mientras tanto puede cotizar, pero queda dicho que falta
+// autorizarla: la respuesta es lo que habilita cerrar a ese precio.
+function PedirAutorizacion({ lote, propiedad, asesor, esLote, precioLista,
+                             precioOfrecido, enganche, anios, cliente, whatsapp }) {
+  const [abierto, setAbierto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [enviada, setEnviada] = useState(false);
+
+  const rebaja = precioLista - precioOfrecido;
+
+  const enviar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const { error: e } = await supabase.from("solicitudes_oferta").insert({
+        lote_id: lote?.id || null,
+        propiedad_venta_id: esLote ? null : (propiedad?.id || null),
+        destino: esLote ? "lote" : "casa",
+        asesor_id: asesor?.id || null,
+        asesor_nombre: asesor?.nombre || null,
+        cliente_nombre: cliente.trim() || "Sin nombre",
+        cliente_telefono: whatsapp.trim() || null,
+        precio_lista: precioLista,
+        precio_ofrecido: precioOfrecido,
+        enganche_ofrecido: enganche || null,
+        plazo_anios: anios,
+        motivo: motivo.trim(),
+      });
+      if (e) throw new Error(e.message);
+      setEnviada(true); setAbierto(false);
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  if (enviada) {
+    return (
+      <div className="text-[11px] text-emerald-400 bg-emerald-950/30 border border-emerald-800 rounded-md p-2 -mt-1">
+        Solicitud enviada. Vas a poder cerrar a ese precio cuando la inmobiliaria
+        la apruebe; mientras tanto, decile al cliente que está sujeta a aprobación.
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2 -mt-1">
+      Este precio está {fmt(rebaja)} abajo del de lista, que es {fmt(precioLista)}.
+      Podés cotizarlo, pero el descuento tiene que autorizarse antes de cerrar.
+      {!abierto ? (
+        <button onClick={() => setAbierto(true)}
+          className="block mt-1.5 text-[11px] text-[#C9A227] underline">
+          Pedir autorización
+        </button>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Por qué: ej. paga todo de contado, ofrece cerrar esta semana..."
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-2 text-[11px] text-[#EDE7D9]" />
+          {error && <div className="text-red-400">{error}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] text-[#8A93A3] disabled:opacity-40 py-1.5 rounded">
+              Cancelar
+            </button>
+            <button onClick={enviar} disabled={guardando || !motivo.trim()}
+              className="flex-1 text-[10px] bg-[#C9A227] text-[#101826] font-medium disabled:opacity-40 py-1.5 rounded">
+              {guardando ? "Enviando..." : "Enviar la solicitud"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dato({ k, v }) {
+  return (
+    <div className="flex justify-between gap-2 min-w-0">
+      <span className="text-[#8A93A3] shrink-0">{k}</span>
+      <span className="font-mono truncate text-right">{v}</span>
+    </div>
+  );
+}
+
 function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVolver }) {
   const cond = propiedad.condiciones || {};
   const [cliente, setCliente] = useState("");
@@ -2120,16 +2325,58 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [sistema, setSistema] = useState("nivelada");
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [errorPdf, setErrorPdf] = useState("");
-  // Lote elegido en el plano. La casa es la misma; lo que cambia es el
-  // terreno, y en este proyecto hay lotes de 112 y de 128 m².
+  // Un lote se puede vender de dos formas y no son el mismo producto:
+  // como terreno (Q180,000, o Q200,000 el 3 y el 4; enganche Q8,000, hasta
+  // 10 años) o para construirle casa (Q580,000, enganche Q40,000, 25 años).
+  // El vendedor elige en el plano y el cotizador cambia de condiciones.
   const [lote, setLote] = useState(null);
-  const [verMapa, setVerMapa] = useState(false);
+  // null mientras no se elija: al tocar un lote primero se ve el lote, y
+  // recién al cotizar o apartar se decide si es terreno o casa.
+  const [modoVenta, setModoVenta] = useState(propiedad.entrarPorPlano ? null : "casa");
+  // Cuando el proyecto tiene lotes, lo primero que se ve es el plano: qué se
+  // vende depende del lote, no al revés.
+  const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
+  const esLote = modoVenta === "lote" && lote;
+  const soloLoteElegido = lote && !modoVenta;
+  // Hay lotes donde la casa vale más: los 3 y 4, sobre la calle principal.
+  // Si el lote no trae precio propio, manda el de la propiedad.
+  const precioCasaDelLote = lote?.precio_casa != null
+    ? Number(lote.precio_casa)
+    : (propiedad.precio != null ? Number(propiedad.precio) : null);
+  // Un lote con precio propio de casa se vende a ese precio, sin margen:
+  // es el caso de los lotes 3 y 4, sobre la calle principal. El margen del
+  // precio general solo aplica a los demás.
+  const casaConPrecioPropio = lote?.precio_casa != null;
 
-  const precioMin = cond.precio_minimo != null ? Number(cond.precio_minimo) : null;
-  const precioMax = cond.precio_maximo != null ? Number(cond.precio_maximo) : null;
-  const engancheMin = propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null;
-  const tasaMin = cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null;
-  const tasaMax = cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null;
+  // Los lotes no tienen rango de negociación: el precio es el que es, y
+  // cualquier rebaja pasa por una solicitud que Carlos aprueba.
+  const precioMin = esLote ? Number(lote.precio_lote || 0)
+    : (casaConPrecioPropio ? precioCasaDelLote
+        : (cond.precio_minimo != null ? Number(cond.precio_minimo) : null));
+  const precioMax = esLote ? Number(lote.precio_lote || 0)
+    : (precioCasaDelLote != null ? precioCasaDelLote
+        : (cond.precio_maximo != null ? Number(cond.precio_maximo) : null));
+  const engancheMin = esLote ? 8000
+    : (propiedad.financiamiento_enganche_desde != null ? Number(propiedad.financiamiento_enganche_desde) : null);
+  const tasaMin = esLote ? 12 : (cond.tasa_interes_minima != null ? Number(cond.tasa_interes_minima) : null);
+  const tasaMax = esLote ? 12 : (cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null);
+  const plazoMaxProducto = esLote ? 10 : (propiedad.financiamiento_plazo_max_anios || null);
+
+  // Al cambiar de producto se recargan los valores de arranque
+  const aplicarProducto = (l, modo) => {
+    setLote(l); setModoVenta(modo);
+    if (modo === "lote") {
+      setPrecio(l.precio_lote ?? ""); setEnganche(8000); setTasaAnual(12); setAnios(10);
+    } else {
+      setPrecio((l?.precio_casa ?? propiedad.precio) ?? "");
+      setEnganche(propiedad.financiamiento_enganche_desde ?? "");
+      setTasaAnual(cond.financiamiento_tasa_anual ?? "");
+      setAnios(propiedad.financiamiento_plazo_max_anios ?? "");
+    }
+  };
+
+  // Tocar un lote en el plano no elige producto todavía: solo muestra ese lote
+  const soloVerLote = (l) => { setLote(l); setModoVenta(null); };
 
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
@@ -2149,18 +2396,29 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // Bajar del precio de lista sí se permite hasta el mínimo, pero es un
   // descuento: se cotiza y se envía, sólo que queda advertido que todavía
   // no está autorizado. Distinto de estar fuera de rango, que sí bloquea.
-  const precioDeLista = propiedad.precio != null ? Number(propiedad.precio) : null;
+  const precioDeLista = esLote
+    ? (lote.precio_lote != null ? Number(lote.precio_lote) : null)
+    : precioCasaDelLote;
   const precioNecesitaAutorizacion =
     !sinRestriccionDeRango && !precioFueraDeRango &&
     precioDeLista != null && precioNum > 0 && precioNum < precioDeLista;
   const engancheFueraDeRango = !sinRestriccionDeRango && engancheMin != null && engancheNum < engancheMin;
   const tasaFueraDeRango = !sinRestriccionDeRango && tasaNum > 0 && ((tasaMin != null && tasaNum < tasaMin) || (tasaMax != null && tasaNum > tasaMax));
-  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango;
+  const plazoFueraDeRango = !sinRestriccionDeRango && plazoMaxProducto != null
+    && Number(anios) > Number(plazoMaxProducto);
+  const fueraDeRango = precioFueraDeRango || engancheFueraDeRango || tasaFueraDeRango || plazoFueraDeRango;
+
+  // Al asesor externo se le muestra el techo pero no el piso. Si conoce el
+  // mínimo, el descuento deja de ser algo que se autoriza y pasa a ser su
+  // punto de partida en cada negociación.
+  const verPiso = sinRestriccionDeRango || asesor?.tipo !== "asesor_externo";
 
   const precioHint = (precioMin != null || precioMax != null)
-    ? (puedeVerMinimo
+    ? (verPiso && puedeVerMinimo
         ? `${sinRestriccionDeRango ? "Sugerido" : "Permitido"}: ${precioMin != null ? fmt(precioMin) : "sin mínimo"} — ${precioMax != null ? fmt(precioMax) : "sin máximo"}`
-        : (precioFueraDeRango ? "Fuera del rango permitido para esta propiedad." : null))
+        : (precioFueraDeRango
+            ? "Ese precio no se puede cotizar. Consultalo con la inmobiliaria."
+            : (precioMax != null ? `Precio de lista: ${fmt(precioMax)}` : null)))
     : null;
   const engancheHint = engancheMin != null ? `${sinRestriccionDeRango ? "Sugerido" : "Mínimo"}: ${fmt(engancheMin)}` : null;
   const tasaHint = (tasaMin != null || tasaMax != null)
@@ -2185,12 +2443,39 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const componentesTotalMensual = ["cuota", aplicaLuz && "luz", aplicaMantenimiento && "mantenimiento"].filter(Boolean).join(" + ");
 
   const datosCompletos = precioNum > 0 && tasaNum > 0 && meses > 0;
-  const listoParaEnviar = datosCompletos && !fueraDeRango;
+  // Se permite enviar fuera de rango: la cotización sale con la advertencia
+  // de que esos valores están pendientes de autorización. Lo que no se
+  // permite es que salga sin decirlo.
+  const listoParaEnviar = datosCompletos;
+
+  // Lo que se salió de lo autorizado. El vendedor puede cotizarlo igual,
+  // pero tiene que ir dicho en la cotización: el cliente no puede quedarse
+  // con un papel que promete algo que todavía nadie aprobó.
+  const pendientes = [];
+  if (precioDeLista != null && precioNum > 0 && precioNum < precioDeLista)
+    pendientes.push(`precio de ${fmt(precioNum)} (lista: ${fmt(precioDeLista)})`);
+  if (precioMax != null && precioNum > precioMax)
+    pendientes.push(`precio de ${fmt(precioNum)} (tope: ${fmt(precioMax)})`);
+  if (engancheMin != null && engancheNum > 0 && engancheNum < engancheMin)
+    pendientes.push(`enganche de ${fmt(engancheNum)} (mínimo: ${fmt(engancheMin)})`);
+  if (tasaMin != null && tasaNum > 0 && tasaNum < tasaMin)
+    pendientes.push(`tasa del ${fmtNum(tasaNum)}% (mínimo: ${fmtNum(tasaMin)}%)`);
+  if (tasaMax != null && tasaNum > tasaMax)
+    pendientes.push(`tasa del ${fmtNum(tasaNum)}% (máximo: ${fmtNum(tasaMax)}%)`);
+  if (plazoMaxProducto != null && Number(anios) > Number(plazoMaxProducto))
+    pendientes.push(`plazo de ${anios} años (máximo: ${plazoMaxProducto})`);
+
+  const textoPendientes = pendientes.length
+    ? `PENDIENTE DE AUTORIZACIÓN: ${pendientes.join(", ")}. Válida solo si la inmobiliaria lo aprueba por escrito.`
+    : "";
 
   const telLimpio = whatsapp.replace(/\D/g, "");
   const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
   const mensajeWhatsapp =
-    `Cotización · Sobre la Roca\n${propiedad.nombre}\n` +
+    `Cotización · Sobre la Roca\n` +
+    (lote ? `Lote ${lote.numero}${lote.sector ? ` · sector ${lote.sector}` : ""}` +
+            `${esLote ? " · terreno" : " · con casa"}\n`
+          : `${propiedad.nombre}\n`) +
     (cliente ? `Cliente: ${cliente}\n` : "") +
     `\nPrecio: ${fmt(precioNum)}` +
     `\nEnganche: ${fmt(engancheNum)}` +
@@ -2202,10 +2487,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     `\nTasa: ${fmtNum(tasaNum)}% anual` +
     `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
     `\n\nAquí puedes ver tu propiedad: ${linkPropiedadVenta(propiedad)}` +
-    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "");
+    (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "") +
+    (textoPendientes ? `\n\n${textoPendientes}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
 
   // El nombre de archivo que sugiere "Imprimir → Guardar como PDF" lo toma el
   // navegador de document.title. Se restaura el título original al salir de
@@ -2238,7 +2524,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // Junta todo lo que necesita construirPdfCotizacion, ya formateado — así esa
   // función solo dibuja, sin tener que conocer el estado de este componente.
   const armarDatosPdf = () => ({
-    propiedadNombre: propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
+    propiedadNombre: lote
+      ? `${propiedad.codigo || "LR"} · Lote ${lote.numero}` +
+        (lote.sector ? ` (sector ${lote.sector})` : "") +
+        (esLote ? " · terreno" : " · con casa")
+      : propiedad.nombre + (propiedad.codigo ? ` (#${propiedad.codigo})` : ""),
     fecha: fmtDate(hoy),
     cliente,
     sistemaTexto: esSaldos ? "Sobre saldos" : "Cuota nivelada",
@@ -2259,8 +2549,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     notaTablaParcial: meses > mesesTabla ? `primeros ${mesesTabla} meses de ${meses}` : "",
     filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
     disclaimerTexto:
-      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.` +
-      (meses > mesesTabla ? ` La tabla completa tiene ${meses} cuotas — arriba se muestra una muestra de los primeros ${mesesTabla} meses; pide la tabla completa a la inmobiliaria.` : ""),
+      (textoPendientes ? textoPendientes + " " : "") +
+      `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día pasados ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. ` +
+      (textoPendientes ? "" : "Cotización informativa. ") +
+      `Los montos pueden variar según la fecha de firma.` +
+      (meses > mesesTabla ? ` Aquí van las primeras ${mesesTabla} cuotas de ${meses}; pedí la tabla completa a la inmobiliaria.` : ""),
     asesorNombre: asesor?.nombre || "—",
     asesorTelefono: asesor?.telefono || "",
     linkVentas: LINK_SITIO_VENTAS.replace("https://", ""),
@@ -2321,20 +2614,93 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="print:hidden">
-        <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center gap-3">
-          <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">Cotizador</div>
-            <div className="font-serif text-lg -mt-0.5">{propiedad.nombre}{propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}</div>
+        {/* Todo el encabezado es el botón de volver: la flechita sola era
+            un blanco muy chico y quedaba pegada bajo la barra de la app. */}
+        <button onClick={onVolver}
+          className="sticky top-0 z-10 w-full text-left bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center gap-3 hover:bg-[#121a28]">
+          <ChevronLeft size={20} className="text-[#C9A227] shrink-0" />
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
+              Volver a las propiedades
+            </div>
+            <div className="font-serif text-lg -mt-0.5 truncate">
+              {!lote ? propiedad.nombre
+                : esLote ? `Lote ${lote.numero} · terreno`
+                : modoVenta === "casa" ? `Casa sobre el lote ${lote.numero}`
+                : `Lote ${lote.numero}`}
+              {!lote && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
+            </div>
           </div>
-        </div>
+        </button>
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
+          {/* Lo que está guardado para esta casa. Sirve de referencia sin
+              tener que salir a buscarlo al catálogo. */}
+          <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
+            <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
+              {lote ? `Lote ${lote.numero} · sector ${lote.sector}`
+                    : "Lo que está guardado para esta casa"}
+            </div>
+            {soloLoteElegido ? (
+              <div className="space-y-1 text-[11px]">
+                <Dato k="Terreno" v={lote.area_m2 ? `${lote.area_m2} m²` : "112 m²"} />
+                <Dato k="Estado" v={lote.estado === "disponible" ? "Disponible"
+                  : lote.estado === "apartado" ? "Apartado"
+                  : lote.estado === "vendido" ? "Vendido" : "Todavía no a la venta"} />
+                {lote.precio_lote != null && lote.destino !== "casa" && (
+                  <Dato k="Como terreno" v={`${fmt(lote.precio_lote)} · enganche ${fmt(8000)} · 10 años`} />
+                )}
+                <Dato k="Con casa" v={`${fmt(lote.precio_casa ?? propiedad.precio)} · enganche ${fmt(propiedad.financiamiento_enganche_desde || 40000)} · ${propiedad.financiamiento_plazo_max_anios || 25} años`} />
+                <div className="text-[10px] text-[#8A93A3] pt-1">
+                  Elegí abajo si lo vas a cotizar como terreno o como casa.
+                </div>
+              </div>
+            ) : (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+              <Dato k="Precio de lista" v={precioDeLista != null ? fmt(precioDeLista) : "sin cargar"} />
+              <Dato k="Tasa sugerida" v={esLote ? "12%" : (cond.financiamiento_tasa_anual != null ? `${fmtNum(cond.financiamiento_tasa_anual)}%` : "sin cargar")} />
+              <Dato k="Enganche desde" v={engancheMin != null ? fmt(engancheMin) : "sin mínimo"} />
+              <Dato k="Plazo máximo" v={plazoMaxProducto ? `${plazoMaxProducto} años` : "sin tope"} />
+              {esLote && <Dato k="Terreno" v={lote.area_m2 ? `${lote.area_m2} m²` : "112 m²"} />}
+              {verPiso && puedeVerMinimo && (precioMin != null || precioMax != null) && (
+                <Dato k="Rango de precio"
+                      v={`${precioMin != null ? fmt(precioMin) : "—"} a ${precioMax != null ? fmt(precioMax) : "—"}`} />
+              )}
+              {(tasaMin != null || tasaMax != null) && (
+                <Dato k="Rango de tasa"
+                      v={`${tasaMin != null ? fmtNum(tasaMin) : "—"}% a ${tasaMax != null ? fmtNum(tasaMax) : "—"}%`} />
+              )}
+              {!esLote && propiedad.aplica_luz && (
+                <Dato k="Luz" v={`${fmt(propiedad.monto_luz_mensual || 0)} al mes`} />
+              )}
+              {!esLote && propiedad.aplica_mantenimiento && (
+                <Dato k="Mantenimiento" v={`${fmt(propiedad.monto_mantenimiento_mensual || 0)} al mes`} />
+              )}
+              {!esLote && propiedad.metros_construccion && (
+                <Dato k="Construcción" v={`${propiedad.metros_construccion} m²`} />
+              )}
+              {!esLote && propiedad.metros_terreno && (
+                <Dato k="Terreno" v={`${propiedad.metros_terreno} m²`} />
+              )}
+              {!esLote && propiedad.habitaciones && <Dato k="Habitaciones" v={propiedad.habitaciones} />}
+              {!esLote && propiedad.banos && <Dato k="Baños" v={propiedad.banos} />}
+            </div>
+            )}
+            {sinRestriccionDeRango && (
+              <div className="text-[10px] text-[#6b7280] mt-2">
+                Como interno podés salirte de estos rangos; son la referencia,
+                no un límite para vos.
+              </div>
+            )}
+          </div>
+
           {propiedad.proyecto_venta_id && (
             <div className="space-y-2">
               <button type="button" onClick={() => setVerMapa(!verMapa)}
                 className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
-                {verMapa ? "Ocultar el plano" : (lote ? `Lote ${lote.numero} · cambiar` : "Ver el plano y elegir lote")}
+                {verMapa ? "Ocultar el plano"
+                  : (lote ? `Lote ${lote.numero} · ${esLote ? "terreno" : "casa"} · cambiar`
+                          : "Ver el plano y elegir lote")}
               </button>
               {verMapa && (
                 <MapaLotes
@@ -2342,13 +2708,19 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                   asesorId={asesor?.id}
                   puedeApartar={true}
                   verConteos={asesor?.tipo !== "asesor_externo"}
-                  onCotizar={(l) => { setLote(l); setVerMapa(false); }}
+                  precioCasa={Number(propiedad.precio) || 580000}
+                  onCotizar={(l, modo) => { aplicarProducto(l, modo); setVerMapa(false); }}
+                  onSeleccionar={soloVerLote}
                 />
               )}
               {lote && !verMapa && (
                 <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
-                  Cotizando sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
-                  {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.
+                  {esLote
+                    ? <>Vendiendo el <b>lote {lote.numero}</b> como terreno
+                        {lote.area_m2 ? `, ${lote.area_m2} m²` : ""}. Enganche desde {fmt(8000)},
+                        hasta 10 años.</>
+                    : <>Casa sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
+                        {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.</>}
                 </div>
               )}
             </div>
@@ -2368,11 +2740,11 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
           <div className="grid grid-cols-2 gap-3">
             <CampoMoneda label="Precio de venta" value={precio} onChange={setPrecio} hint={precioHint} invalid={precioFueraDeRango} />
             {precioNecesitaAutorizacion && (
-              <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2 -mt-1">
-                Este precio está {fmt(precioDeLista - precioNum)} abajo del precio de lista
-                de {fmt(precioDeLista)}. Podés cotizarlo, pero el descuento
-                todavía tiene que autorizarse antes de cerrar la venta.
-              </div>
+              <PedirAutorizacion
+                lote={lote} propiedad={propiedad} asesor={asesor} esLote={esLote}
+                precioLista={precioDeLista} precioOfrecido={precioNum}
+                enganche={engancheNum} anios={Number(anios) || null}
+                cliente={cliente} whatsapp={whatsapp} />
             )}
             <CampoMoneda label="Enganche" value={enganche} onChange={setEnganche} hint={engancheHint} invalid={engancheFueraDeRango} />
           </div>
@@ -2417,7 +2789,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 </div>
               )}
               <div className="text-[11px] text-[#8A93A3]">
-                Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. Cotización informativa, sujeta a aprobación.
+                Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día pasados {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
+                {!textoPendientes && " Cotización informativa, sujeta a aprobación."}
               </div>
               {fueraDeRango && (
                 <div className="text-[11px] text-red-400 border-t border-red-900 pt-2">
@@ -2426,10 +2799,17 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               )}
               {precioNecesitaAutorizacion && !fueraDeRango && (
                 <div className="text-[11px] text-amber-400 border-t border-amber-900 pt-2">
-                  Ojo: esta cotización lleva un descuento de {fmt(precioDeLista - precioNum)} sobre
-                  el precio de lista y todavía falta autorizarlo.
+                  Lleva {fmt(precioDeLista - precioNum)} de descuento sobre el precio de lista.
                 </div>
               )}
+            </div>
+          )}
+
+          {textoPendientes && (
+            <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2.5 leading-relaxed">
+              <div className="font-medium mb-0.5">Necesita autorización</div>
+              {pendientes.join(", ")}. Podés enviarla; la cotización va a salir
+              diciendo que eso todavía no está aprobado.
             </div>
           )}
 
@@ -2528,7 +2908,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           <div className="text-[9px] text-gray-500 leading-relaxed">
             Mora de {fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día después de {DIAS_GRACIA_COTIZACION_ASESOR} días de gracia.
-            Cotización informativa, sujeta a aprobación. Los montos pueden variar según la fecha de firma.
+            {textoPendientes
+              ? textoPendientes
+              : "Cotización informativa, sujeta a aprobación."} Los montos pueden variar según la fecha de firma.
           </div>
 
           <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center">
@@ -2624,6 +3006,17 @@ function AppInterno({ perfil, cerrarSesion }) {
   const [proyectoSel, setProyectoSel] = useState(null);
   const [seleccion, setSeleccion] = useState(null);
   const [pantalla, setPantalla] = useState("proyectos");
+  // Tocar el botón del cotizador estando adentro no hacía nada, porque la
+  // pantalla ya era esa. Este contador lo vuelve a montar, así regresa a la
+  // lista de propiedades en vez de quedarse en la casa abierta.
+  const [cotizadorNonce, setCotizadorNonce] = useState(0);
+  // Hay gente que no es cliente ni vende: es dueña de una casa que nosotros
+  // administramos. Si tiene cuenta, se le muestra su acceso en la barra.
+  const [tieneCuentaPropietario, setTieneCuentaPropietario] = useState(false);
+  useEffect(() => {
+    supabase.from("v_propietario_saldos").select("cuenta_id").limit(1)
+      .then(({ data }) => setTieneCuentaPropietario((data || []).length > 0));
+  }, [perfil?.usuario?.id]);
   const [catalogoProyectoSel, setCatalogoProyectoSel] = useState(null);
   const [catalogoPropiedadSel, setCatalogoPropiedadSel] = useState(null);
   const [actualizando, setActualizando] = useState(false);
@@ -2635,7 +3028,7 @@ function AppInterno({ perfil, cerrarSesion }) {
     escriturasPendientesRef.current += 1;
     promesa.finally(() => { escriturasPendientesRef.current = Math.max(0, escriturasPendientesRef.current - 1); });
   };
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
 
   const cargarDatos = async () => {
       // proyectos y propiedades no dependen uno del otro: se piden a la vez en vez de en fila.
@@ -2885,7 +3278,10 @@ function AppInterno({ perfil, cerrarSesion }) {
           onEquipo={() => setPantalla("equipo")}
           puedeVerCatalogo={puede("gestionar_catalogo_ventas")}
           onCatalogo={() => { setCatalogoProyectoSel(null); setCatalogoPropiedadSel(null); setPantalla("catalogoVentas"); }}
-          onCotizar={() => setPantalla("cotizadorDirecto")}
+          onCotizar={() => { setPantalla("cotizadorDirecto"); setCotizadorNonce((n) => n + 1); }}
+          onBoletas={() => setPantalla("bandejaBoletas")}
+          onOfertas={() => setPantalla("ofertas")}
+          onPropietario={tieneCuentaPropietario ? () => setPantalla("propietario") : null}
           onClientes={esAdmin || puede("ver_reportes") ? () => setPantalla("clientes") : null}
           onActualizar={async () => { setActualizando(true); await cargarDatos(); setActualizando(false); }}
           actualizando={actualizando}
@@ -2908,8 +3304,36 @@ function AppInterno({ perfil, cerrarSesion }) {
           />
         )}
 
+        {pantalla === "propietario" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <Propietario esAdmin={!!perfil?.usuario?.roles?.es_administrador}
+                         onVolver={() => setPantalla("proyectos")} />
+          </div>
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "ofertas" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <div className="flex items-center gap-2 mb-4">
+              <button onClick={() => setPantalla("proyectos")} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+              <h1 className="font-serif text-2xl">Ofertas por autorizar</h1>
+            </div>
+            <Ofertas />
+          </div>
+        )}
+
+        {modo === "inmobiliaria" && pantalla === "bandejaBoletas" && (
+          <div className="max-w-2xl mx-auto p-5 pb-24">
+            <div className="flex items-center gap-2 mb-4">
+              <button onClick={() => setPantalla("proyectos")} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
+              <h1 className="font-serif text-2xl">Boletas por asignar</h1>
+            </div>
+            <BoletasBandeja onCambio={() => {}} />
+          </div>
+        )}
+
         {modo === "inmobiliaria" && pantalla === "cotizadorDirecto" && (
           <PantallaCotizadorDirecto
+            key={cotizadorNonce}
             usuario={perfil.usuario}
             onVolver={() => setPantalla("proyectos")}
           />
@@ -2990,7 +3414,7 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
-function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onClientes, onActualizar, actualizando }) {
+function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onPropietario, onClientes, onActualizar, actualizando }) {
   return (
     <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
       <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -3026,7 +3450,25 @@ function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo,
           {/* Acceso directo al cotizador, sin pasar por el catálogo */}
           {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
             <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Calculator size={16} />
+              <Tag size={16} />
+            </button>
+          )}
+          {/* Bandeja de boletas: para cuando llegan muchas juntas y de casas
+              distintas. La de una casa puntual se sube desde su cuota. */}
+          {modo === "inmobiliaria" && onBoletas && (
+            <button onClick={onBoletas} title="Boletas por asignar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Inbox size={16} />
+            </button>
+          )}
+          {/* Ofertas por debajo del precio de lista, esperando respuesta */}
+          {onPropietario && (
+            <button onClick={onPropietario} title="Casas administradas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Home size={16} />
+            </button>
+          )}
+          {puedeVerCatalogo && modo === "inmobiliaria" && onOfertas && (
+            <button onClick={onOfertas} title="Ofertas por autorizar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
+              <Sparkles size={16} />
             </button>
           )}
 <BotonTesoreria perfil={perfil} />
@@ -4604,6 +5046,23 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
   const [casas, setCasas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [sel, setSel] = useState(null);
+  // Para revisar qué ve de verdad un vendedor externo: con sus topes, sin
+  // el piso del precio y sin los conteos del plano. Mirarlo como interno
+  // no sirve para eso, porque interno no tiene ninguna de esas limitaciones.
+  const [comoVendedor, setComoVendedor] = useState(false);
+  // Proyectos que tienen lotes: ahí se entra por el plano, no por una casa.
+  const [conLotes, setConLotes] = useState({});
+  useEffect(() => {
+    supabase.from("lotes").select("proyecto_venta_id, estado").then(({ data }) => {
+      const m = {};
+      (data || []).forEach((l) => {
+        m[l.proyecto_venta_id] = m[l.proyecto_venta_id] || { total: 0, libres: 0 };
+        m[l.proyecto_venta_id].total++;
+        if (l.estado === "disponible") m[l.proyecto_venta_id].libres++;
+      });
+      setConLotes(m);
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -4618,13 +5077,31 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
 
   if (sel) {
     return (
-      <CotizadorAsesor
-        propiedad={{ ...sel, condiciones: sel.propiedades_venta_condiciones?.[0] || {} }}
-        puedeEnviar={true}
-        puedeVerMinimo={true}
-        asesor={{ ...(usuario || {}), tipo: "asesor_interno" }}
-        onVolver={() => setSel(null)}
-      />
+      <div>
+        {comoVendedor && (
+          <div className="max-w-2xl mx-auto px-5 pt-4">
+            <div className="text-[11px] text-[#C9A227] bg-[#0C121C] border border-[#C9A227]/50 rounded-md p-2">
+              Estás viendo el cotizador <b>como lo ve un vendedor externo</b>: con
+              sus topes de precio y plazo, sin el piso a la vista y sin los
+              conteos del plano. Lo que cotices aquí se registra a tu nombre.
+            </div>
+          </div>
+        )}
+        <CotizadorAsesor
+          // La relación es uno a uno (propiedad_venta_id es único), así que la
+          // base devuelve un objeto, no una lista. Leerlo con [0] lo dejaba
+          // vacío y la tasa salía "sin cargar".
+          propiedad={{ ...sel,
+            entrarPorPlano: !!conLotes[sel.proyecto_venta_id],
+            condiciones: (Array.isArray(sel.propiedades_venta_condiciones)
+              ? sel.propiedades_venta_condiciones[0]
+              : sel.propiedades_venta_condiciones) || {} }}
+          puedeEnviar={true}
+          puedeVerMinimo={!comoVendedor}
+          asesor={{ ...(usuario || {}), tipo: comoVendedor ? "asesor_externo" : "asesor_interno" }}
+          onVolver={() => setSel(null)}
+        />
+      </div>
     );
   }
 
@@ -4634,10 +5111,23 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Cotizador</h1>
       </div>
-      <p className="text-xs text-[#8A93A3] mb-5">
+      <p className="text-xs text-[#8A93A3] mb-3">
         Elegí la casa y armá la cotización. Desde aquí no hay tope de precio
         ni de enganche: los rangos son para los asesores.
       </p>
+
+      <div className="grid grid-cols-2 gap-2 mb-5">
+        <button onClick={() => setComoVendedor(false)}
+          className={`text-[11px] py-2 rounded-md ${!comoVendedor
+            ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+          Como vos, sin topes
+        </button>
+        <button onClick={() => setComoVendedor(true)}
+          className={`text-[11px] py-2 rounded-md ${comoVendedor
+            ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+          Como lo ve el vendedor
+        </button>
+      </div>
 
       {cargando && <div className="text-sm text-[#8A93A3]">Cargando...</div>}
       {!cargando && casas.length === 0 && (
@@ -4648,21 +5138,51 @@ function PantallaCotizadorDirecto({ usuario, onVolver }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {casas.map((c) => (
-          <button key={c.id} onClick={() => setSel(c)}
-            className="text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 hover:border-[#C9A227] transition">
+          <button key={c.id}
+            onClick={() => c.estado !== "vendida" && setSel(c)}
+            disabled={c.estado === "vendida"}
+            className={`text-left bg-[#161F2E] border border-[#2A3547] rounded-lg p-3 transition ${
+              c.estado === "vendida" ? "opacity-70 cursor-not-allowed" : "hover:border-[#C9A227]"}`}>
             <div className="text-sm font-medium">
-              {c.nombre}
-              {c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}
+              {conLotes[c.proyecto_venta_id]
+                ? (c.proyectos_venta?.nombre || c.nombre)
+                : <>{c.nombre}{c.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{c.codigo}</span>}</>}
             </div>
-            <div className="text-[11px] text-[#8A93A3] mb-1.5">{c.proyectos_venta?.nombre}</div>
-            {c.precio != null && (
-              <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
+            <div className="text-[11px] text-[#8A93A3] mb-1.5">
+              {conLotes[c.proyecto_venta_id] ? "Lotes y casas" : c.proyectos_venta?.nombre}
+            </div>
+            {conLotes[c.proyecto_venta_id] ? (
+              // Proyecto con lotes: no se entra por una casa. Lo que se vende
+              // depende del lote, así que la puerta es el plano.
+              <>
+                <div className="text-[#C9A227] font-serif text-lg">
+                  {conLotes[c.proyecto_venta_id].libres} disponibles
+                </div>
+                <div className="text-[10px] text-[#6b7280] mt-0.5">
+                  Terreno desde {fmt(180000)} · con casa {fmt(c.precio)}
+                </div>
+                <div className="text-[10px] text-[#C9A227] mt-1">Abre el plano</div>
+              </>
+            ) : (
+              <>
+                {c.precio != null && (
+                  <div className="text-[#C9A227] font-serif text-lg">{fmt(c.precio)}</div>
+                )}
+                {c.estado === "vendida" ? (
+                  <div className="mt-1">
+                    <span className="text-[10px] tracking-widest uppercase bg-[#C0392B] text-white px-2 py-0.5 rounded">
+                      Vendida
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-[#6b7280] mt-0.5">
+                    Disponible
+                    {c.financiamiento_enganche_desde
+                      ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
+                  </div>
+                )}
+              </>
             )}
-            <div className="text-[10px] text-[#6b7280] mt-0.5">
-              {c.estado === "vendida" ? "Vendida" : "Disponible"}
-              {c.financiamiento_enganche_desde
-                ? ` · enganche desde ${fmt(c.financiamiento_enganche_desde)}` : ""}
-            </div>
           </button>
         ))}
       </div>
@@ -4956,6 +5476,13 @@ function mensualidadVigente(tabla) {
   return tabla[0]?.pago ?? 0;
 }
 
+// Todo lo que se debe aparte del crédito y no genera interés: enganche
+// que falta por recibir, más obra extra o mejoras pactadas. Se suman los
+// dos porque una propiedad puede tener ambos.
+function deudaAparte(p) {
+  return Number(p?.saldoAdicionalSinInteres || 0) + Number(p?.cargoExtraMonto || 0);
+}
+
 function engancheAjustado(prop) {
   const cargo = Number(prop.saldoAdicionalSinInteres || 0);
   const mensualidadManual = Number(prop.mensualidadAjustada || 0);
@@ -5167,16 +5694,28 @@ function ListaPropiedades({ proyecto, propiedades, hoy, onVolver, onNueva, onAbr
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
                     <span className="font-sans">{p.esRenta ? "Renta por devengar" : "Saldo"}</span>
-                    <span>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</span>
+                    <span>{fmt(saldoActual + deudaAparte(p))}</span>
                   </div>
                   <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-[#2A3547]">
                     <span className="font-sans">{p.esRenta ? "Contrato + atrasos" : "Total adeudado"}</span>
-                    <span className="text-red-400">{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0) + totalParaPonerseAlDia)}</span>
+                    <span className="text-red-400">{fmt(saldoActual + deudaAparte(p) + totalParaPonerseAlDia)}</span>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-5 mt-3 text-xs font-mono">
-                  <div><div className="text-[#8A93A3]">{p.esRenta ? "Renta por devengar" : "Saldo"}</div><div>{fmt(saldoActual + (p.saldoAdicionalSinInteres || 0))}</div></div>
+                  <div><div className="text-[#8A93A3]">{p.esRenta ? "Renta por devengar" : "Saldo"}</div><div>{fmt(saldoActual)}</div></div>
+                  {deudaAparte(p) > 0 && (
+                    <div>
+                      <div className="text-[#C9A227]">Aparte</div>
+                      <div className="text-[#C9A227]">{fmt(deudaAparte(p))}</div>
+                    </div>
+                  )}
+                  {deudaAparte(p) > 0 && (
+                    <div>
+                      <div className="text-[#8A93A3]">Total</div>
+                      <div>{fmt(saldoActual + deudaAparte(p))}</div>
+                    </div>
+                  )}
                   {moraTotal > 0 && <div><div className="text-red-400/80">Mora a pagar</div><div className="text-red-400">{fmt(moraTotal)}</div></div>}
                   {luzPendiente > 0 && <div><div className="text-[#8A93A3]">Luz pend.</div><div>{fmt(luzPendiente)}</div></div>}
                 </div>
@@ -5198,7 +5737,7 @@ function NuevaPropiedad({ proyecto, onCancelar, onCrear }) {
     aplicaLuz: false, montoLuzMensual: "",
     sistemaAmortizacion: "nivelada",
     sistemaPago: "vencido",
-    fechaInicio: new Date().toISOString().slice(0, 10),
+    fechaInicio: hoyISO(),
     // Datos internos — no los ve el cliente, viven solo en las pantallas de "Inmobiliaria".
     codigoClienteReferencia: "",
     registroFincaDocumento: "", registroFolioDocumento: "", registroLibroDocumento: "",
@@ -5409,6 +5948,17 @@ function Campo({ label, ...props }) {
 function CampoMoneda({ label, value, onChange, placeholder, disabled, hint, invalid }) {
   const formatear = (n) => (n || n === 0) && n !== "" ? Number(n).toLocaleString("es-GT", { maximumFractionDigits: 2 }) : "";
   const [texto, setTexto] = useState(formatear(value));
+
+  // Si el valor cambia desde afuera (por ejemplo al pasar de casa a terreno),
+  // la casilla tiene que seguirlo. Antes guardaba su propio texto y solo lo
+  // fijaba al aparecer, así que mostraba el precio viejo mientras el cálculo
+  // usaba el nuevo: dos números distintos en la misma pantalla.
+  useEffect(() => {
+    const numeroTexto = texto === "" ? "" : Number(texto.replace(/,/g, ""));
+    if (numeroTexto !== (value === "" || value == null ? "" : Number(value))) {
+      setTexto(formatear(value));
+    }
+  }, [value]);
 
   const manejarCambio = (e) => {
     let crudo = e.target.value.replace(/[^0-9.]/g, "");
@@ -5844,6 +6394,199 @@ function VisorGaleria({ galeria, setGaleria }) {
 // terminar subiendo la del mes siguiente sobre la cuota equivocada.
 // Cuando después suba la suya y se apruebe, el comprobante se pega a
 // este mismo movimiento en vez de crear otro.
+// Subir la boleta de una cuota pendiente desde el lado de la inmobiliaria.
+// Hasta ahora esto solo existía en el portal del cliente, así que cuando el
+// cliente mandaba la foto por WhatsApp no había dónde meterla.
+//
+// Pasa por aprobarComprobante, la misma función que aprueba los pagos del
+// cliente. Antes usaba un atajo por SQL que tenía dos problemas: no hacía el
+// abono a capital de verdad, y al refrescar la pantalla se pisaba con la
+// copia vieja y la cuota volvía a quedar pendiente (le pasó a Vilma).
+function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+  const [monto, setMonto] = useState("");
+  const [fecha, setFecha] = useState(hoy);
+  const [nota, setNota] = useState("");
+  const [usarGuardado, setUsarGuardado] = useState(true);
+  const [destino, setDestino] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!puede || !puede("aprobar_rechazar_pagos")) return null;
+  if (!f.id || f.estado === "pagado") return null;
+
+  // Lo que la cuota pide a la fecha del depósito, no a la de hoy
+  const fechaCalc = fecha || hoy;
+  const mora = calcularMoraCredito(f, fechaCalc, prop.diasGracia, prop.moraDiaria);
+  const luz = prop.aplicaLuz && !f.luzPagado ? Number(prop.montoLuzMensual || 0) : 0;
+  const luzMora = prop.aplicaLuz && !f.luzPagado
+    ? calcularMoraLuzCuota(f, fechaCalc, prop.diasGraciaLuz, prop.moraDiariaLuz) : 0;
+  const falta = Math.max(0, Number(f.pago || 0) - Number(f.montoPagadoAcumulado || 0));
+  const requerido = falta + mora + luz + luzMora;
+
+  const guardado = Number(prop.saldoAFavor || 0);
+  const montoNum = Number(monto) || 0;
+  const disponible = montoNum + (usarGuardado ? guardado : 0);
+  const excedente = Math.max(0, disponible - requerido);
+  const faltante = Math.max(0, requerido - disponible);
+  const limite = fechaLimiteGracia(f.fecha, prop.diasGracia);
+  const aTiempo = fechaCalc <= limite;
+  const preguntaDestino = excedente > 0.009 && aTiempo;
+
+  const listo = archivo && montoNum > 0 && fecha && (!preguntaDestino || destino);
+
+  const guardar = async () => {
+    setError(""); setGuardando(true);
+    try {
+      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+      const path = `${prop.id}/${f.id}-${Date.now()}.${ext}`;
+      const { error: e1 } = await supabase.storage
+        .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
+      if (e1) throw new Error(e1.message);
+
+      const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
+      const destinoFinal = resultado === "excedente"
+        ? (preguntaDestino ? destino : "creditoSiguiente") : null;
+
+      const datos = {
+        montoDepositado: montoNum, moraAlSubir: mora + luzMora,
+        montoRequerido: requerido, excedente, faltante, resultado,
+        destinoExcedente: destinoFinal, fechaPagoReal: fecha,
+        notaCliente: nota.trim() || null,
+      };
+      await guardarComprobanteEnBD(f.id, path, datos);
+
+      const { data: firmada } = await supabase.storage
+        .from("comprobantes").createSignedUrl(path, 3600);
+
+      // Se aprueba en el mismo paso, por la cascada de siempre
+      onAprobar(idx, usarGuardado, {
+        ...datos,
+        imagen: firmada?.signedUrl || null,
+        imagenUrlCruda: path,
+        fecha: fecha,
+        estado: "revision",
+      });
+      setAbierto(false);
+    } catch (e) { setError(e.message); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#2A3547]">
+      {!abierto ? (
+        <button
+          onClick={() => { setAbierto(true); setMonto(String(Math.round(requerido * 100) / 100)); setError(""); }}
+          title="Registrar el pago con su boleta, sin esperar a que el cliente la suba."
+          className="flex items-center gap-1 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] px-2.5 py-1.5 rounded-md">
+          <Upload size={11} /> Subir la boleta y registrar el pago
+        </button>
+      ) : (
+        <div className="space-y-2">
+          {archivo ? (
+            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+              <FileText size={13} className="text-[#C9A227] shrink-0" />
+              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
+              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0"><X size={13} /></button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
+              <Upload size={12} /> Elegir la boleta
+              <input type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+            </label>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Cuánto depositó</span>
+              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px] font-mono" />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">Fecha del depósito</span>
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
+                className="w-full mt-0.5 bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+            </label>
+          </div>
+
+          {/* Lo que pide la cuota, desglosado para decidir con los números a la vista */}
+          <div className="text-[10px] text-[#8A93A3] bg-[#0C121C] border border-[#2A3547] rounded p-2 space-y-0.5">
+            <div className="flex justify-between"><span>Cuota</span><span className="font-mono">{fmt(falta)}</span></div>
+            {mora > 0 && <div className="flex justify-between text-red-400"><span>Mora</span><span className="font-mono">{fmt(mora)}</span></div>}
+            {luz > 0 && <div className="flex justify-between"><span>Luz</span><span className="font-mono">{fmt(luz)}</span></div>}
+            {luzMora > 0 && <div className="flex justify-between text-red-400"><span>Mora de luz</span><span className="font-mono">{fmt(luzMora)}</span></div>}
+            <div className="flex justify-between text-[#EDE7D9] border-t border-[#2A3547] pt-0.5">
+              <span>Total a cubrir</span><span className="font-mono">{fmt(requerido)}</span>
+            </div>
+          </div>
+
+          {guardado > 0.009 && (
+            <div className="bg-emerald-950/30 border border-emerald-900 rounded-md p-2 space-y-1">
+              <div className="text-[11px] text-emerald-400">
+                Tiene {fmt(guardado)} guardado de un depósito anterior.
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={usarGuardado} onChange={() => setUsarGuardado(true)} />
+                Aplicarlo a esta cuota
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={!usarGuardado} onChange={() => setUsarGuardado(false)} />
+                Seguir guardándolo
+              </label>
+            </div>
+          )}
+
+          {montoNum > 0 && (
+            <div className={`text-[11px] ${faltante > 0.009 ? "text-amber-400" : "text-emerald-400"}`}>
+              {faltante > 0.009
+                ? `Queda corto: faltan ${fmt(faltante)}. La cuota quedará parcial.`
+                : excedente > 0.009
+                  ? `Cubre todo y sobran ${fmt(excedente)}.`
+                  : "Cubre la cuota exacta."}
+            </div>
+          )}
+
+          {preguntaDestino && (
+            <div className="bg-[#0C121C] border border-[#C9A227]/60 rounded-md p-2 space-y-1">
+              <div className="text-[11px] text-[#C9A227]">¿Qué se hace con los {fmt(excedente)} que sobran?</div>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={destino === "abono"} onChange={() => setDestino("abono")} />
+                Abonarlos a capital
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input type="radio" checked={destino === "creditoSiguiente"} onChange={() => setDestino("creditoSiguiente")} />
+                Reservarlos para el siguiente mes
+              </label>
+            </div>
+          )}
+          {excedente > 0.009 && !aTiempo && (
+            <div className="text-[10px] text-[#8A93A3]">
+              Como pagó fuera de plazo, el sobrante se reserva para el siguiente mes.
+            </div>
+          )}
+
+          <input value={nota} onChange={(e) => setNota(e.target.value)}
+            placeholder="Banco, referencia o nota (opcional)"
+            className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-1.5 text-[11px]" />
+
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+
+          <div className="flex gap-2">
+            <button onClick={() => setAbierto(false)} disabled={guardando}
+              className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-2 rounded">Cancelar</button>
+            <button onClick={guardar} disabled={!listo || guardando}
+              className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-2 rounded">
+              {guardando ? "Guardando..." : "Registrar el pago"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IngresoDeCuota({ f, prop, hoy, actualizar, puede }) {
   const [abierto, setAbierto] = useState(false);
   const [monto, setMonto] = useState(0);
@@ -5956,8 +6699,22 @@ function AdjuntarBoleta({ f, propiedadId, actualizar }) {
       const { error: e2 } = await supabase.from("comprobantes")
         .update({ imagen_url: path }).eq("id", comp.id);
       if (e2) throw new Error(e2.message);
+
+      // actualizar espera una función que transforme la propiedad. Llamarla
+      // vacía reventaba la pantalla justo después de guardar: el archivo ya
+      // había subido, pero la app se caía y parecía que no se había hecho nada.
+      const { data: firmada } = await supabase.storage
+        .from("comprobantes").createSignedUrl(path, 3600);
+
       setAbierto(false); setArchivo(null);
-      actualizar && actualizar();
+      actualizar && actualizar((p) => {
+        const fila = p.tabla.find((x) => x.numero === f.numero);
+        if (fila?.comprobante) {
+          fila.comprobante.imagenUrlCruda = path;
+          fila.comprobante.imagen = firmada?.signedUrl || fila.comprobante.imagen;
+        }
+        return p;
+      });
     } catch (e) {
       setError(e.message); setGuardando(false);
     }
@@ -6130,19 +6887,24 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     });
   };
 
-  const aprobarComprobante = (idx) => {
+  // usarSaldoAFavor: la inmobiliaria decide si el saldo guardado de un
+  // depósito anterior se aplica a esta cuota o se sigue guardando. Antes se
+  // aplicaba solo; ahora se pregunta, porque a veces conviene reservarlo.
+  // comprobanteNuevo: cuando la inmobiliaria sube la boleta ella misma, el
+  // comprobante recién creado entra por aquí y se aprueba en el mismo paso.
+  // Así pasa por la misma cascada que el pago del cliente: mora, luz, meses
+  // atrasados, abono a capital que recalcula la tabla, y saldo guardado.
+  const aprobarComprobante = (idx, usarSaldoAFavor = true, comprobanteNuevo = null) => {
     const numero = prop.tabla[idx].numero;
     actualizarEstadoComprobanteBD(prop.id, numero, "aprobado").catch((err) => console.error(err));
     actualizar((p) => {
       const fila = p.tabla[idx];
+      if (comprobanteNuevo) fila.comprobante = comprobanteNuevo;
       const c = fila.comprobante;
       if (!c) return p;
 
-      // Cualquier saldo a favor que ya tuviera (de un depósito anterior que no alcanzó a cubrir
-      // algo completo, ej. la luz) se suma automáticamente aquí — no se le pide al cliente que
-      // lo "aplique" a mano, porque en realidad ya estaba comprometido a completar ese pendiente.
-      const disponiblePrevio = p.saldoAFavor || 0;
-      p.saldoAFavor = 0;
+      const disponiblePrevio = usarSaldoAFavor ? (p.saldoAFavor || 0) : 0;
+      if (usarSaldoAFavor) p.saldoAFavor = 0;
       const { restante, idxDetenido } = aplicarPagoCascada(p.tabla, idx, c.montoDepositado + disponiblePrevio, hoy, p, c.fechaPagoReal);
 
       if (c.fechaPagoReal) fila.fechaPagoReal = c.fechaPagoReal;
@@ -6403,9 +7165,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
   const guardarCorreccion = (idx) => {
     if (!previewCorregido) return;
-    const necesitaDestino = previewCorregido.resultado === "excedente" && previewCorregido.aTiempo;
+    const regla = prop.destinoExcedenteDefault || "preguntar";
+    const necesitaDestino = previewCorregido.resultado === "excedente"
+      && previewCorregido.aTiempo && regla === "preguntar";
     if (necesitaDestino && !destinoCorregido) return;
-    const destinoFinal = previewCorregido.resultado === "excedente" ? (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente") : null;
+    const destinoFinal = previewCorregido.resultado !== "excedente" ? null
+      : regla !== "preguntar" ? regla
+      : (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente");
     actualizar((p) => {
       const fila = p.tabla[idx];
       const c = fila.comprobante;
@@ -6461,6 +7227,88 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
   const hayPagosRegistrados = prop.tabla.some((f) => f.estado === "pagado");
 
+  // Cambiar precio, enganche, tasa, plazo o fecha rehace la tabla entera. En
+  // una propiedad con pagos eso borra el historial, que fue justo lo que
+  // pasó con LL4. Ahora se puede hacer, pero por una puerta: respaldo
+  // guardado, PDF descargado y motivo escrito.
+  const [tramite, setTramite] = useState(null);
+  const [motivoCambio, setMotivoCambio] = useState("");
+  const [pdfBajado, setPdfBajado] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [errorCambio, setErrorCambio] = useState("");
+  const [condicionesBloqueadas, setCondicionesBloqueadas] = useState(true);
+
+  const VentanaCambioCondiciones = () => {
+    if (!tramite) return null;
+    const listo = pdfBajado && motivoCambio.trim().length >= 10;
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-3"
+           onClick={() => !aplicando && setTramite(null)}>
+        <div onClick={(e) => e.stopPropagation()}
+             className="w-full max-w-md bg-[#101826] border border-[#C0392B] rounded-xl p-4 space-y-3 max-h-[88vh] overflow-auto">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-[#C0392B]">Cuidado</div>
+            <h3 className="font-serif text-lg">Esto rehace la tabla de pagos</h3>
+          </div>
+
+          <div className="text-[11px] text-[#EDE7D9] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-1">
+            {tramite.map((c) => (
+              <div key={c.clave} className="flex justify-between gap-2">
+                <span className="text-[#8A93A3]">{c.rotulo}</span>
+                <span className="font-mono text-right">
+                  {c.esMoneda ? fmt(c.antes) : String(c.antes ?? "—")}
+                  <span className="text-[#C0392B]"> → </span>
+                  {c.esMoneda ? fmt(c.ahora) : String(c.ahora ?? "—")}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-amber-400 leading-relaxed">
+            Al aplicarlo se van a borrar las{" "}
+            <b>{prop.tabla.filter((f) => f.estado === "pagado").length} cuotas pagadas</b>,
+            los abonos a capital y las boletas quedarán sin cuota. Hay que volver a
+            cargar los pagos sobre la tabla nueva.
+          </div>
+
+          <div className="space-y-2">
+            <button type="button"
+              onClick={async () => { await descargarPdfTablaPagos(); setPdfBajado(true); }}
+              className={`w-full text-[11px] py-2.5 rounded-md border ${pdfBajado
+                ? "border-emerald-700 text-emerald-400 bg-emerald-950/30"
+                : "border-[#C9A227] text-[#C9A227]"}`}>
+              {pdfBajado ? "✓ Tabla actual descargada" : "1. Descargar la tabla actual en PDF"}
+            </button>
+            <div className="text-[10px] text-[#8A93A3] -mt-1">
+              El sistema guarda su propio respaldo igual. Este PDF es tu copia, por si
+              hay que reclamarle algo al cliente o reconstruirla a mano.
+            </div>
+
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">2. Por qué se cambia (queda guardado)</span>
+              <textarea value={motivoCambio} onChange={(e) => setMotivoCambio(e.target.value)}
+                rows={2} placeholder="Ej. el precio estaba mal cargado: la escritura dice Q420,000"
+                className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md p-2 text-[11px]" />
+            </label>
+          </div>
+
+          {errorCambio && <div className="text-[11px] text-red-400">{errorCambio}</div>}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setTramite(null)} disabled={aplicando}
+              className="flex-1 text-[11px] bg-[#2A3547] disabled:opacity-40 py-2.5 rounded-md">
+              Mejor no
+            </button>
+            <button onClick={aplicarCambioConRespaldo} disabled={!listo || aplicando}
+              className="flex-1 text-[11px] bg-[#C0392B] text-white font-medium disabled:opacity-30 py-2.5 rounded-md">
+              {aplicando ? "Aplicando..." : "Aplicar el cambio"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const guardarCondiciones = () => {
     actualizar((p) => {
       p.diasGracia = Number(condForm.diasGracia);
@@ -6486,6 +7334,45 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     setCondForm(null);
   };
 
+  // Qué se está intentando tocar de lo que rehace la tabla
+  const cambiosDelicados = () => {
+    if (!condForm) return [];
+    const mira = [
+      ["precio", "Precio de venta", prop.precio, Number(condForm.precio), true],
+      ["enganche", "Enganche", prop.enganche, Number(condForm.enganche), true],
+      ["tasa", "Tasa anual", prop.tasaAnual, Number(condForm.tasaAnual), false],
+      ["plazo", "Plazo en años", prop.plazoAnios, Number(condForm.plazoAnios), false],
+      ["fecha_inicio", "Fecha de inicio", prop.fechaInicio, condForm.fechaInicio, false],
+    ];
+    return mira
+      .filter(([, , antes, ahora]) => String(antes ?? "") !== String(ahora ?? ""))
+      .map(([clave, rotulo, antes, ahora, esMoneda]) => ({ clave, rotulo, antes, ahora, esMoneda }));
+  };
+
+  const aplicarCambioConRespaldo = async () => {
+    setErrorCambio(""); setAplicando(true);
+    try {
+      const { data, error } = await supabase.rpc("cambiar_condiciones_con_respaldo", {
+        p_propiedad: prop.id,
+        p_motivo: motivoCambio.trim(),
+        p_precio: Number(condForm.precio),
+        p_enganche: Number(condForm.enganche),
+        p_tasa: Number(condForm.tasaAnual),
+        p_plazo: Number(condForm.plazoAnios),
+        p_fecha_inicio: condForm.fechaInicio || null,
+      });
+      if (error) throw new Error(error.message);
+      setTramite(null); setMotivoCambio(""); setPdfBajado(false);
+      setCondicionesDesbloqueadas(false); setCondForm(null);
+      alert("Listo. Se guardó un respaldo de " +
+            (data?.cuotas_respaldadas ?? 0) + " cuotas antes del cambio. " +
+            "Ahora hay que volver a cargar los pagos sobre la tabla nueva.");
+      window.location.reload();
+    } catch (e) {
+      setErrorCambio(e.message);
+    } finally { setAplicando(false); }
+  };
+
   const notifsAdmin = (prop.notificaciones || []).filter((n) => n.para === "inmobiliaria");
 
   const renderFila = (f, idx) => {
@@ -6500,7 +7387,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           <div>
             <div className="text-xs text-[#8A93A3] font-mono">#{f.numero} · {fmtDate(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
-            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
+            {prop.aplicaLuz && (
+              prop.cuotaUnificada
+                // Un solo monto: al cliente no le aporta ver el desglose, y
+                // la inmobiliaria lo tiene en la tabla y en el PDF.
+                ? <div className="text-[10px] text-[#8A93A3]">Pago mensual {fmt(Number(f.pago) + Number(prop.montoLuzMensual || 0))}</div>
+                : <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>
+            )}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
               <div className="text-[11px] text-red-400/80">último comprobante rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}</div>
             )}
@@ -6530,6 +7423,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         )}
 
         <DetalleFila f={f} mora={mora} prop={prop} hoy={hoy} />
+
+        <SubirBoletaCuota f={f} idx={idx} prop={prop} hoy={hoy} puede={puede}
+          onAprobar={aprobarComprobante} />
 
         <IngresoDeCuota f={f} prop={prop} hoy={hoy} actualizar={actualizar} puede={puede} />
 
@@ -6635,10 +7531,33 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                   </div>
                 </div>
               ) : (
+                prop.saldoAFavor > 0.009 ? (
+                  // Hay saldo guardado de un depósito anterior. La inmobiliaria
+                  // decide si se usa en esta cuota o se sigue guardando.
+                  <div className="mt-2.5 space-y-2">
+                    <div className="text-[11px] text-emerald-400 bg-emerald-950/30 border border-emerald-900 rounded-md p-2">
+                      El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior.
+                      ¿Se aplica a esta cuota o se sigue guardando?
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => aprobarComprobante(idx, true)}
+                        className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2 py-1.5 rounded-md">
+                        Aprobar y aplicar lo guardado
+                      </button>
+                      <button onClick={() => aprobarComprobante(idx, false)}
+                        className="flex-1 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-2 py-1.5 rounded-md">
+                        Aprobar y seguir guardándolo
+                      </button>
+                    </div>
+                    <button onClick={() => { setRechazandoIdx(idx); setMotivoRechazo(""); }}
+                      className="w-full text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
+                  </div>
+                ) : (
                 <div className="flex gap-2 mt-2.5">
                   <button onClick={() => aprobarComprobante(idx)} className="flex-1 text-xs bg-emerald-800 hover:bg-emerald-700 px-2.5 py-1.5 rounded-md">Aprobar</button>
                   <button onClick={() => { setRechazandoIdx(idx); setMotivoRechazo(""); }} className="flex-1 text-xs bg-red-900 hover:bg-red-800 px-2.5 py-1.5 rounded-md">Rechazar</button>
                 </div>
+                )
               )
             ) : (
               <div className="mt-2.5 text-[11px] text-[#8A93A3]">No tienes permiso para aprobar o rechazar pagos.</div>
@@ -6791,15 +7710,30 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         <div className="bg-[#161F2E] border border-[#2A3547] rounded-lg p-3">
           <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">{prop.esRenta ? "Renta por devengar" : "Saldo"}</div>
           <div className="font-mono text-sm mt-0.5">{fmt(saldoActual)}</div>
-          {prop.saldoAdicionalSinInteres > 0 && (
+          {deudaAparte(prop) > 0 && (
             <div className="mt-1.5 space-y-1.5 border-t border-[#2A3547] pt-1.5">
+              {prop.saldoAdicionalSinInteres > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">+ Enganche por recibir</div>
+                  <div className="font-mono text-sm mt-0.5">{fmt(prop.saldoAdicionalSinInteres)}</div>
+                </div>
+              )}
+              {prop.cargoExtraMonto > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#C9A227] leading-tight">
+                    + {prop.cargoExtraConcepto || "Cargo adicional"}
+                  </div>
+                  <div className="font-mono text-sm mt-0.5 text-[#C9A227]">{fmt(prop.cargoExtraMonto)}</div>
+                  {prop.cargoExtraVence && (
+                    <div className="text-[10px] text-[#8A93A3]">
+                      Sin interés · vence {fmtDate(prop.cargoExtraVence)}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">+ Construcción extra</div>
-                <div className="font-mono text-sm mt-0.5">{fmt(prop.saldoAdicionalSinInteres)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Total</div>
-                <div className="font-mono text-sm mt-0.5 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3]">Total adeudado</div>
+                <div className="font-mono text-sm mt-0.5 text-[#EDE7D9]">{fmt(saldoActual + deudaAparte(prop))}</div>
               </div>
             </div>
           )}
@@ -6845,7 +7779,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         </div>
       )}
       {prop.saldoAFavor > 0 && (
-        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior — se aplica solo en cuanto entre el próximo pago.</div>
+        <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior. Al aprobar su próximo pago vas a decidir si se aplica o se sigue guardando.</div>
       )}
 
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
@@ -7000,6 +7934,19 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
               <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {/* Deuda pactada aparte del crédito: obra extra, mejoras. Va
+                  junto al monto financiado porque es parte de lo que se debe,
+                  aunque no forme parte del préstamo ni genere intereses. */}
+              {prop.cargoExtraMonto > 0 && (
+                <>
+                  <Fila2 label={prop.cargoExtraConcepto || "Cargo adicional"}
+                         value={fmt(prop.cargoExtraMonto)} />
+                  <div className="text-[11px] text-[#C9A227] text-right -mt-1">
+                    Sin intereses ni mora
+                    {prop.cargoExtraVence ? ` · a pagar antes del ${fmtDate(prop.cargoExtraVence)}` : ""}
+                  </div>
+                </>
+              )}
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
@@ -7010,7 +7957,9 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
                   Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
-              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`}
+                     tachado={prop.tasaAnterior != null && Math.abs(prop.tasaAnterior - prop.tasaAnual) > 0.001
+                              ? `${fmtNum(prop.tasaAnterior)}%` : null} />
               {(() => {
                 // El trato original manda en la etiqueta; el efecto de los
                 // abonos va abajo, sin pisar lo que se pacto.
@@ -7149,38 +8098,77 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">
+                  Si el cliente deposita de más
+                </div>
+                <select
+                  value={prop.destinoExcedenteDefault || "preguntar"}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    actualizar((p) => { p.destinoExcedenteDefault = v; return p; });
+                    supabase.from("propiedades")
+                      .update({ destino_excedente_default: v })
+                      .eq("id", prop.id)
+                      .then(({ error }) => error && alert("No se pudo guardar: " + error.message));
+                  }}
+                  className="w-full bg-[#161F2E] border border-[#2A3547] rounded p-2 text-[11px]">
+                  <option value="preguntar">Preguntar cada vez (lo normal)</option>
+                  <option value="luz">Siempre a la luz</option>
+                  <option value="abono">Siempre a capital</option>
+                  <option value="creditoSiguiente">Siempre guardarlo para el mes siguiente</option>
+                </select>
+                <div className="text-[10px] text-[#6b7280] mt-1 leading-relaxed">
+                  Con una regla fija ya no se pregunta al aprobar: se aplica sola, pague
+                  a tiempo o tarde. Se puede cambiar cuando cambie el acuerdo.
+                </div>
+              </div>
+
               {hayPagosRegistrados && (
-                <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5">
-                  Esta propiedad ya tiene cuotas pagadas, así que precio, enganche, tasa y plazo quedan bloqueados para no alterar el historial. Si necesitas corregirlos, contáctanos.
+                <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5 space-y-2">
+                  <div>
+                    Esta propiedad tiene <b>{prop.tabla.filter((f) => f.estado === "pagado").length} cuotas
+                    pagadas</b>. Cambiar precio, enganche, tasa, plazo o fecha <b>rehace la tabla completa</b> y
+                    borra ese historial, incluidos los abonos a capital.
+                  </div>
+                  {esAdmin ? (
+                    <button type="button"
+                      onClick={() => { setCondicionesBloqueadas(false); }}
+                      className="text-[11px] text-[#C9A227] underline">
+                      Necesito corregirlas de todas formas
+                    </button>
+                  ) : (
+                    <div>Si hay que corregirlas, pedíselo al administrador.</div>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
-                <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
-                <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
-                <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
+                <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
+                <CampoMoneda label="Enganche" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
+                <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
+                <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
                 <label className="block">
                   <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{condForm.sistemaPago === "adelantado" ? "Fecha base (cuota #1 = el mismo día)" : "Fecha base (cuota #1 = un mes después)"}</span>
-                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                  <input type="date" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
                 </label>
                 <label className="block">
                   <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Fecha real de inicio (opcional)</span>
-                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicioIntereses || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicioIntereses: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                  <input type="date" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.fechaInicioIntereses || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicioIntereses: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
                   <span className="text-[10px] text-[#8A93A3]">Si el crédito empezó antes de la fecha base (ej. hubo semanas entre la entrega y la 1ra cuota), poné aquí esa fecha real — la cuota #1 va a cargar el interés real de esos días extra. Dejalo vacío si no aplica.</span>
                 </label>
               </div>
               <div>
                 <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Sistema de amortización</span>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
                 </div>
               </div>
               <div>
                 <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">¿Cómo paga este cliente?</span>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "vencido" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes vencido</button>
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "adelantado" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes adelantado</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaPago: "vencido" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes vencido</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaPago: "adelantado" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes adelantado</button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -7205,10 +8193,23 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               </div>
               <div className="flex gap-2">
                 <button onClick={() => { setCondicionesDesbloqueadas(false); setCondForm(null); }} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
-                <button onClick={guardarCondiciones} className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">Guardar cambios</button>
+                <button onClick={() => {
+                    const delicados = cambiosDelicados();
+                    // Si hay pagos y se tocó algo que rehace la tabla, no se
+                    // guarda de una: se abre el trámite con respaldo.
+                    if (hayPagosRegistrados && delicados.length > 0) {
+                      setTramite(delicados); setErrorCambio("");
+                      setMotivoCambio(""); setPdfBajado(false);
+                      return;
+                    }
+                    guardarCondiciones();
+                  }}
+                  className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">Guardar cambios</button>
               </div>
             </div>
           )}
+
+          <VentanaCambioCondiciones />
         </div>
       )}
 
@@ -7678,7 +8679,10 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const aTiempo = moraPendiente === 0;
   const excedente = montoNum > 0 ? Math.max(0, montoNum - montoRequerido) : 0;
   const faltante = montoNum > 0 ? Math.max(0, montoRequerido - montoNum) : 0;
-  const necesitaDestino = excedente > 0.009 && aTiempo;
+  // Hay propiedades con una regla fija para el excedente, por acuerdo con el
+  // cliente. Si la propiedad la tiene, no se pregunta: se aplica.
+  const reglaExcedente = prop.destinoExcedenteDefault || "preguntar";
+  const necesitaDestino = excedente > 0.009 && aTiempo && reglaExcedente === "preguntar";
   const puedeEnviar = montoNum > 0 && archivos.length > 0 && fechaPagoReal && (!necesitaDestino || destino);
 
   const enviar = () => {
@@ -7691,7 +8695,11 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       excedente,
       faltante,
       resultado,
-      destinoExcedente: resultado === "excedente" ? (necesitaDestino ? destino : "creditoSiguiente") : null,
+      destinoExcedente: resultado === "excedente"
+        ? (reglaExcedente !== "preguntar"
+            ? reglaExcedente                       // la regla manda, pague a tiempo o tarde
+            : (necesitaDestino ? destino : "creditoSiguiente"))
+        : null,
       fechaPagoReal,
       notaCliente: notaCliente.trim() || null,
     });
@@ -7898,7 +8906,13 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <div>
             <div className="text-sm text-[#EDE7D9] font-mono">Cuota #{f.numero} · {fmtDateLargo(f.fecha)}</div>
             <div className="font-mono text-sm">{fmt(f.pago + (prop.aplicaLuz ? prop.montoLuzMensual : 0))}</div>
-            {prop.aplicaLuz && <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>}
+            {prop.aplicaLuz && (
+              prop.cuotaUnificada
+                // Un solo monto: al cliente no le aporta ver el desglose, y
+                // la inmobiliaria lo tiene en la tabla y en el PDF.
+                ? <div className="text-[10px] text-[#8A93A3]">Pago mensual {fmt(Number(f.pago) + Number(prop.montoLuzMensual || 0))}</div>
+                : <div className="text-[10px] text-[#8A93A3]">Cuota {fmt(f.pago)} + Luz {fmt(prop.montoLuzMensual)}</div>
+            )}
             {f.ultimoRechazo && est !== "pagado" && est !== "revision" && (
               <div className="text-[11px] text-red-400">tu comprobante anterior fue rechazado{f.ultimoRechazo.motivo ? `: ${f.ultimoRechazo.motivo}` : ""}, sube uno nuevo</div>
             )}
@@ -8041,15 +9055,28 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               Es la renta que falta del contrato, no una deuda tuya.
             </div>
           )}
-          {prop.saldoAdicionalSinInteres > 0 && (
+          {(prop.saldoAdicionalSinInteres > 0 || prop.cargoExtraMonto > 0) && (
             <div className="mt-2 space-y-2 border-t border-[#2A3547] pt-2">
               <div>
-                <div className="text-[10px] uppercase text-[#8A93A3]">+ Construcción extra</div>
-                <div className="font-mono text-xl mt-1">{fmt(prop.saldoAdicionalSinInteres)}</div>
+                <div className="text-[10px] uppercase text-[#8A93A3]">
+                  + {prop.cargoExtraMonto > 0
+                      ? (prop.cargoExtraConcepto || "Cargo adicional")
+                      : "Construcción extra"}
+                </div>
+                <div className="font-mono text-xl mt-1">
+                  {fmt(prop.cargoExtraMonto > 0 ? prop.cargoExtraMonto : prop.saldoAdicionalSinInteres)}
+                </div>
+                {prop.cargoExtraVence && (
+                  <div className="text-[10px] text-[#8A93A3] mt-0.5">
+                    Sin intereses. A pagar antes del {fmtDate(prop.cargoExtraVence)}.
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-[10px] uppercase text-[#8A93A3]">Total</div>
-                <div className="font-mono text-xl mt-1 text-[#EDE7D9]">{fmt(saldoActual + prop.saldoAdicionalSinInteres)}</div>
+                <div className="font-mono text-xl mt-1 text-[#EDE7D9]">
+                  {fmt(saldoActual + (prop.cargoExtraMonto || 0) + (prop.saldoAdicionalSinInteres || 0))}
+                </div>
               </div>
             </div>
           )}
@@ -8071,7 +9098,7 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
       {prop.saldoAFavor > 0 && (
         <div className="bg-emerald-950/30 border border-emerald-800 rounded-lg p-4 mb-4">
           <div className="text-sm text-emerald-300">Tienes {fmt(prop.saldoAFavor)} guardado de un depósito anterior</div>
-          <div className="text-xs text-emerald-400/80 mt-0.5">Se va a usar automáticamente para completar tu próximo pago pendiente — no tenés que hacer nada.</div>
+          <div className="text-xs text-emerald-400/80 mt-0.5">Queda a tu favor. La inmobiliaria lo aplica a un próximo pago o lo reserva, según convenga.</div>
         </div>
       )}
 
@@ -8189,6 +9216,19 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
               <Fila2 label="Precio de venta" value={fmt(prop.precio)} />
               <Fila2 label="Enganche" value={ea?.cargo > 0 ? fmt(ea.engancheReal) : fmt(prop.enganche)} tachado={ea?.cargo > 0 ? fmt(ea.engancheOriginal) : null} />
               <Fila2 label="Monto financiado" value={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoReal) : fmt(Math.max(0, prop.precio - prop.enganche))} tachado={ea?.cargo > 0 || ea?.abonoInicial > 0 ? fmt(ea.montoFinanciadoOriginal) : null} />
+              {/* Deuda pactada aparte del crédito: obra extra, mejoras. Va
+                  junto al monto financiado porque es parte de lo que se debe,
+                  aunque no forme parte del préstamo ni genere intereses. */}
+              {prop.cargoExtraMonto > 0 && (
+                <>
+                  <Fila2 label={prop.cargoExtraConcepto || "Cargo adicional"}
+                         value={fmt(prop.cargoExtraMonto)} />
+                  <div className="text-[11px] text-[#C9A227] text-right -mt-1">
+                    Sin intereses ni mora
+                    {prop.cargoExtraVence ? ` · a pagar antes del ${fmtDate(prop.cargoExtraVence)}` : ""}
+                  </div>
+                </>
+              )}
               {ea?.cargo > 0 && (
                 <div className="!mt-3 bg-red-500/10 border border-red-500/40 rounded-md px-3 py-2 text-[12px] font-semibold text-red-400">
                   Nota: {fmt(ea.cargo)} pendientes de recibir no están generando interés ni mora.
@@ -8199,7 +9239,9 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
                   Nota: {fmt(ea.abonoInicial)} de abono a capital al inicio del crédito ya redujeron el monto financiado real.
                 </div>
               )}
-              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`} />
+              <Fila2 label="Tasa de interés anual" value={`${fmtNum(prop.tasaAnual)}%`}
+                     tachado={prop.tasaAnterior != null && Math.abs(prop.tasaAnterior - prop.tasaAnual) > 0.001
+                              ? `${fmtNum(prop.tasaAnterior)}%` : null} />
               {(() => {
                 // El trato original manda en la etiqueta; el efecto de los
                 // abonos va abajo, sin pisar lo que se pacto.

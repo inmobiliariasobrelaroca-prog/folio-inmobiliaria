@@ -38,15 +38,6 @@ const fmt = (n) =>
 
 const fmtNum = (n) => (isFinite(n) ? n : 0).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 
-// usuarios.foto_url puede ser una URL normal (Storage) o, para fotos cargadas
-// a mano, el base64 crudo de la imagen sin el prefijo "data:...;base64,".
-// Esta función arma el src correcto para un <img> en cualquiera de los casos.
-const fotoSrc = (foto_url) => {
-  if (!foto_url) return null;
-  if (foto_url.startsWith("http") || foto_url.startsWith("data:")) return foto_url;
-  return `data:image/jpeg;base64,${foto_url}`;
-};
-
 const fmtDate = (iso) => {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" });
@@ -1396,19 +1387,13 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
   return (
     <div className="min-h-screen bg-[#101826] text-[#EDE7D9]">
       <div className="sticky top-0 z-10 bg-[#0C121C] border-b border-[#2A3547] px-5 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 min-w-0">
-          {fotoSrc(usuario?.foto_url) && (
-            <img src={fotoSrc(usuario?.foto_url)} alt={usuario?.nombre}
-                 className="w-9 h-9 rounded-full object-cover border border-[#2A3547] shrink-0" />
-          )}
-          <div className="min-w-0">
-            <div className="font-serif text-xl truncate">Sobre la Roca</div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] truncate">
-              {usuario?.tipo === "asesor_interno" ? "Asesor interno" : "Asesor externo"} · {usuario?.nombre}
-            </div>
+        <div>
+          <div className="font-serif text-xl">Sobre la Roca</div>
+          <div className="text-[10px] uppercase tracking-widest text-[#8A93A3]">
+            {usuario?.tipo === "asesor_interno" ? "Asesor interno" : "Asesor externo"} · {usuario?.nombre}
           </div>
         </div>
-        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] flex items-center gap-1 shrink-0"><LogOut size={14} /> Salir</button>
+        <button onClick={cerrarSesion} className="text-xs text-[#8A93A3] flex items-center gap-1"><LogOut size={14} /> Salir</button>
       </div>
 
       <div className="max-w-2xl mx-auto p-5 pb-24">
@@ -1465,7 +1450,10 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                   : "hover:border-[#C9A227] disabled:opacity-60"}`}
             >
               <div className="h-36 bg-[#0C121C] flex items-center justify-center overflow-hidden relative">
-                <TarjetaFoto p={p} tieneMapa={!!lotesPorProyecto[p.proyecto_venta_id]} />
+                {p.fotoPortada
+                  ? <img src={p.fotoPortada} alt={p.nombre}
+                         className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
+                  : <Building2 size={28} className="text-[#3a4864]" />}
                 {p.estado === "vendida" && (
                   <div className="absolute inset-0 bg-[#101826]/55 flex items-center justify-center">
                     <span className="text-[11px] tracking-widest uppercase bg-[#C0392B] text-white px-3 py-1 rounded">
@@ -1475,17 +1463,8 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
                 )}
               </div>
               <div className="p-3">
-                {/* Si el proyecto tiene lotes, lo que se vende depende del lote
-                    que elija el cliente: no tiene sentido mostrar el nombre de
-                    una sola "Casa 1" interna, así que se muestra el proyecto. */}
-                <div className="text-sm font-medium">
-                  {lotesPorProyecto[p.proyecto_venta_id]
-                    ? p.proyectos_venta?.nombre
-                    : <>{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</>}
-                </div>
-                {!lotesPorProyecto[p.proyecto_venta_id] && (
-                  <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
-                )}
+                <div className="text-sm font-medium">{p.nombre}{p.codigo && <span className="ml-1.5 text-[10px] text-[#C9A227] font-mono">#{p.codigo}</span>}</div>
+                <div className="text-[11px] text-[#8A93A3] mb-1.5">{p.proyectos_venta?.nombre}</div>
                 {/* Si el proyecto tiene lotes, se anuncia el plano: lo que se
                     vende ahí depende del lote que elija el cliente. */}
                 {lotesPorProyecto[p.proyecto_venta_id] && (
@@ -1515,53 +1494,6 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
         </>)}
       </div>
     </div>
-  );
-}
-
-// Miniatura de la tarjeta en "Tus propiedades". Si el proyecto es de lotes,
-// es un carrusel automático (sin flechas ni botones) que va mostrando las
-// fotos de la casa y, al final, una vista del plano — así el vendedor ve de
-// un vistazo qué hay sin tener que entrar. El plano real, para elegir lote,
-// solo se ve adentro, en el cotizador (pedido de Carlos, 2026-10-03).
-function TarjetaFoto({ p, tieneMapa }) {
-  const fotos = (p.fotos_propiedad_venta || []).slice().sort((a, b) => a.orden - b.orden);
-  const slides = tieneMapa ? [...fotos.map((f) => f.archivo_url), "__mapa__"] : [];
-  const [i, setI] = useState(0);
-
-  useEffect(() => {
-    if (slides.length < 2) return;
-    const t = setInterval(() => setI((v) => (v + 1) % slides.length), 3500);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slides.length, p.id]);
-
-  if (!tieneMapa) {
-    return p.fotoPortada
-      ? <img src={p.fotoPortada} alt={p.nombre}
-             className={`w-full h-full object-cover ${p.estado === "vendida" ? "grayscale" : ""}`} />
-      : <Building2 size={28} className="text-[#3a4864]" />;
-  }
-
-  return (
-    <>
-      <div className={`flex h-full w-full transition-transform duration-700 ease-in-out ${p.estado === "vendida" ? "grayscale" : ""}`}
-           style={{ transform: `translateX(-${i * 100}%)` }}>
-        {slides.map((s, idx) => (
-          <div key={idx} className="w-full h-full shrink-0">
-            {s === "__mapa__"
-              ? <MapaLotes proyectoVentaId={p.proyecto_venta_id} miniatura />
-              : <img src={s} alt={p.proyectos_venta?.nombre || p.nombre} className="w-full h-full object-cover" />}
-          </div>
-        ))}
-      </div>
-      {slides.length > 1 && (
-        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1 z-10">
-          {slides.map((_, idx) => (
-            <span key={idx} className={`w-1 h-1 rounded-full ${idx === i ? "bg-[#C9A227]" : "bg-white/40"}`} />
-          ))}
-        </div>
-      )}
-    </>
   );
 }
 
@@ -2381,10 +2313,9 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // null mientras no se elija: al tocar un lote primero se ve el lote, y
   // recién al cotizar o apartar se decide si es terreno o casa.
   const [modoVenta, setModoVenta] = useState(propiedad.entrarPorPlano ? null : "casa");
-  // Fuera de un proyecto de lotes, el plano queda detrás de un botón
-  // ("Ver el plano y elegir lote"); en uno de lotes se ve directo, así que
-  // acá solo hace falta para ese caso simple.
-  const [verMapa, setVerMapa] = useState(false);
+  // Cuando el proyecto tiene lotes, lo primero que se ve es el plano: qué se
+  // vende depende del lote, no al revés.
+  const [verMapa, setVerMapa] = useState(!!propiedad.entrarPorPlano);
   const esLote = modoVenta === "lote" && lote;
   const soloLoteElegido = lote && !modoVenta;
   // Hay lotes donde la casa vale más: los 3 y 4, sobre la calle principal.
@@ -2673,29 +2604,18 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               Volver a las propiedades
             </div>
             <div className="font-serif text-lg -mt-0.5 truncate">
-              {/* Si el proyecto es de lotes (se entró por el plano), lo que
-                  se vende depende del lote que se elija: se muestra el
-                  nombre del proyecto, no el de una sola "Casa 1" interna. */}
-              {!lote
-                ? (propiedad.entrarPorPlano ? propiedad.proyectos_venta?.nombre : propiedad.nombre)
+              {!lote ? propiedad.nombre
                 : esLote ? `Lote ${lote.numero} · terreno`
                 : modoVenta === "casa" ? `Casa sobre el lote ${lote.numero}`
                 : `Lote ${lote.numero}`}
-              {!lote && !propiedad.entrarPorPlano && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
+              {!lote && propiedad.codigo && <span className="ml-1.5 text-xs text-[#8A93A3] font-mono">#{propiedad.codigo}</span>}
             </div>
-            {asesor?.nombre && (
-              <div className="text-[10px] text-[#8A93A3] truncate">Asesor: {asesor.nombre}</div>
-            )}
           </div>
         </button>
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
           {/* Lo que está guardado para esta casa. Sirve de referencia sin
-              tener que salir a buscarlo al catálogo. En un proyecto de
-              lotes esto depende de si se vende como terreno o con casa, así
-              que no se muestra hasta elegir lote (pedido de Carlos,
-              2026-10-03). */}
-          {(!propiedad.entrarPorPlano || lote) && (
+              tener que salir a buscarlo al catálogo. */}
           <div className="bg-[#0C121C] border border-[#2A3547] rounded-lg p-3">
             <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1.5">
               {lote ? `Lote ${lote.numero} · sector ${lote.sector}`
@@ -2753,35 +2673,8 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               </div>
             )}
           </div>
-          )}
 
-          {propiedad.proyecto_venta_id && (propiedad.entrarPorPlano ? (
-            // La foto ya se vio en la tarjeta de "Tus propiedades" (ahí es
-            // donde cicla sola); acá directo el plano para elegir lote, sin
-            // encabezado de arriba hasta que haya uno elegido (pedido de
-            // Carlos, 2026-10-03).
-            <div className="space-y-2">
-              <MapaLotes
-                proyectoVentaId={propiedad.proyecto_venta_id}
-                asesorId={asesor?.id}
-                puedeApartar={true}
-                verConteos={asesor?.tipo !== "asesor_externo"}
-                precioCasa={Number(propiedad.precio) || 580000}
-                onCotizar={(l, modo) => aplicarProducto(l, modo)}
-                onSeleccionar={soloVerLote}
-              />
-              {lote && (
-                <div className="text-[11px] bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
-                  {esLote
-                    ? <>Vendiendo el <b>lote {lote.numero}</b> como terreno
-                        {lote.area_m2 ? `, ${lote.area_m2} m²` : ""}. Enganche desde {fmt(8000)},
-                        hasta 10 años.</>
-                    : <>Casa sobre el <b>lote {lote.numero}</b>, sector {lote.sector}
-                        {lote.area_m2 ? `, ${lote.area_m2} m² de terreno` : ""}.</>}
-                </div>
-              )}
-            </div>
-          ) : (
+          {propiedad.proyecto_venta_id && (
             <div className="space-y-2">
               <button type="button" onClick={() => setVerMapa(!verMapa)}
                 className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
@@ -2811,7 +2704,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
                 </div>
               )}
             </div>
-          ))}
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Campo label="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} />
@@ -7310,6 +7203,88 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
   const hayPagosRegistrados = prop.tabla.some((f) => f.estado === "pagado");
 
+  // Cambiar precio, enganche, tasa, plazo o fecha rehace la tabla entera. En
+  // una propiedad con pagos eso borra el historial, que fue justo lo que
+  // pasó con LL4. Ahora se puede hacer, pero por una puerta: respaldo
+  // guardado, PDF descargado y motivo escrito.
+  const [tramite, setTramite] = useState(null);
+  const [motivoCambio, setMotivoCambio] = useState("");
+  const [pdfBajado, setPdfBajado] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [errorCambio, setErrorCambio] = useState("");
+  const [condicionesBloqueadas, setCondicionesBloqueadas] = useState(true);
+
+  const VentanaCambioCondiciones = () => {
+    if (!tramite) return null;
+    const listo = pdfBajado && motivoCambio.trim().length >= 10;
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-3"
+           onClick={() => !aplicando && setTramite(null)}>
+        <div onClick={(e) => e.stopPropagation()}
+             className="w-full max-w-md bg-[#101826] border border-[#C0392B] rounded-xl p-4 space-y-3 max-h-[88vh] overflow-auto">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-[#C0392B]">Cuidado</div>
+            <h3 className="font-serif text-lg">Esto rehace la tabla de pagos</h3>
+          </div>
+
+          <div className="text-[11px] text-[#EDE7D9] bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5 space-y-1">
+            {tramite.map((c) => (
+              <div key={c.clave} className="flex justify-between gap-2">
+                <span className="text-[#8A93A3]">{c.rotulo}</span>
+                <span className="font-mono text-right">
+                  {c.esMoneda ? fmt(c.antes) : String(c.antes ?? "—")}
+                  <span className="text-[#C0392B]"> → </span>
+                  {c.esMoneda ? fmt(c.ahora) : String(c.ahora ?? "—")}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-amber-400 leading-relaxed">
+            Al aplicarlo se van a borrar las{" "}
+            <b>{prop.tabla.filter((f) => f.estado === "pagado").length} cuotas pagadas</b>,
+            los abonos a capital y las boletas quedarán sin cuota. Hay que volver a
+            cargar los pagos sobre la tabla nueva.
+          </div>
+
+          <div className="space-y-2">
+            <button type="button"
+              onClick={async () => { await descargarPdfTablaPagos(); setPdfBajado(true); }}
+              className={`w-full text-[11px] py-2.5 rounded-md border ${pdfBajado
+                ? "border-emerald-700 text-emerald-400 bg-emerald-950/30"
+                : "border-[#C9A227] text-[#C9A227]"}`}>
+              {pdfBajado ? "✓ Tabla actual descargada" : "1. Descargar la tabla actual en PDF"}
+            </button>
+            <div className="text-[10px] text-[#8A93A3] -mt-1">
+              El sistema guarda su propio respaldo igual. Este PDF es tu copia, por si
+              hay que reclamarle algo al cliente o reconstruirla a mano.
+            </div>
+
+            <label className="block">
+              <span className="text-[10px] text-[#8A93A3]">2. Por qué se cambia (queda guardado)</span>
+              <textarea value={motivoCambio} onChange={(e) => setMotivoCambio(e.target.value)}
+                rows={2} placeholder="Ej. el precio estaba mal cargado: la escritura dice Q420,000"
+                className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md p-2 text-[11px]" />
+            </label>
+          </div>
+
+          {errorCambio && <div className="text-[11px] text-red-400">{errorCambio}</div>}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setTramite(null)} disabled={aplicando}
+              className="flex-1 text-[11px] bg-[#2A3547] disabled:opacity-40 py-2.5 rounded-md">
+              Mejor no
+            </button>
+            <button onClick={aplicarCambioConRespaldo} disabled={!listo || aplicando}
+              className="flex-1 text-[11px] bg-[#C0392B] text-white font-medium disabled:opacity-30 py-2.5 rounded-md">
+              {aplicando ? "Aplicando..." : "Aplicar el cambio"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const guardarCondiciones = () => {
     actualizar((p) => {
       p.diasGracia = Number(condForm.diasGracia);
@@ -7333,6 +7308,45 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
     });
     setCondicionesDesbloqueadas(false);
     setCondForm(null);
+  };
+
+  // Qué se está intentando tocar de lo que rehace la tabla
+  const cambiosDelicados = () => {
+    if (!condForm) return [];
+    const mira = [
+      ["precio", "Precio de venta", prop.precio, Number(condForm.precio), true],
+      ["enganche", "Enganche", prop.enganche, Number(condForm.enganche), true],
+      ["tasa", "Tasa anual", prop.tasaAnual, Number(condForm.tasaAnual), false],
+      ["plazo", "Plazo en años", prop.plazoAnios, Number(condForm.plazoAnios), false],
+      ["fecha_inicio", "Fecha de inicio", prop.fechaInicio, condForm.fechaInicio, false],
+    ];
+    return mira
+      .filter(([, , antes, ahora]) => String(antes ?? "") !== String(ahora ?? ""))
+      .map(([clave, rotulo, antes, ahora, esMoneda]) => ({ clave, rotulo, antes, ahora, esMoneda }));
+  };
+
+  const aplicarCambioConRespaldo = async () => {
+    setErrorCambio(""); setAplicando(true);
+    try {
+      const { data, error } = await supabase.rpc("cambiar_condiciones_con_respaldo", {
+        p_propiedad: prop.id,
+        p_motivo: motivoCambio.trim(),
+        p_precio: Number(condForm.precio),
+        p_enganche: Number(condForm.enganche),
+        p_tasa: Number(condForm.tasaAnual),
+        p_plazo: Number(condForm.plazoAnios),
+        p_fecha_inicio: condForm.fechaInicio || null,
+      });
+      if (error) throw new Error(error.message);
+      setTramite(null); setMotivoCambio(""); setPdfBajado(false);
+      setCondicionesDesbloqueadas(false); setCondForm(null);
+      alert("Listo. Se guardó un respaldo de " +
+            (data?.cuotas_respaldadas ?? 0) + " cuotas antes del cambio. " +
+            "Ahora hay que volver a cargar los pagos sobre la tabla nueva.");
+      window.location.reload();
+    } catch (e) {
+      setErrorCambio(e.message);
+    } finally { setAplicando(false); }
   };
 
   const notifsAdmin = (prop.notificaciones || []).filter((n) => n.para === "inmobiliaria");
@@ -8061,37 +8075,50 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           ) : (
             <div className="space-y-3">
               {hayPagosRegistrados && (
-                <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5">
-                  Esta propiedad ya tiene cuotas pagadas, así que precio, enganche, tasa y plazo quedan bloqueados para no alterar el historial. Si necesitas corregirlos, contáctanos.
+                <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5 space-y-2">
+                  <div>
+                    Esta propiedad tiene <b>{prop.tabla.filter((f) => f.estado === "pagado").length} cuotas
+                    pagadas</b>. Cambiar precio, enganche, tasa, plazo o fecha <b>rehace la tabla completa</b> y
+                    borra ese historial, incluidos los abonos a capital.
+                  </div>
+                  {esAdmin ? (
+                    <button type="button"
+                      onClick={() => { setCondicionesBloqueadas(false); }}
+                      className="text-[11px] text-[#C9A227] underline">
+                      Necesito corregirlas de todas formas
+                    </button>
+                  ) : (
+                    <div>Si hay que corregirlas, pedíselo al administrador.</div>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
-                <CampoMoneda label="Enganche" disabled={hayPagosRegistrados} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
-                <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
-                <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
+                <CampoMoneda label="Precio de venta" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.precio} onChange={(n) => setCondForm({ ...condForm, precio: n })} />
+                <CampoMoneda label="Enganche" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.enganche} onChange={(n) => setCondForm({ ...condForm, enganche: n })} />
+                <Campo label="Tasa anual %" type="number" min="0" step="0.01" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.tasaAnual} onChange={(e) => setCondForm({ ...condForm, tasaAnual: e.target.value })} />
+                <Campo label="Plazo (años)" type="number" min="0" step="1" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.plazoAnios} onChange={(e) => setCondForm({ ...condForm, plazoAnios: e.target.value })} />
                 <label className="block">
                   <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">{condForm.sistemaPago === "adelantado" ? "Fecha base (cuota #1 = el mismo día)" : "Fecha base (cuota #1 = un mes después)"}</span>
-                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                  <input type="date" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.fechaInicio || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicio: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
                 </label>
                 <label className="block">
                   <span className="text-[11px] uppercase tracking-wide text-[#8A93A3]">Fecha real de inicio (opcional)</span>
-                  <input type="date" disabled={hayPagosRegistrados} value={condForm.fechaInicioIntereses || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicioIntereses: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
+                  <input type="date" disabled={hayPagosRegistrados && condicionesBloqueadas} value={condForm.fechaInicioIntereses || ""} onChange={(e) => setCondForm({ ...condForm, fechaInicioIntereses: e.target.value })} className="w-full mt-1 bg-[#0C121C] border border-[#2A3547] rounded-md px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:border-[#C9A227]" />
                   <span className="text-[10px] text-[#8A93A3]">Si el crédito empezó antes de la fecha base (ej. hubo semanas entre la entrega y la 1ra cuota), poné aquí esa fecha real — la cuota #1 va a cargar el interés real de esos días extra. Dejalo vacío si no aplica.</span>
                 </label>
               </div>
               <div>
                 <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Sistema de amortización</span>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "nivelada" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "nivelada" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Cuota nivelada</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaAmortizacion: "saldos" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaAmortizacion === "saldos" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Sobre saldos</button>
                 </div>
               </div>
               <div>
                 <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">¿Cómo paga este cliente?</span>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "vencido" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes vencido</button>
-                  <button type="button" disabled={hayPagosRegistrados} onClick={() => setCondForm({ ...condForm, sistemaPago: "adelantado" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes adelantado</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaPago: "vencido" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "vencido" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes vencido</button>
+                  <button type="button" disabled={hayPagosRegistrados && condicionesBloqueadas} onClick={() => setCondForm({ ...condForm, sistemaPago: "adelantado" })} className={`text-left p-2.5 rounded-md border text-xs disabled:opacity-40 ${condForm.sistemaPago === "adelantado" ? "border-[#C9A227] bg-[#C9A227]/10" : "border-[#2A3547] bg-[#0C121C]"}`}>Mes adelantado</button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -8116,10 +8143,23 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
               </div>
               <div className="flex gap-2">
                 <button onClick={() => { setCondicionesDesbloqueadas(false); setCondForm(null); }} className="flex-1 text-xs bg-[#2A3547] py-2 rounded-md">Cancelar</button>
-                <button onClick={guardarCondiciones} className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">Guardar cambios</button>
+                <button onClick={() => {
+                    const delicados = cambiosDelicados();
+                    // Si hay pagos y se tocó algo que rehace la tabla, no se
+                    // guarda de una: se abre el trámite con respaldo.
+                    if (hayPagosRegistrados && delicados.length > 0) {
+                      setTramite(delicados); setErrorCambio("");
+                      setMotivoCambio(""); setPdfBajado(false);
+                      return;
+                    }
+                    guardarCondiciones();
+                  }}
+                  className="flex-1 text-xs bg-[#C9A227] text-[#101826] font-medium py-2 rounded-md">Guardar cambios</button>
               </div>
             </div>
           )}
+
+          <VentanaCambioCondiciones />
         </div>
       )}
 

@@ -20,13 +20,12 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard, Home, Lock, Printer, Layers } from "lucide-react";
+import { Calculator, Zap, Upload, FileText, X, Plus, Clock, AlertTriangle, RefreshCw, Shield, Users, Store, CreditCard, Home, Lock, Printer } from "lucide-react";
 import { fmt } from "./tesoreria/comun";
 import MapaFlujo from "./tesoreria/Mapa";
 import { ResumenTesoreria, MovimientosTesoreria } from "./tesoreria/Resumen";
 import RegistrarMovimiento from "./tesoreria/Registrar";
 import SubirFacturaTesoreria from "./tesoreria/Facturas";
-import { SubirFacturasLote } from "./tesoreria/FacturasLote";
 import DocumentarGastos from "./tesoreria/Documentos";
 import Compromisos from "./tesoreria/Compromisos";
 import Permisos from "./tesoreria/Permisos";
@@ -39,7 +38,7 @@ import Reportes from "./tesoreria/Reportes";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v98";
+const VERSION = "v97";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -123,7 +122,6 @@ function PanelTesoreria({ perfil, onCerrar }) {
     ["registrar", "Registrar", Plus, puede("finanzas_registrar")],
     ["resumen", "Resumen", Calculator, true],
     ["facturas", "Subir factura", Upload, puede("finanzas_documentar")],
-    ["facturas_lote", "Subir varias", Layers, puede("finanzas_documentar")],
     ["pendientes", "Documentar", AlertTriangle, puede("finanzas_documentar")],
     ["compromisos", "Por pagar", Clock, true],
     ["porliberar", "Por liberar", Lock, puede("finanzas_registrar")],
@@ -276,8 +274,6 @@ function PanelTesoreria({ perfil, onCerrar }) {
           <ResumenTesoreria libre={libre} delegado={delegado} apartado={apartado} bolsas={bolsas} centros={centros} cuotas={cuotas} />
         ) : tab === "facturas" ? (
           <SubirFacturaTesoreria bolsas={bolsas} centros={centros} onRegistrada={cargar} />
-        ) : tab === "facturas_lote" ? (
-          <SubirFacturasLote bolsas={bolsas} centros={centros} onRegistrada={cargar} />
         ) : tab === "pendientes" ? (
           <DocumentarGastos onCambio={cargar} />
         ) : tab === "compromisos" ? (

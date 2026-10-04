@@ -453,6 +453,9 @@ function propiedadDesdeFila(row) {
     diasGraciaLuz: row.dias_gracia_luz,
     moraDiariaLuz: Number(row.mora_diaria_luz),
     aplicaLuz: !!row.aplica_luz,
+    // Qué hacer con lo que el cliente deposita de más. Por acuerdo, algunas
+    // propiedades lo mandan siempre a la luz en vez de preguntar.
+    destinoExcedenteDefault: row.destino_excedente_default || "preguntar",
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     // "vencido" (default): el pago del mes cae un mes después de la fecha base — así pagan casi
@@ -508,6 +511,7 @@ function propiedadHaciaFila(p) {
     dias_gracia_luz: p.diasGraciaLuz,
     mora_diaria_luz: p.moraDiariaLuz,
     aplica_luz: !!p.aplicaLuz,
+    destino_excedente_default: p.destinoExcedenteDefault || "preguntar",
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     sistema_pago: p.sistemaPago || "vencido",
@@ -1929,21 +1933,37 @@ async function construirPdfTablaPagos(d) {
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.2);
     doc.rect(x, yy, colAncho - 2, filaAlto - 2);
-    doc.setFont(undefined, "normal"); doc.setFontSize(6.3); doc.setTextColor(130, 130, 130);
-    doc.text(String(label).toUpperCase(), x + 2, yy + 3.8);
+    // El texto se achica hasta caber dentro de la casilla. Antes se dibujaba
+    // al tamaño fijo y los valores largos, como "Q 15,312.50 -> Q 3,694.44" o
+    // la línea de la luz, se salían del cuadro y quedaban ilegibles.
+    const anchoCasilla = colAncho - 6;
+    const escribirAjustado = (texto, px, py, tamanoBase, negrita) => {
+      let t = tamanoBase;
+      doc.setFont(undefined, negrita ? "bold" : "normal");
+      doc.setFontSize(t);
+      while (doc.getTextWidth(String(texto)) > anchoCasilla && t > 4.6) {
+        t -= 0.25;
+        doc.setFontSize(t);
+      }
+      doc.text(String(texto), px, py);
+      return t;
+    };
+
+    doc.setTextColor(130, 130, 130);
+    escribirAjustado(String(label).toUpperCase(), x + 2, yy + 3.8, 6.3, false);
     if (valorTachado) {
       const textoViejo = String(valorTachado);
-      doc.setFont(undefined, "normal"); doc.setFontSize(6.8); doc.setTextColor(190, 60, 60);
-      doc.text(textoViejo, x + 2, yy + 7.4);
+      doc.setTextColor(190, 60, 60);
+      escribirAjustado(textoViejo, x + 2, yy + 7.4, 6.8, false);
       const anchoViejo = doc.getTextWidth(textoViejo);
       doc.setDrawColor(190, 60, 60);
       doc.setLineWidth(0.3);
       doc.line(x + 2, yy + 6.4, x + 2 + anchoViejo, yy + 6.4);
-      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-      doc.text(String(valor), x + 2, yy + 12);
+      doc.setTextColor(20, 20, 20);
+      escribirAjustado(String(valor), x + 2, yy + 12, 8, true);
     } else {
-      doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(20, 20, 20);
-      doc.text(String(valor), x + 2, yy + (algunaTachada ? 11 : 8.5));
+      doc.setTextColor(20, 20, 20);
+      escribirAjustado(String(valor), x + 2, yy + (algunaTachada ? 11 : 8.5), 8, true);
     }
   });
   y += Math.ceil(d.tarjetas.length / 3) * filaAlto + 4;
@@ -7145,9 +7165,13 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
   const guardarCorreccion = (idx) => {
     if (!previewCorregido) return;
-    const necesitaDestino = previewCorregido.resultado === "excedente" && previewCorregido.aTiempo;
+    const regla = prop.destinoExcedenteDefault || "preguntar";
+    const necesitaDestino = previewCorregido.resultado === "excedente"
+      && previewCorregido.aTiempo && regla === "preguntar";
     if (necesitaDestino && !destinoCorregido) return;
-    const destinoFinal = previewCorregido.resultado === "excedente" ? (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente") : null;
+    const destinoFinal = previewCorregido.resultado !== "excedente" ? null
+      : regla !== "preguntar" ? regla
+      : (previewCorregido.aTiempo ? destinoCorregido : "creditoSiguiente");
     actualizar((p) => {
       const fila = p.tabla[idx];
       const c = fila.comprobante;
@@ -8074,6 +8098,32 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="bg-[#0C121C] border border-[#2A3547] rounded-md p-2.5">
+                <div className="text-[10px] uppercase tracking-wide text-[#8A93A3] mb-1">
+                  Si el cliente deposita de más
+                </div>
+                <select
+                  value={prop.destinoExcedenteDefault || "preguntar"}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    actualizar((p) => { p.destinoExcedenteDefault = v; return p; });
+                    supabase.from("propiedades")
+                      .update({ destino_excedente_default: v })
+                      .eq("id", prop.id)
+                      .then(({ error }) => error && alert("No se pudo guardar: " + error.message));
+                  }}
+                  className="w-full bg-[#161F2E] border border-[#2A3547] rounded p-2 text-[11px]">
+                  <option value="preguntar">Preguntar cada vez (lo normal)</option>
+                  <option value="luz">Siempre a la luz</option>
+                  <option value="abono">Siempre a capital</option>
+                  <option value="creditoSiguiente">Siempre guardarlo para el mes siguiente</option>
+                </select>
+                <div className="text-[10px] text-[#6b7280] mt-1 leading-relaxed">
+                  Con una regla fija ya no se pregunta al aprobar: se aplica sola, pague
+                  a tiempo o tarde. Se puede cambiar cuando cambie el acuerdo.
+                </div>
+              </div>
+
               {hayPagosRegistrados && (
                 <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800 rounded-md p-2.5 space-y-2">
                   <div>
@@ -8629,7 +8679,10 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const aTiempo = moraPendiente === 0;
   const excedente = montoNum > 0 ? Math.max(0, montoNum - montoRequerido) : 0;
   const faltante = montoNum > 0 ? Math.max(0, montoRequerido - montoNum) : 0;
-  const necesitaDestino = excedente > 0.009 && aTiempo;
+  // Hay propiedades con una regla fija para el excedente, por acuerdo con el
+  // cliente. Si la propiedad la tiene, no se pregunta: se aplica.
+  const reglaExcedente = prop.destinoExcedenteDefault || "preguntar";
+  const necesitaDestino = excedente > 0.009 && aTiempo && reglaExcedente === "preguntar";
   const puedeEnviar = montoNum > 0 && archivos.length > 0 && fechaPagoReal && (!necesitaDestino || destino);
 
   const enviar = () => {
@@ -8642,7 +8695,11 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
       excedente,
       faltante,
       resultado,
-      destinoExcedente: resultado === "excedente" ? (necesitaDestino ? destino : "creditoSiguiente") : null,
+      destinoExcedente: resultado === "excedente"
+        ? (reglaExcedente !== "preguntar"
+            ? reglaExcedente                       // la regla manda, pague a tiempo o tarde
+            : (necesitaDestino ? destino : "creditoSiguiente"))
+        : null,
       fechaPagoReal,
       notaCliente: notaCliente.trim() || null,
     });

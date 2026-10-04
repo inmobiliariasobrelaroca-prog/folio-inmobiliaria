@@ -242,6 +242,27 @@ export function MapaFlujo({ bolsas, libre, delegado, apartado }) {
             <div className="font-mono text-sm shrink-0" style={{ color: colorSel }}>{fmt(sel.monto)}</div>
           </div>
 
+          {sel.tipo === "bolsa" && (() => {
+            const totalIngreso = origenes.filter((o) => o.bolsa_id === sel.id).reduce((a, o) => a + Number(o.total), 0);
+            const totalGastado = gastos.filter((g) => g.bolsa_id === sel.id).reduce((a, g) => a + Number(g.total), 0);
+            return (
+              <div className="grid grid-cols-3 gap-1.5 mt-3">
+                <div className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2 py-1.5 text-center">
+                  <div className="text-[9px] uppercase tracking-wide text-[#8A93A3]">Ingresó</div>
+                  <div className="font-mono text-xs mt-0.5" style={{ color: C_ORIGEN }}>{fmt(totalIngreso)}</div>
+                </div>
+                <div className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2 py-1.5 text-center">
+                  <div className="text-[9px] uppercase tracking-wide text-[#8A93A3]">Se gastó</div>
+                  <div className="font-mono text-xs mt-0.5" style={{ color: C_GASTO }}>{fmt(totalGastado)}</div>
+                </div>
+                <div className="bg-[#0C121C] border border-[#2A3547] rounded-md px-2 py-1.5 text-center">
+                  <div className="text-[9px] uppercase tracking-wide text-[#8A93A3]">Queda</div>
+                  <div className="font-mono text-xs mt-0.5" style={{ color: C_BOLSA }}>{fmt(sel.monto)}</div>
+                </div>
+              </div>
+            );
+          })()}
+
           {sel.tipo === "bolsa" && (
             <div className="mt-3 space-y-3">
               {origenes.filter((o) => o.bolsa_id === sel.id).length > 0 && (

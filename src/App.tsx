@@ -456,6 +456,9 @@ function propiedadDesdeFila(row) {
     // Qué hacer con lo que el cliente deposita de más. Por acuerdo, algunas
     // propiedades lo mandan siempre a la luz en vez de preguntar.
     destinoExcedenteDefault: row.destino_excedente_default || "preguntar",
+    // Mientras la luz no se confirme contra las boletas, se muestra en
+    // revisión y no como deuda firme.
+    luzEnRevision: !!row.luz_en_revision,
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     // "vencido" (default): el pago del mes cae un mes después de la fecha base — así pagan casi
@@ -512,6 +515,7 @@ function propiedadHaciaFila(p) {
     mora_diaria_luz: p.moraDiariaLuz,
     aplica_luz: !!p.aplicaLuz,
     destino_excedente_default: p.destinoExcedenteDefault || "preguntar",
+    luz_en_revision: !!p.luzEnRevision,
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     sistema_pago: p.sistemaPago || "vencido",
@@ -560,6 +564,7 @@ function cuotaHaciaFila(f, propiedadId) {
     ultimo_rechazo_fecha: f.ultimoRechazo?.fecha || null,
     ultimo_rechazo_motivo: f.ultimoRechazo?.motivo || null,
     luz_pagado: !!f.luzPagado,
+    luz_abonado: Number(f.luzAbonado || 0),
     luz_fecha_pago: f.luzFechaPago || null,
     luz_mora_pagada: f.luzMoraPagada || 0,
   };
@@ -588,6 +593,9 @@ function cuotaDesdeFila(row) {
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
     ultimoRechazo: row.ultimo_rechazo_fecha ? { fecha: row.ultimo_rechazo_fecha, motivo: row.ultimo_rechazo_motivo } : null,
     luzPagado: !!row.luz_pagado,
+    // Cuánto se lleva aplicado a la luz de ese mes; la luz puede quedar
+    // cubierta a medias cuando el excedente no alcanza.
+    luzAbonado: Number(row.luz_abonado || 0),
     luzFechaPago: row.luz_fecha_pago,
     luzMoraPagada: Number(row.luz_mora_pagada || 0),
     comprobante: null, // se completa con lo que haya guardado localmente (ver abajo)
@@ -1784,7 +1792,22 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
          ["Total adeudado", fmt(saldoActual + Number(prop.cargoExtraMonto))]]
       : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
-    ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
+    ...(prop.aplicaLuz
+      ? [["Luz mensual",
+          Number(prop.moraDiariaLuz || 0) > 0
+            ? `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`
+            : `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia`]]
+      : []),
+    // Cuando la luz está en revisión se muestra la suma de todos los meses
+    // transcurridos, sin descontar nada: es lo que hay que verificar contra
+    // las boletas, no una deuda confirmada.
+    ...(prop.aplicaLuz && prop.luzEnRevision
+      ? (() => {
+          const meses = prop.tabla.filter((f) => f.fecha <= hoy).length;
+          return [["Luz en revisión",
+                   `${fmt(meses * Number(prop.montoLuzMensual || 0))} · ${meses} meses`]];
+        })()
+      : []),
   ];
 
   const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
@@ -6166,7 +6189,10 @@ function explicarPago(f, prop, hoy) {
     });
   }
 
-  pasos.push({
+  // Si la propiedad no cobra mora, explicar una mora de cero solo confunde:
+  // el cliente lee "mora" y se asusta por algo que no existe.
+  const cobraMora = Number(prop.moraDiaria || 0) > 0;
+  if (cobraMora || diasTarde === 0) pasos.push({
     titulo: diasTarde > 0 ? `Mora calculada: ${fmt(moraGenerada)}` : "Sin mora — se pagó a tiempo",
     detalle: diasTarde > 0
       ? `${diasTarde} día${diasTarde > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiaria)} de mora diaria de esta propiedad = ${fmt(moraGenerada)}.${f.estado !== "pagado" ? " Como esta cuota sigue sin cerrarse por completo, la mora total pendiente sigue subiendo cada día — mirá el total de abajo, calculado hasta hoy." : ""}`
@@ -6184,24 +6210,45 @@ function explicarPago(f, prop, hoy) {
 
   const pagadoCuota = f.montoPagadoAcumulado || 0;
   const faltanteCuota = Math.max(0, f.pago - pagadoCuota);
-  pasos.push({
-    titulo: faltanteCuota > 0.009 ? `Se aplicaron ${fmt(pagadoCuota)} a la cuota (capital + interés)` : `Cuota cubierta completa: ${fmt(pagadoCuota)}`,
-    detalle: faltanteCuota > 0.009 ? `La cuota vale ${fmt(f.pago)} de capital+interés — no alcanzó para cubrirla completa. Falta ${fmt(faltanteCuota)}.` : `La cuota completa (capital + interés) de ${fmt(f.pago)} ya está cubierta.`,
-  });
+  // Sin depósito no hay nada que explicar: decir "se aplicaron Q0.00 y no
+  // alcanzó" da a entender que pagó algo y le quedó corto.
+  if (pagadoCuota > 0.009) {
+    pasos.push({
+      titulo: faltanteCuota > 0.009 ? `Se aplicaron ${fmt(pagadoCuota)} a la cuota (capital + interés)` : `Cuota cubierta completa: ${fmt(pagadoCuota)}`,
+      detalle: faltanteCuota > 0.009 ? `La cuota vale ${fmt(f.pago)} de capital+interés — no alcanzó para cubrirla completa. Falta ${fmt(faltanteCuota)}.` : `La cuota completa (capital + interés) de ${fmt(f.pago)} ya está cubierta.`,
+    });
+  } else {
+    pasos.push({
+      titulo: `Cuota pendiente: ${fmt(f.pago)}`,
+      detalle: "Todavía no se ha recibido ningún pago de esta cuota.",
+    });
+  }
 
   if (prop.aplicaLuz) {
     const limiteLuz = fechaLimiteGracia(f.fecha, prop.diasGraciaLuz);
     const diasTardeLuz = Math.max(0, daysBetween(fref, limiteLuz));
     const moraLuzGenerada = diasTardeLuz * prop.moraDiariaLuz;
-    if (!f.luzPagado && diasTardeLuz > 0) {
+    if (!f.luzPagado && diasTardeLuz > 0 && Number(prop.moraDiariaLuz || 0) > 0) {
       pasos.push({
         titulo: `Mora de luz calculada: ${fmt(moraLuzGenerada)}`,
         detalle: `La luz tiene su propia mora, aparte de la del crédito: ${diasTardeLuz} día${diasTardeLuz > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiariaLuz)} de mora diaria de luz = ${fmt(moraLuzGenerada)}.`,
       });
     }
+    const abonadoLuz = Number(f.luzAbonado || 0);
+    const faltaLuz = Math.max(0, Number(prop.montoLuzMensual || 0) - abonadoLuz);
     pasos.push({
-      titulo: f.luzPagado ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}` : `Luz de este mes pendiente: ${fmt(prop.montoLuzMensual)}`,
-      detalle: f.luzPagado ? "La luz de esta cuota ya quedó pagada." : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
+      titulo: f.luzPagado
+        ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}`
+        : prop.luzEnRevision
+          ? `Luz de este mes EN REVISIÓN: falta ${fmt(faltaLuz)}`
+          : `Luz de este mes pendiente: ${fmt(faltaLuz)}`,
+      detalle: f.luzPagado
+        ? "La luz de esta cuota ya quedó pagada."
+        : prop.luzEnRevision
+          ? (abonadoLuz > 0
+              ? `Se le aplicaron ${fmt(abonadoLuz)} de lo que depositó de más. El saldo está en revisión con la inmobiliaria.`
+              : "El saldo de luz está en revisión con la inmobiliaria.")
+          : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
     });
   }
 
@@ -6236,7 +6283,11 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
             <div key={i} className="flex gap-3">
               <div className="shrink-0 w-6 h-6 rounded-full bg-[#C9A227] text-[#101826] text-xs font-medium flex items-center justify-center">{i + 1}</div>
               <div>
-                <div className="text-sm font-medium">{p.titulo}</div>
+                {/* Lo que está en revisión se marca en rojo: no es una deuda
+                    confirmada y el cliente tiene que verlo distinto. */}
+                <div className={`text-sm font-medium ${/EN REVISIÓN/.test(p.titulo) ? "text-[#C0392B]" : ""}`}>
+                  {p.titulo}
+                </div>
                 <div className="text-xs text-[#8A93A3] mt-0.5">{p.detalle}</div>
               </div>
             </div>

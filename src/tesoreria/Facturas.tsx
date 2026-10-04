@@ -94,11 +94,21 @@ export function SubirFacturaTesoreria({ bolsas, centros, onRegistrada }) {
       }).eq("id", factura.id);
       if (errF) throw new Error(errF.message);
 
-      const { error: errR } = await supabase.rpc("registrar_egreso_factura", {
+      const { data: movId, error: errR } = await supabase.rpc("registrar_egreso_factura", {
         p_factura_id: factura.id,
         p_bolsa_id: bolsaId,
       });
       if (errR) throw new Error(errR.message);
+
+      // El RPC solo deja la columna vieja facturas.movimiento_id. Lo que
+      // usa el resto de la app para mostrar la imagen del comprobante es
+      // la tabla factura_movimientos — sin esto, el gasto queda registrado
+      // pero el documento parece no existir.
+      if (movId) {
+        await supabase.from("factura_movimientos").insert({
+          factura_id: factura.id, movimiento_id: movId, monto_aplicado: Number(factura.monto_total),
+        });
+      }
 
       setPaso("listo");
       onRegistrada && onRegistrada();

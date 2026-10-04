@@ -9,11 +9,11 @@
 // transferencia sin formato de factura), se completa a mano.
 // ============================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, Sparkles,
-  X, Loader2, RotateCcw, Layers,
+  X, Loader2, RotateCcw, Layers, Inbox,
 } from "lucide-react";
 import { fmt, Campo, CampoMoneda, llamarFuncionSesion } from "./comun";
 
@@ -37,6 +37,25 @@ const nuevoItem = (archivo) => ({
   error: "",
 });
 
+// Para una factura que ya estaba subida y leída de una carga anterior
+// (por ejemplo, quedó sin registrar porque el presupuesto de la obra lo
+// bloqueó) y que ahora se puede retomar sin volver a subir la foto.
+const itemDesdeFactura = (f, urlFirmada) => ({
+  id: idLocal(),
+  archivo: null,
+  preview: urlFirmada || null,
+  estado: "leida",
+  facturaId: f.id,
+  proveedor: f.proveedores?.nombre || "",
+  serie: f.serie || "",
+  numero: f.numero || "",
+  fecha: f.fecha || "",
+  monto: Number(f.monto_total || 0),
+  revisar: !Number(f.monto_total),
+  incluir: true,
+  error: "",
+});
+
 export function SubirFacturasLote({ bolsas, centros, onRegistrada }) {
   const [centroId, setCentroId] = useState("");
   const [bolsaId, setBolsaId] = useState("");
@@ -44,8 +63,45 @@ export function SubirFacturasLote({ bolsas, centros, onRegistrada }) {
   const [leyendoTodas, setLeyendoTodas] = useState(false);
   const [registrandoTodas, setRegistrandoTodas] = useState(false);
   const [error, setError] = useState("");
+  const [sueltas, setSueltas] = useState([]);
+  const [buscandoSueltas, setBuscandoSueltas] = useState(false);
 
   const puedeElegirArchivos = centroId && bolsaId;
+
+  // Facturas de esta obra que ya se subieron y se leyeron antes (en esta
+  // pantalla o en "Subir factura"), pero que se quedaron sin registrar
+  // —por ejemplo, porque el presupuesto de la obra las bloqueó—. Se
+  // pueden retomar sin volver a subir la foto.
+  useEffect(() => {
+    if (!centroId) { setSueltas([]); return; }
+    let cancelado = false;
+    (async () => {
+      setBuscandoSueltas(true);
+      const { data } = await supabase
+        .from("facturas")
+        .select("id, serie, numero, fecha, monto_total, storage_path, proveedores(nombre)")
+        .eq("centro_costo_id", centroId)
+        .eq("estado_lectura", "confirmada")
+        .is("movimiento_id", null)
+        .order("created_at", { ascending: true });
+      if (cancelado) return;
+      const filas = data || [];
+      let urls = {};
+      const rutas = filas.map((f) => f.storage_path).filter(Boolean);
+      if (rutas.length) {
+        const { data: firmados } = await supabase.storage.from("facturas").createSignedUrls(rutas, 3600);
+        (firmados || []).forEach((u) => { if (u.signedUrl && u.path) urls[u.path] = u.signedUrl; });
+      }
+      setSueltas(filas.map((f) => ({ f, url: urls[f.storage_path] })));
+      setBuscandoSueltas(false);
+    })();
+    return () => { cancelado = true; };
+  }, [centroId]);
+
+  const agregarSueltas = () => {
+    setItems((prev) => [...prev, ...sueltas.map(({ f, url }) => itemDesdeFactura(f, url))]);
+    setSueltas([]);
+  };
 
   const agregarArchivos = (lista) => {
     const archivos = Array.from(lista || []);
@@ -134,11 +190,21 @@ export function SubirFacturasLote({ bolsas, centros, onRegistrada }) {
       }).eq("id", it.facturaId);
       if (errF) throw new Error(errF.message);
 
-      const { error: errR } = await supabase.rpc("registrar_egreso_factura", {
+      const { data: movId, error: errR } = await supabase.rpc("registrar_egreso_factura", {
         p_factura_id: it.facturaId,
         p_bolsa_id: bolsaId,
       });
       if (errR) throw new Error(errR.message);
+
+      // El RPC solo deja la columna vieja facturas.movimiento_id. Lo que
+      // usa el resto de la app para mostrar la imagen del comprobante es
+      // la tabla factura_movimientos — sin esto, el gasto queda registrado
+      // pero el documento parece no existir.
+      if (movId) {
+        await supabase.from("factura_movimientos").insert({
+          factura_id: it.facturaId, movimiento_id: movId, monto_aplicado: Number(it.monto),
+        });
+      }
 
       actualizarItem(it.id, { estado: "registrada", error: "" });
     } catch (e) {
@@ -200,6 +266,23 @@ export function SubirFacturasLote({ bolsas, centros, onRegistrada }) {
           </p>
         )}
       </div>
+
+      {centroId && (buscandoSueltas || sueltas.length > 0) && (
+        <div className="bg-[#161F2E] border border-[#C9A227]/40 rounded-lg p-3 flex items-center justify-between gap-3">
+          <div className="text-xs text-[#8A93A3] flex items-center gap-2">
+            <Inbox size={15} className="text-[#C9A227] shrink-0" />
+            {buscandoSueltas ? "Buscando facturas de esta obra ya leídas..." :
+              `Hay ${sueltas.length} factura${sueltas.length === 1 ? "" : "s"} de esta obra ya subida${sueltas.length === 1 ? "" : "s"} y leída${sueltas.length === 1 ? "" : "s"}, esperando para registrarse.`}
+          </div>
+          {!buscandoSueltas && (
+            <button onClick={agregarSueltas} disabled={!bolsaId}
+              title={!bolsaId ? "Elegí primero de qué bolsa sale el dinero" : ""}
+              className="shrink-0 text-xs bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium px-3 py-1.5 rounded-md">
+              Agregarlas al lote
+            </button>
+          )}
+        </div>
+      )}
 
       <div>
         <label
@@ -285,7 +368,9 @@ function ItemFactura({ it, onQuitar, onCambiar, onReintentarLectura, onReintenta
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs truncate">{it.archivo.name}</div>
+            <div className="text-xs truncate">
+              {it.archivo ? it.archivo.name : (it.proveedor || it.numero || "Factura ya subida antes")}
+            </div>
             {!bloqueado && !procesando && (
               <button onClick={onQuitar} className="text-[#6b7280] hover:text-red-400 shrink-0"><X size={14} /></button>
             )}

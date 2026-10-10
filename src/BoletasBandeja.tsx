@@ -80,7 +80,9 @@ export default function Boletas({ onCambio }) {
     <div className="space-y-3">
       <p className="text-xs text-[#8A93A3] leading-relaxed">
         Subí todas las boletas juntas. El lector saca monto, fecha y concepto,
-        y propone a qué cuota corresponde cada una. Vos confirmás.
+        y propone a qué cuota corresponde cada una. Vos confirmás. También
+        propone cuotas ya pagadas, para adjuntarles la boleta que les falta
+        sin que eso mueva el saldo ni la tesorería.
       </p>
 
       <label className="flex items-center justify-center gap-2 text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-3 rounded-md cursor-pointer">
@@ -118,7 +120,10 @@ function Boleta({ b, onCambio }) {
   const buscar = async () => {
     setAbierto(true);
     if (calces) return;
-    const { data } = await supabase.rpc("sugerir_cuota", {
+    // sugerir_cuota2 también ofrece cuotas ya pagadas. Hacen falta al
+    // reconstruir un historial viejo: la cuota quedó pagada pero sin boleta,
+    // y la versión anterior del buscador ni siquiera la veía.
+    const { data } = await supabase.rpc("sugerir_cuota2", {
       p_monto: b.monto, p_fecha: b.fecha,
     });
     setCalces(data || []);
@@ -211,16 +216,16 @@ function Boleta({ b, onCambio }) {
           {calces === null && <div className="text-[10px] text-[#8A93A3]">Buscando...</div>}
           {calces?.length === 0 && (
             <div className="text-[10px] text-[#8A93A3]">
-              Ninguna cuota pendiente calza con ese monto y esa fecha. Puede ser
-              un pago de mora, un abono a capital, o de una casa que no está
-              cargada.
+              Ninguna cuota calza con ese monto y esa fecha. Puede ser un pago
+              de mora, un abono a capital, o de una casa que no está cargada.
             </div>
           )}
           {calces?.map((c) => {
             const exacto = Math.abs(Number(c.diferencia)) < 1;
+            const yaPagada = !!c.ya_pagada;
             return (
               <div key={c.cuota_id}
-                className={`bg-[#0C121C] border rounded-md p-2 ${exacto ? "border-emerald-800" : "border-[#2A3547]"}`}>
+                className={`bg-[#0C121C] border rounded-md p-2 ${yaPagada ? "border-[#3a4864]" : exacto ? "border-emerald-800" : "border-[#2A3547]"}`}>
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] truncate">
@@ -241,9 +246,16 @@ function Boleta({ b, onCambio }) {
                     </div>
                   </div>
                 </div>
+                {yaPagada && (
+                  <div className="text-[10px] text-amber-400/90 mt-1.5 flex items-start gap-1">
+                    <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+                    Esta cuota ya está pagada. La boleta se guarda como respaldo:
+                    no cambia el saldo ni entra a tesorería.
+                  </div>
+                )}
                 <button onClick={() => asignar(c.cuota_id)} disabled={guardando}
                   className="w-full flex items-center justify-center gap-1 text-[10px] bg-[#2A3547] hover:bg-[#3a4864] disabled:opacity-40 py-1.5 rounded mt-1.5">
-                  <Check size={11} /> {guardando ? "Aplicando..." : "Es esta"}
+                  <Check size={11} /> {guardando ? "Aplicando..." : yaPagada ? "Adjuntarla a esta" : "Es esta"}
                 </button>
               </div>
             );

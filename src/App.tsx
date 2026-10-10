@@ -26,7 +26,7 @@ import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
   FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
-  Tag, Inbox, Home
+  Tag, Inbox, Home, StickyNote, Eye, EyeOff
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -6874,8 +6874,345 @@ function NotaInmobiliaria({ comprobante, actualizar }) {
   );
 }
 
+// ---------- Anotaciones de la propiedad ----------
+// Acuerdos que no caben en ningún campo del sistema pero que nadie debe
+// ignorar al tocar la cuenta: compensaciones, préstamos cruzados, arreglos
+// especiales. Las notas fijadas salen arriba de todo, antes de la tabla de
+// pagos, para que se lean antes de mover un solo quetzal.
+// Nacieron por la Casa 5 de Las Luces: una deuda de Q50,000 que la
+// inmobiliaria tenía con el cliente y que pagaba sus cuotas por compensación,
+// y de la que no quedaba rastro en ninguna parte del sistema.
+
+const TIPOS_NOTA = [
+  ["acuerdo", "Acuerdo", "border-amber-700/70 bg-amber-950/25 text-amber-100"],
+  ["deuda", "Deuda", "border-purple-700/70 bg-purple-950/25 text-purple-100"],
+  ["advertencia", "Advertencia", "border-red-800/70 bg-red-950/25 text-red-100"],
+  ["observacion", "Observación", "border-[#2A3547] bg-[#131A24] text-[#BFC7D4]"],
+];
+const tipoNota = (t) => TIPOS_NOTA.find((x) => x[0] === t) || TIPOS_NOTA[3];
+const estiloNota = (t) => tipoNota(t)[2];
+const rotuloNota = (t) => tipoNota(t)[1];
+
+async function leerNotas(propiedadId, soloVisibles = false) {
+  let q = supabase
+    .from("propiedad_notas")
+    .select("*")
+    .eq("propiedad_id", propiedadId);
+  if (soloVisibles) q = q.eq("visible_cliente", true).eq("vigente", true);
+  const { data, error } = await q
+    .order("fijada", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("No se pudieron leer las anotaciones:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Cuerpo de una nota con "ver completo" cuando es larga, para que un acuerdo
+// de veinte líneas no empuje la tabla de pagos fuera de la pantalla.
+function CuerpoNota({ texto }) {
+  const [abierto, setAbierto] = useState(false);
+  const largo = (texto || "").length > 260;
+  const visible = largo && !abierto ? texto.slice(0, 260).trimEnd() + "…" : texto;
+  return (
+    <>
+      <div className="text-xs mt-1.5 whitespace-pre-wrap leading-relaxed opacity-90">{visible}</div>
+      {largo && (
+        <button
+          onClick={() => setAbierto((v) => !v)}
+          className="text-[11px] underline underline-offset-2 mt-1.5 opacity-75 hover:opacity-100"
+        >
+          {abierto ? "Ver menos" : "Ver completo"}
+        </button>
+      )}
+    </>
+  );
+}
+
+// Banner de notas fijadas. Va arriba de las pestañas en la ficha de la casa.
+function NotasFijadas({ propiedadId, recarga }) {
+  const [notas, setNotas] = useState([]);
+  useEffect(() => {
+    if (propiedadId) leerNotas(propiedadId).then(setNotas);
+  }, [propiedadId, recarga]);
+  const fijadas = notas.filter((n) => n.fijada && n.vigente);
+  if (!fijadas.length) return null;
+  return (
+    <div className="space-y-2 mb-4">
+      {fijadas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${estiloNota(n.tipo)}`}>
+          <div className="flex items-start gap-2">
+            <StickyNote size={14} className="mt-0.5 shrink-0 opacity-70" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</span>
+                {n.visible_cliente && (
+                  <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Eye size={10} /> el cliente la ve</span>
+                )}
+              </div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Pestaña completa: crear, editar, archivar y borrar anotaciones.
+function PanelNotas({ propiedadId, puede, onCambio }) {
+  const [notas, setNotas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [form, setForm] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const recargar = async () => {
+    setCargando(true);
+    setNotas(await leerNotas(propiedadId));
+    setCargando(false);
+  };
+  useEffect(() => { if (propiedadId) recargar(); }, [propiedadId]);
+
+  const VACIO = {
+    tipo: "acuerdo", titulo: "", contenido: "",
+    visible_cliente: false, contenido_cliente: "",
+    fijada: true, vigente: true,
+  };
+
+  const guardar = async () => {
+    if (!form.titulo.trim() || !form.contenido.trim()) {
+      setMsg("Hace falta el título y el contenido.");
+      return;
+    }
+    setGuardando(true);
+    setMsg("");
+    const fila = {
+      propiedad_id: propiedadId,
+      tipo: form.tipo,
+      titulo: form.titulo.trim(),
+      contenido: form.contenido.trim(),
+      visible_cliente: !!form.visible_cliente,
+      contenido_cliente:
+        form.visible_cliente && (form.contenido_cliente || "").trim()
+          ? form.contenido_cliente.trim()
+          : null,
+      fijada: !!form.fijada,
+      vigente: !!form.vigente,
+    };
+    const { error } = form.id
+      ? await supabase.from("propiedad_notas").update(fila).eq("id", form.id)
+      : await supabase.from("propiedad_notas").insert(fila);
+    setGuardando(false);
+    if (error) { setMsg(error.message); return; }
+    setForm(null);
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  const borrar = async (nota) => {
+    if (!window.confirm(`¿Borrar la anotación "${nota.titulo}"? No se puede deshacer.`)) return;
+    const { error } = await supabase.from("propiedad_notas").delete().eq("id", nota.id);
+    if (error) { setMsg(error.message); return; }
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  const alternar = async (nota, campo) => {
+    const { error } = await supabase
+      .from("propiedad_notas")
+      .update({ [campo]: !nota[campo] })
+      .eq("id", nota.id);
+    if (error) { setMsg(error.message); return; }
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-[#8A93A3]">
+        Acuerdos, deudas y advertencias de esta casa. Lo que se marque como <strong className="text-[#BFC7D4]">fijado</strong> aparece arriba de la tabla de pagos, para que se lea antes de tocar la cuenta.
+      </p>
+
+      {msg && <div className="text-xs text-red-300 bg-red-950/30 border border-red-900 rounded-md px-3 py-2">{msg}</div>}
+
+      {puede && !form && (
+        <button
+          onClick={() => { setForm({ ...VACIO }); setMsg(""); }}
+          className="inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md"
+        >
+          <Plus size={13} /> Nueva anotación
+        </button>
+      )}
+
+      {form && (
+        <div className="rounded-lg border border-[#2A3547] bg-[#131A24] p-4 space-y-3">
+          <div className="text-xs uppercase tracking-widest text-[#8A93A3]">
+            {form.id ? "Editar anotación" : "Nueva anotación"}
+          </div>
+
+          <div>
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Tipo</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {TIPOS_NOTA.map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setForm((f) => ({ ...f, tipo: id }))}
+                  className={`text-xs px-2.5 py-1 rounded-full border ${form.tipo === id ? estiloNota(id) : "border-[#2A3547] text-[#8A93A3]"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Campo
+            label="Título"
+            value={form.titulo}
+            onChange={(e) => setForm((f) => ({ ...f, titulo: e.target.value }))}
+            placeholder="Compensación por deuda de Q50,000"
+          />
+
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">
+              Contenido (lo que ve la inmobiliaria)
+            </label>
+            <textarea
+              value={form.contenido}
+              onChange={(e) => setForm((f) => ({ ...f, contenido: e.target.value }))}
+              rows={8}
+              className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm font-mono leading-relaxed"
+              placeholder={"Qué se acordó, con quién, desde cuándo, montos y cómo se cierra."}
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.visible_cliente}
+              onChange={(e) => setForm((f) => ({ ...f, visible_cliente: e.target.checked }))}
+              className="accent-[#C9A227]"
+            />
+            El cliente ve esta anotación
+          </label>
+
+          {form.visible_cliente && (
+            <div>
+              <label className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">
+                Versión para el cliente <span className="normal-case tracking-normal opacity-70">— si se deja vacía, el cliente ve el contenido de arriba</span>
+              </label>
+              <textarea
+                value={form.contenido_cliente || ""}
+                onChange={(e) => setForm((f) => ({ ...f, contenido_cliente: e.target.value }))}
+                rows={6}
+                className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm leading-relaxed"
+                placeholder="Lo mismo, pero redactado para el cliente y sin detalle interno."
+              />
+            </div>
+          )}
+
+          <div className="flex gap-4 flex-wrap">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.fijada} onChange={(e) => setForm((f) => ({ ...f, fijada: e.target.checked }))} className="accent-[#C9A227]" />
+              Fijar arriba de la tabla de pagos
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.vigente} onChange={(e) => setForm((f) => ({ ...f, vigente: e.target.checked }))} className="accent-[#C9A227]" />
+              Vigente
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={guardar} disabled={guardando} className="text-xs bg-[#C9A227] text-[#0F1620] font-medium px-3.5 py-1.5 rounded-md disabled:opacity-40">
+              {guardando ? "Guardando..." : "Guardar"}
+            </button>
+            <button onClick={() => { setForm(null); setMsg(""); }} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3.5 py-1.5 rounded-md">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cargando && <div className="text-sm text-[#8A93A3]">Cargando anotaciones...</div>}
+
+      {!cargando && !notas.length && !form && (
+        <div className="text-sm text-[#8A93A3] border border-dashed border-[#2A3547] rounded-lg px-4 py-6 text-center">
+          Esta casa no tiene anotaciones todavía.
+        </div>
+      )}
+
+      {notas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${n.vigente ? estiloNota(n.tipo) : "border-[#2A3547] bg-[#0F1620] text-[#6C7687]"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</span>
+                {n.fijada && <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Star size={10} /> fijada</span>}
+                {n.visible_cliente
+                  ? <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Eye size={10} /> el cliente la ve</span>
+                  : <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><EyeOff size={10} /> solo inmobiliaria</span>}
+                {!n.vigente && <span className="text-[10px] uppercase tracking-widest opacity-60">archivada</span>}
+              </div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido} />
+              {n.contenido_cliente && (
+                <details className="mt-2">
+                  <summary className="text-[11px] opacity-70 cursor-pointer">Ver la versión que lee el cliente</summary>
+                  <div className="text-xs mt-1.5 whitespace-pre-wrap leading-relaxed opacity-80 border-l-2 border-current/30 pl-3">{n.contenido_cliente}</div>
+                </details>
+              )}
+              <div className="text-[10px] opacity-50 mt-2">
+                {n.creado_por_nombre ? `${n.creado_por_nombre} · ` : ""}{(n.created_at || "").slice(0, 10)}
+              </div>
+            </div>
+            {puede && (
+              <div className="flex flex-col gap-1 shrink-0">
+                <button onClick={() => { setForm({ ...n, contenido_cliente: n.contenido_cliente || "" }); setMsg(""); }} title="Editar" className="p-1.5 rounded hover:bg-white/10"><Pencil size={13} /></button>
+                <button onClick={() => alternar(n, "fijada")} title={n.fijada ? "Dejar de fijar" : "Fijar arriba"} className="p-1.5 rounded hover:bg-white/10"><Star size={13} className={n.fijada ? "fill-current" : ""} /></button>
+                <button onClick={() => alternar(n, "vigente")} title={n.vigente ? "Archivar" : "Reactivar"} className="p-1.5 rounded hover:bg-white/10">{n.vigente ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                <button onClick={() => borrar(n)} title="Borrar" className="p-1.5 rounded hover:bg-white/10 text-red-300"><Trash2 size={13} /></button>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Lo que ve el cliente: solo las notas marcadas visibles y vigentes, con la
+// versión redactada para él cuando existe.
+function NotasCliente({ propiedadId }) {
+  const [notas, setNotas] = useState([]);
+  useEffect(() => {
+    if (propiedadId) leerNotas(propiedadId, true).then(setNotas);
+  }, [propiedadId]);
+  if (!notas.length) return null;
+  return (
+    <div className="space-y-2 mb-5">
+      {notas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${estiloNota(n.tipo)}`}>
+          <div className="flex items-start gap-2">
+            <StickyNote size={14} className="mt-0.5 shrink-0 opacity-70" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido_cliente || n.contenido} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, esAdmin }) {
   const [tab, setTab] = useState("tabla");
+  // Sube cada vez que se guarda una anotación, para que el banner de arriba
+  // vuelva a leer de la base sin tener que salir y entrar a la casa.
+  const [recargaNotas, setRecargaNotas] = useState(0);
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
   const [galeriaAmpliada, setGaleriaAmpliada] = useState(null); // { imagenes: [...], indice: 0 }
@@ -7850,6 +8187,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior. Al aprobar su próximo pago vas a decidir si se aplica o se sigue guardando.</div>
       )}
 
+      <NotasFijadas propiedadId={prop.id} recarga={recargaNotas} />
+
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
         {[
           ["tabla", "Tabla de pagos", Clock],
@@ -7857,6 +8196,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           ["contrato", `Contrato${(prop.documentos || []).length ? ` (${prop.documentos.length})` : ""}`, FileText],
           ["fotos", `Fotos${(prop.fotos || []).length ? ` (${prop.fotos.length})` : ""}`, ImageIcon],
           ["condiciones", "Condiciones", Settings2],
+          ["notas", "Anotaciones", StickyNote],
           ["avisos", `Avisos${notifsAdmin.filter((n) => !n.leida).length ? ` (${notifsAdmin.filter((n) => !n.leida).length})` : ""}`, Bell],
         ].map(([id, label, Icon]) => (
           <button key={id} onClick={() => { setTab(id); if (id === "avisos") actualizar((p) => { p.notificaciones = (p.notificaciones || []).map((n) => (n.para === "inmobiliaria" ? { ...n, leida: true } : n)); return p; }); }}
@@ -8279,6 +8619,14 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
           <VentanaCambioCondiciones />
         </div>
+      )}
+
+      {tab === "notas" && (
+        <PanelNotas
+          propiedadId={prop.id}
+          puede={puede}
+          onCambio={() => setRecargaNotas((v) => v + 1)}
+        />
       )}
 
       {tab === "avisos" && (
@@ -9055,6 +9403,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <Printer size={13} /> {generandoPdf ? "Generando..." : "Descargar tabla de pagos (PDF)"}
         </button>
       </div>
+
+      <NotasCliente propiedadId={prop.id} />
 
       <div className="flex gap-1 border-b border-[#2A3547] mb-4">
         <button onClick={() => setTab("tabla")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "tabla" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Clock size={14} /> Tabla de pagos</button>

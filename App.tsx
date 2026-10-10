@@ -26,7 +26,7 @@ import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
   FileText, Download, Trash2, Printer, LogOut, Pencil, Users, Shield, KeyRound, Globe, Image as ImageIcon, Star, Contact, RefreshCw,
-  Tag, Inbox, Home
+  Tag, Inbox, Home, StickyNote, Eye, EyeOff
 } from "lucide-react";
 
 // ---------- Utilidades financieras ----------
@@ -456,6 +456,9 @@ function propiedadDesdeFila(row) {
     // Qué hacer con lo que el cliente deposita de más. Por acuerdo, algunas
     // propiedades lo mandan siempre a la luz en vez de preguntar.
     destinoExcedenteDefault: row.destino_excedente_default || "preguntar",
+    // Mientras la luz no se confirme contra las boletas, se muestra en
+    // revisión y no como deuda firme.
+    luzEnRevision: !!row.luz_en_revision,
     montoLuzMensual: Number(row.monto_luz_mensual || 0),
     sistemaAmortizacion: row.sistema_amortizacion || "nivelada",
     // "vencido" (default): el pago del mes cae un mes después de la fecha base — así pagan casi
@@ -512,6 +515,7 @@ function propiedadHaciaFila(p) {
     mora_diaria_luz: p.moraDiariaLuz,
     aplica_luz: !!p.aplicaLuz,
     destino_excedente_default: p.destinoExcedenteDefault || "preguntar",
+    luz_en_revision: !!p.luzEnRevision,
     monto_luz_mensual: p.montoLuzMensual || 0,
     sistema_amortizacion: p.sistemaAmortizacion || "nivelada",
     sistema_pago: p.sistemaPago || "vencido",
@@ -560,6 +564,7 @@ function cuotaHaciaFila(f, propiedadId) {
     ultimo_rechazo_fecha: f.ultimoRechazo?.fecha || null,
     ultimo_rechazo_motivo: f.ultimoRechazo?.motivo || null,
     luz_pagado: !!f.luzPagado,
+    luz_abonado: Number(f.luzAbonado || 0),
     luz_fecha_pago: f.luzFechaPago || null,
     luz_mora_pagada: f.luzMoraPagada || 0,
   };
@@ -588,6 +593,9 @@ function cuotaDesdeFila(row) {
     montoPagadoAcumulado: Number(row.monto_pagado_acumulado || 0),
     ultimoRechazo: row.ultimo_rechazo_fecha ? { fecha: row.ultimo_rechazo_fecha, motivo: row.ultimo_rechazo_motivo } : null,
     luzPagado: !!row.luz_pagado,
+    // Cuánto se lleva aplicado a la luz de ese mes; la luz puede quedar
+    // cubierta a medias cuando el excedente no alcanza.
+    luzAbonado: Number(row.luz_abonado || 0),
     luzFechaPago: row.luz_fecha_pago,
     luzMoraPagada: Number(row.luz_mora_pagada || 0),
     comprobante: null, // se completa con lo que haya guardado localmente (ver abajo)
@@ -1784,7 +1792,22 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
          ["Total adeudado", fmt(saldoActual + Number(prop.cargoExtraMonto))]]
       : []),
     ["Mora crédito", `${prop.diasGracia} días gracia · ${fmt(prop.moraDiaria)}/día`],
-    ...(prop.aplicaLuz ? [["Luz mensual", `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`]] : []),
+    ...(prop.aplicaLuz
+      ? [["Luz mensual",
+          Number(prop.moraDiariaLuz || 0) > 0
+            ? `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia · ${fmt(prop.moraDiariaLuz)}/día mora`
+            : `${fmt(prop.montoLuzMensual)} · ${prop.diasGraciaLuz} días gracia`]]
+      : []),
+    // Cuando la luz está en revisión se muestra la suma de todos los meses
+    // transcurridos, sin descontar nada: es lo que hay que verificar contra
+    // las boletas, no una deuda confirmada.
+    ...(prop.aplicaLuz && prop.luzEnRevision
+      ? (() => {
+          const meses = prop.tabla.filter((f) => f.fecha <= hoy).length;
+          return [["Luz en revisión",
+                   `${fmt(meses * Number(prop.montoLuzMensual || 0))} · ${meses} meses`]];
+        })()
+      : []),
   ];
 
   const estadoTxt = { pendiente: "Pendiente", gracia: "En gracia", vencido: "Vencido", parcial: "Parcial", revision: "En revisión", pagado: "Pagado" };
@@ -1822,7 +1845,11 @@ function datosPdfTablaPagos(prop, proyecto, hoy, desde = null) {
       mora > 0 ? fmt(mora) : (Number(f.moraCondonada || 0) > 0 ? `${fmt(f.moraCondonada)}~` : "-"),
     ];
     if (prop.aplicaLuz) {
-      fila.push(f.luzPagado ? "Pagada" : `${fmt(prop.montoLuzMensual)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
+      const luzFalta = Math.max(0, Number(prop.montoLuzMensual || 0) - Number(f.luzAbonado || 0));
+      fila.push(
+        f.luzPagado ? "Pagada"
+        : prop.luzEnRevision ? `${fmt(luzFalta)} en revisión`
+        : `${fmt(luzFalta)}${luzMora > 0 ? ` +${fmt(luzMora)}` : ""}`);
     }
     fila.push(fmt(f.saldoFinal));
     fila.push(estadoTxt[est] || est);
@@ -3414,71 +3441,96 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
+// Los accesos de la barra de arriba estaban todos en una sola fila. En la
+// computadora caben, pero en un teléfono llegaron a ser diez botones de
+// 16px apretados contra el logo: imposibles de atinar con el dedo.
+//
+// Ahora el logo y lo que se usa siempre (modo, actualizar, salir) quedan en
+// la primera fila, y los accesos a los módulos bajan a una repisa propia
+// que se reparte de borde a borde. En pantalla ancha vuelve a ser una sola
+// fila, porque la repisa deja de ocupar el ancho completo.
+//
+// 44px es el mínimo con el que un dedo acierta sin pelear. En el teléfono
+// cada botón mide eso; en la computadora se encogen a lo de antes.
+const ICONO_BARRA =
+  "text-[#8A93A3] hover:text-[#EDE7D9] p-2 min-[400px]:p-2.5 sm:p-1.5 rounded-lg " +
+  "hover:bg-[#1A2333] sm:hover:bg-transparent active:bg-[#1A2333] transition";
+
 function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onPropietario, onClientes, onActualizar, actualizando }) {
+  const esInmo = modo === "inmobiliaria";
   return (
-    <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
-      <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <div className="flex items-center gap-2">
-          <img src={logoEmblema} alt="Sobre la Roca" className="w-9 h-9 object-contain" />
-          <div>
-            <div className="font-serif text-lg leading-tight tracking-tight">Sobre la Roca</div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">Control Financiero</div>
+    <div className="border-b border-[#2A3547] bg-[#0C121C] px-4 sm:px-5 py-2.5 sm:py-4 sticky top-0 z-10">
+      <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-y-1.5">
+
+        {/* Identidad */}
+        <div className="flex items-center gap-2 order-1 min-w-0">
+          <img src={logoEmblema} alt="Sobre la Roca" className="w-8 h-8 sm:w-9 sm:h-9 object-contain shrink-0" />
+          <div className="min-w-0">
+            <div className="font-serif text-base sm:text-lg leading-tight tracking-tight truncate">Sobre la Roca</div>
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight truncate">Control Financiero</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {onActualizar && (
-            <button onClick={onActualizar} disabled={actualizando} title="Actualizar desde la base de datos" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 disabled:opacity-40">
-              <RefreshCw size={16} className={actualizando ? "animate-spin" : ""} />
+
+        {/* Repisa de módulos. w-full la manda a su propia línea en el
+            teléfono; sm:w-auto la devuelve a la fila del logo. */}
+        <div className="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-end gap-0 sm:gap-1 pt-1.5 sm:pt-0 border-t border-[#2A3547]/70 sm:border-0">
+          {puedeVerEquipo && esInmo && (
+            <button onClick={onEquipo} title="Equipo y roles" aria-label="Equipo y roles" className={ICONO_BARRA}>
+              <Users size={18} />
             </button>
           )}
-          {setModo && (
-            <div className="flex rounded-full bg-[#1A2333] p-1 text-xs">
-              <button onClick={() => setModo("inmobiliaria")} className={`px-3 py-1.5 rounded-full transition ${modo === "inmobiliaria" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
-              <button onClick={() => setModo("cliente")} className={`px-3 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
-            </div>
-          )}
-          {puedeVerEquipo && modo === "inmobiliaria" && (
-            <button onClick={onEquipo} title="Equipo y roles" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Users size={16} />
-            </button>
-          )}
-          {puedeVerCatalogo && modo === "inmobiliaria" && (
-            <button onClick={onCatalogo} title="Catálogo de ventas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Globe size={16} />
+          {puedeVerCatalogo && esInmo && (
+            <button onClick={onCatalogo} title="Catálogo de ventas" aria-label="Catálogo de ventas" className={ICONO_BARRA}>
+              <Globe size={18} />
             </button>
           )}
           {/* Acceso directo al cotizador, sin pasar por el catálogo */}
-          {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
-            <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Tag size={16} />
+          {puedeVerCatalogo && esInmo && onCotizar && (
+            <button onClick={onCotizar} title="Cotizador" aria-label="Cotizador" className={ICONO_BARRA}>
+              <Tag size={18} />
             </button>
           )}
           {/* Bandeja de boletas: para cuando llegan muchas juntas y de casas
               distintas. La de una casa puntual se sube desde su cuota. */}
-          {modo === "inmobiliaria" && onBoletas && (
-            <button onClick={onBoletas} title="Boletas por asignar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Inbox size={16} />
+          {esInmo && onBoletas && (
+            <button onClick={onBoletas} title="Boletas por asignar" aria-label="Boletas por asignar" className={ICONO_BARRA}>
+              <Inbox size={18} />
+            </button>
+          )}
+          {onPropietario && (
+            <button onClick={onPropietario} title="Casas administradas" aria-label="Casas administradas" className={ICONO_BARRA}>
+              <Home size={18} />
             </button>
           )}
           {/* Ofertas por debajo del precio de lista, esperando respuesta */}
-          {onPropietario && (
-            <button onClick={onPropietario} title="Casas administradas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Home size={16} />
+          {puedeVerCatalogo && esInmo && onOfertas && (
+            <button onClick={onOfertas} title="Ofertas por autorizar" aria-label="Ofertas por autorizar" className={ICONO_BARRA}>
+              <Sparkles size={18} />
             </button>
           )}
-          {puedeVerCatalogo && modo === "inmobiliaria" && onOfertas && (
-            <button onClick={onOfertas} title="Ofertas por autorizar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Sparkles size={16} />
+          <BotonTesoreria perfil={perfil} />
+          {onClientes && esInmo && (
+            <button onClick={onClientes} title="Clientes" aria-label="Clientes" className={ICONO_BARRA}>
+              <Contact size={18} />
             </button>
           )}
-<BotonTesoreria perfil={perfil} />
-{onClientes && modo === "inmobiliaria" && (
-  <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-    <Contact size={16} />
-  </button>
-)}
-          <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-            <LogOut size={16} />
+          {onActualizar && (
+            <button onClick={onActualizar} disabled={actualizando} title="Actualizar desde la base de datos" aria-label="Actualizar" className={`${ICONO_BARRA} disabled:opacity-40`}>
+              <RefreshCw size={18} className={actualizando ? "animate-spin" : ""} />
+            </button>
+          )}
+        </div>
+
+        {/* Modo y salida: siempre arriba, junto al nombre */}
+        <div className="flex items-center gap-1 sm:gap-2 order-2 sm:order-3 shrink-0">
+          {setModo && (
+            <div className="flex rounded-full bg-[#1A2333] p-0.5 sm:p-1 text-[10px] sm:text-xs">
+              <button onClick={() => setModo("inmobiliaria")} className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition ${esInmo ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
+              <button onClick={() => setModo("cliente")} className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
+            </div>
+          )}
+          <button onClick={cerrarSesion} title="Cerrar sesión" aria-label="Cerrar sesión" className={ICONO_BARRA}>
+            <LogOut size={18} />
           </button>
         </div>
       </div>
@@ -6166,7 +6218,10 @@ function explicarPago(f, prop, hoy) {
     });
   }
 
-  pasos.push({
+  // Si la propiedad no cobra mora, explicar una mora de cero solo confunde:
+  // el cliente lee "mora" y se asusta por algo que no existe.
+  const cobraMora = Number(prop.moraDiaria || 0) > 0;
+  if (cobraMora || diasTarde === 0) pasos.push({
     titulo: diasTarde > 0 ? `Mora calculada: ${fmt(moraGenerada)}` : "Sin mora — se pagó a tiempo",
     detalle: diasTarde > 0
       ? `${diasTarde} día${diasTarde > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiaria)} de mora diaria de esta propiedad = ${fmt(moraGenerada)}.${f.estado !== "pagado" ? " Como esta cuota sigue sin cerrarse por completo, la mora total pendiente sigue subiendo cada día — mirá el total de abajo, calculado hasta hoy." : ""}`
@@ -6184,24 +6239,45 @@ function explicarPago(f, prop, hoy) {
 
   const pagadoCuota = f.montoPagadoAcumulado || 0;
   const faltanteCuota = Math.max(0, f.pago - pagadoCuota);
-  pasos.push({
-    titulo: faltanteCuota > 0.009 ? `Se aplicaron ${fmt(pagadoCuota)} a la cuota (capital + interés)` : `Cuota cubierta completa: ${fmt(pagadoCuota)}`,
-    detalle: faltanteCuota > 0.009 ? `La cuota vale ${fmt(f.pago)} de capital+interés — no alcanzó para cubrirla completa. Falta ${fmt(faltanteCuota)}.` : `La cuota completa (capital + interés) de ${fmt(f.pago)} ya está cubierta.`,
-  });
+  // Sin depósito no hay nada que explicar: decir "se aplicaron Q0.00 y no
+  // alcanzó" da a entender que pagó algo y le quedó corto.
+  if (pagadoCuota > 0.009) {
+    pasos.push({
+      titulo: faltanteCuota > 0.009 ? `Se aplicaron ${fmt(pagadoCuota)} a la cuota (capital + interés)` : `Cuota cubierta completa: ${fmt(pagadoCuota)}`,
+      detalle: faltanteCuota > 0.009 ? `La cuota vale ${fmt(f.pago)} de capital+interés — no alcanzó para cubrirla completa. Falta ${fmt(faltanteCuota)}.` : `La cuota completa (capital + interés) de ${fmt(f.pago)} ya está cubierta.`,
+    });
+  } else {
+    pasos.push({
+      titulo: `Cuota pendiente: ${fmt(f.pago)}`,
+      detalle: "Todavía no se ha recibido ningún pago de esta cuota.",
+    });
+  }
 
   if (prop.aplicaLuz) {
     const limiteLuz = fechaLimiteGracia(f.fecha, prop.diasGraciaLuz);
     const diasTardeLuz = Math.max(0, daysBetween(fref, limiteLuz));
     const moraLuzGenerada = diasTardeLuz * prop.moraDiariaLuz;
-    if (!f.luzPagado && diasTardeLuz > 0) {
+    if (!f.luzPagado && diasTardeLuz > 0 && Number(prop.moraDiariaLuz || 0) > 0) {
       pasos.push({
         titulo: `Mora de luz calculada: ${fmt(moraLuzGenerada)}`,
         detalle: `La luz tiene su propia mora, aparte de la del crédito: ${diasTardeLuz} día${diasTardeLuz > 1 ? "s" : ""} de atraso × ${fmt(prop.moraDiariaLuz)} de mora diaria de luz = ${fmt(moraLuzGenerada)}.`,
       });
     }
+    const abonadoLuz = Number(f.luzAbonado || 0);
+    const faltaLuz = Math.max(0, Number(prop.montoLuzMensual || 0) - abonadoLuz);
     pasos.push({
-      titulo: f.luzPagado ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}` : `Luz de este mes pendiente: ${fmt(prop.montoLuzMensual)}`,
-      detalle: f.luzPagado ? "La luz de esta cuota ya quedó pagada." : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
+      titulo: f.luzPagado
+        ? `Luz de este mes cubierta: ${fmt(prop.montoLuzMensual)}`
+        : prop.luzEnRevision
+          ? `Luz de este mes EN REVISIÓN: falta ${fmt(faltaLuz)}`
+          : `Luz de este mes pendiente: ${fmt(faltaLuz)}`,
+      detalle: f.luzPagado
+        ? "La luz de esta cuota ya quedó pagada."
+        : prop.luzEnRevision
+          ? (abonadoLuz > 0
+              ? `Se le aplicaron ${fmt(abonadoLuz)} de lo que depositó de más. El saldo está en revisión con la inmobiliaria.`
+              : "El saldo de luz está en revisión con la inmobiliaria.")
+          : "No alcanzó lo depositado para cubrir también la luz de este mes — se queda pendiente hasta el próximo pago.",
     });
   }
 
@@ -6236,7 +6312,11 @@ function ModalExplicacionPago({ f, prop, hoy, onCerrar }) {
             <div key={i} className="flex gap-3">
               <div className="shrink-0 w-6 h-6 rounded-full bg-[#C9A227] text-[#101826] text-xs font-medium flex items-center justify-center">{i + 1}</div>
               <div>
-                <div className="text-sm font-medium">{p.titulo}</div>
+                {/* Lo que está en revisión se marca en rojo: no es una deuda
+                    confirmada y el cliente tiene que verlo distinto. */}
+                <div className={`text-sm font-medium ${/EN REVISIÓN/.test(p.titulo) ? "text-[#C0392B]" : ""}`}>
+                  {p.titulo}
+                </div>
                 <div className="text-xs text-[#8A93A3] mt-0.5">{p.detalle}</div>
               </div>
             </div>
@@ -6289,9 +6369,22 @@ function DetalleFila({ f, mora, prop, hoy }) {
       )}
       {prop?.aplicaLuz && (
         <div className="col-span-2 sm:col-span-4 flex items-center justify-between bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-1.5 mt-1">
-          <span className="flex items-center gap-1.5 text-[#8A93A3]"><Zap size={12} className="text-[#C9A227]" /> Luz de este mes: <span className="font-mono text-[#EDE7D9]">{fmt(prop.montoLuzMensual)}</span></span>
+          <span className="flex items-center gap-1.5 text-[#8A93A3]">
+            <Zap size={12} className="text-[#C9A227]" /> Luz de este mes:{" "}
+            <span className="font-mono text-[#EDE7D9]">
+              {fmt(Math.max(0, Number(prop.montoLuzMensual || 0) - Number(f.luzAbonado || 0)))}
+            </span>
+            {Number(f.luzAbonado || 0) > 0 && (
+              <span className="text-[10px] text-[#6b7280]">
+                (ya se aplicaron {fmt(f.luzAbonado)})
+              </span>
+            )}
+          </span>
           {f.luzPagado ? (
             <span className="text-emerald-400">Pagada</span>
+          ) : prop.luzEnRevision ? (
+            // Mientras no se validen las boletas no es una deuda confirmada
+            <span className="text-red-400 font-medium">EN REVISIÓN</span>
           ) : (
             <span className="text-red-400">{luzMora > 0 ? `Pendiente + ${fmt(luzMora)} mora` : "Pendiente"}</span>
           )}
@@ -6806,8 +6899,345 @@ function NotaInmobiliaria({ comprobante, actualizar }) {
   );
 }
 
+// ---------- Anotaciones de la propiedad ----------
+// Acuerdos que no caben en ningún campo del sistema pero que nadie debe
+// ignorar al tocar la cuenta: compensaciones, préstamos cruzados, arreglos
+// especiales. Las notas fijadas salen arriba de todo, antes de la tabla de
+// pagos, para que se lean antes de mover un solo quetzal.
+// Nacieron por la Casa 5 de Las Luces: una deuda de Q50,000 que la
+// inmobiliaria tenía con el cliente y que pagaba sus cuotas por compensación,
+// y de la que no quedaba rastro en ninguna parte del sistema.
+
+const TIPOS_NOTA = [
+  ["acuerdo", "Acuerdo", "border-amber-700/70 bg-amber-950/25 text-amber-100"],
+  ["deuda", "Deuda", "border-purple-700/70 bg-purple-950/25 text-purple-100"],
+  ["advertencia", "Advertencia", "border-red-800/70 bg-red-950/25 text-red-100"],
+  ["observacion", "Observación", "border-[#2A3547] bg-[#131A24] text-[#BFC7D4]"],
+];
+const tipoNota = (t) => TIPOS_NOTA.find((x) => x[0] === t) || TIPOS_NOTA[3];
+const estiloNota = (t) => tipoNota(t)[2];
+const rotuloNota = (t) => tipoNota(t)[1];
+
+async function leerNotas(propiedadId, soloVisibles = false) {
+  let q = supabase
+    .from("propiedad_notas")
+    .select("*")
+    .eq("propiedad_id", propiedadId);
+  if (soloVisibles) q = q.eq("visible_cliente", true).eq("vigente", true);
+  const { data, error } = await q
+    .order("fijada", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("No se pudieron leer las anotaciones:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Cuerpo de una nota con "ver completo" cuando es larga, para que un acuerdo
+// de veinte líneas no empuje la tabla de pagos fuera de la pantalla.
+function CuerpoNota({ texto }) {
+  const [abierto, setAbierto] = useState(false);
+  const largo = (texto || "").length > 260;
+  const visible = largo && !abierto ? texto.slice(0, 260).trimEnd() + "…" : texto;
+  return (
+    <>
+      <div className="text-xs mt-1.5 whitespace-pre-wrap leading-relaxed opacity-90">{visible}</div>
+      {largo && (
+        <button
+          onClick={() => setAbierto((v) => !v)}
+          className="text-[11px] underline underline-offset-2 mt-1.5 opacity-75 hover:opacity-100"
+        >
+          {abierto ? "Ver menos" : "Ver completo"}
+        </button>
+      )}
+    </>
+  );
+}
+
+// Banner de notas fijadas. Va arriba de las pestañas en la ficha de la casa.
+function NotasFijadas({ propiedadId, recarga }) {
+  const [notas, setNotas] = useState([]);
+  useEffect(() => {
+    if (propiedadId) leerNotas(propiedadId).then(setNotas);
+  }, [propiedadId, recarga]);
+  const fijadas = notas.filter((n) => n.fijada && n.vigente);
+  if (!fijadas.length) return null;
+  return (
+    <div className="space-y-2 mb-4">
+      {fijadas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${estiloNota(n.tipo)}`}>
+          <div className="flex items-start gap-2">
+            <StickyNote size={14} className="mt-0.5 shrink-0 opacity-70" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</span>
+                {n.visible_cliente && (
+                  <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Eye size={10} /> el cliente la ve</span>
+                )}
+              </div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Pestaña completa: crear, editar, archivar y borrar anotaciones.
+function PanelNotas({ propiedadId, puede, onCambio }) {
+  const [notas, setNotas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [form, setForm] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const recargar = async () => {
+    setCargando(true);
+    setNotas(await leerNotas(propiedadId));
+    setCargando(false);
+  };
+  useEffect(() => { if (propiedadId) recargar(); }, [propiedadId]);
+
+  const VACIO = {
+    tipo: "acuerdo", titulo: "", contenido: "",
+    visible_cliente: false, contenido_cliente: "",
+    fijada: true, vigente: true,
+  };
+
+  const guardar = async () => {
+    if (!form.titulo.trim() || !form.contenido.trim()) {
+      setMsg("Hace falta el título y el contenido.");
+      return;
+    }
+    setGuardando(true);
+    setMsg("");
+    const fila = {
+      propiedad_id: propiedadId,
+      tipo: form.tipo,
+      titulo: form.titulo.trim(),
+      contenido: form.contenido.trim(),
+      visible_cliente: !!form.visible_cliente,
+      contenido_cliente:
+        form.visible_cliente && (form.contenido_cliente || "").trim()
+          ? form.contenido_cliente.trim()
+          : null,
+      fijada: !!form.fijada,
+      vigente: !!form.vigente,
+    };
+    const { error } = form.id
+      ? await supabase.from("propiedad_notas").update(fila).eq("id", form.id)
+      : await supabase.from("propiedad_notas").insert(fila);
+    setGuardando(false);
+    if (error) { setMsg(error.message); return; }
+    setForm(null);
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  const borrar = async (nota) => {
+    if (!window.confirm(`¿Borrar la anotación "${nota.titulo}"? No se puede deshacer.`)) return;
+    const { error } = await supabase.from("propiedad_notas").delete().eq("id", nota.id);
+    if (error) { setMsg(error.message); return; }
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  const alternar = async (nota, campo) => {
+    const { error } = await supabase
+      .from("propiedad_notas")
+      .update({ [campo]: !nota[campo] })
+      .eq("id", nota.id);
+    if (error) { setMsg(error.message); return; }
+    await recargar();
+    onCambio && onCambio();
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-[#8A93A3]">
+        Acuerdos, deudas y advertencias de esta casa. Lo que se marque como <strong className="text-[#BFC7D4]">fijado</strong> aparece arriba de la tabla de pagos, para que se lea antes de tocar la cuenta.
+      </p>
+
+      {msg && <div className="text-xs text-red-300 bg-red-950/30 border border-red-900 rounded-md px-3 py-2">{msg}</div>}
+
+      {puede && !form && (
+        <button
+          onClick={() => { setForm({ ...VACIO }); setMsg(""); }}
+          className="inline-flex items-center gap-1.5 text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3 py-1.5 rounded-md"
+        >
+          <Plus size={13} /> Nueva anotación
+        </button>
+      )}
+
+      {form && (
+        <div className="rounded-lg border border-[#2A3547] bg-[#131A24] p-4 space-y-3">
+          <div className="text-xs uppercase tracking-widest text-[#8A93A3]">
+            {form.id ? "Editar anotación" : "Nueva anotación"}
+          </div>
+
+          <div>
+            <span className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">Tipo</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {TIPOS_NOTA.map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setForm((f) => ({ ...f, tipo: id }))}
+                  className={`text-xs px-2.5 py-1 rounded-full border ${form.tipo === id ? estiloNota(id) : "border-[#2A3547] text-[#8A93A3]"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Campo
+            label="Título"
+            value={form.titulo}
+            onChange={(e) => setForm((f) => ({ ...f, titulo: e.target.value }))}
+            placeholder="Compensación por deuda de Q50,000"
+          />
+
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">
+              Contenido (lo que ve la inmobiliaria)
+            </label>
+            <textarea
+              value={form.contenido}
+              onChange={(e) => setForm((f) => ({ ...f, contenido: e.target.value }))}
+              rows={8}
+              className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm font-mono leading-relaxed"
+              placeholder={"Qué se acordó, con quién, desde cuándo, montos y cómo se cierra."}
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.visible_cliente}
+              onChange={(e) => setForm((f) => ({ ...f, visible_cliente: e.target.checked }))}
+              className="accent-[#C9A227]"
+            />
+            El cliente ve esta anotación
+          </label>
+
+          {form.visible_cliente && (
+            <div>
+              <label className="text-[11px] uppercase tracking-wide text-[#8A93A3] block mb-1.5">
+                Versión para el cliente <span className="normal-case tracking-normal opacity-70">— si se deja vacía, el cliente ve el contenido de arriba</span>
+              </label>
+              <textarea
+                value={form.contenido_cliente || ""}
+                onChange={(e) => setForm((f) => ({ ...f, contenido_cliente: e.target.value }))}
+                rows={6}
+                className="w-full bg-[#161F2E] border border-[#2A3547] rounded-md px-3 py-2 text-sm leading-relaxed"
+                placeholder="Lo mismo, pero redactado para el cliente y sin detalle interno."
+              />
+            </div>
+          )}
+
+          <div className="flex gap-4 flex-wrap">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.fijada} onChange={(e) => setForm((f) => ({ ...f, fijada: e.target.checked }))} className="accent-[#C9A227]" />
+              Fijar arriba de la tabla de pagos
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.vigente} onChange={(e) => setForm((f) => ({ ...f, vigente: e.target.checked }))} className="accent-[#C9A227]" />
+              Vigente
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={guardar} disabled={guardando} className="text-xs bg-[#C9A227] text-[#0F1620] font-medium px-3.5 py-1.5 rounded-md disabled:opacity-40">
+              {guardando ? "Guardando..." : "Guardar"}
+            </button>
+            <button onClick={() => { setForm(null); setMsg(""); }} className="text-xs bg-[#2A3547] hover:bg-[#3a4864] px-3.5 py-1.5 rounded-md">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cargando && <div className="text-sm text-[#8A93A3]">Cargando anotaciones...</div>}
+
+      {!cargando && !notas.length && !form && (
+        <div className="text-sm text-[#8A93A3] border border-dashed border-[#2A3547] rounded-lg px-4 py-6 text-center">
+          Esta casa no tiene anotaciones todavía.
+        </div>
+      )}
+
+      {notas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${n.vigente ? estiloNota(n.tipo) : "border-[#2A3547] bg-[#0F1620] text-[#6C7687]"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</span>
+                {n.fijada && <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Star size={10} /> fijada</span>}
+                {n.visible_cliente
+                  ? <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><Eye size={10} /> el cliente la ve</span>
+                  : <span className="text-[10px] inline-flex items-center gap-1 opacity-60"><EyeOff size={10} /> solo inmobiliaria</span>}
+                {!n.vigente && <span className="text-[10px] uppercase tracking-widest opacity-60">archivada</span>}
+              </div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido} />
+              {n.contenido_cliente && (
+                <details className="mt-2">
+                  <summary className="text-[11px] opacity-70 cursor-pointer">Ver la versión que lee el cliente</summary>
+                  <div className="text-xs mt-1.5 whitespace-pre-wrap leading-relaxed opacity-80 border-l-2 border-current/30 pl-3">{n.contenido_cliente}</div>
+                </details>
+              )}
+              <div className="text-[10px] opacity-50 mt-2">
+                {n.creado_por_nombre ? `${n.creado_por_nombre} · ` : ""}{(n.created_at || "").slice(0, 10)}
+              </div>
+            </div>
+            {puede && (
+              <div className="flex flex-col gap-1 shrink-0">
+                <button onClick={() => { setForm({ ...n, contenido_cliente: n.contenido_cliente || "" }); setMsg(""); }} title="Editar" className="p-1.5 rounded hover:bg-white/10"><Pencil size={13} /></button>
+                <button onClick={() => alternar(n, "fijada")} title={n.fijada ? "Dejar de fijar" : "Fijar arriba"} className="p-1.5 rounded hover:bg-white/10"><Star size={13} className={n.fijada ? "fill-current" : ""} /></button>
+                <button onClick={() => alternar(n, "vigente")} title={n.vigente ? "Archivar" : "Reactivar"} className="p-1.5 rounded hover:bg-white/10">{n.vigente ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                <button onClick={() => borrar(n)} title="Borrar" className="p-1.5 rounded hover:bg-white/10 text-red-300"><Trash2 size={13} /></button>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Lo que ve el cliente: solo las notas marcadas visibles y vigentes, con la
+// versión redactada para él cuando existe.
+function NotasCliente({ propiedadId }) {
+  const [notas, setNotas] = useState([]);
+  useEffect(() => {
+    if (propiedadId) leerNotas(propiedadId, true).then(setNotas);
+  }, [propiedadId]);
+  if (!notas.length) return null;
+  return (
+    <div className="space-y-2 mb-5">
+      {notas.map((n) => (
+        <div key={n.id} className={`rounded-lg border px-3.5 py-3 ${estiloNota(n.tipo)}`}>
+          <div className="flex items-start gap-2">
+            <StickyNote size={14} className="mt-0.5 shrink-0 opacity-70" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-widest opacity-60">{rotuloNota(n.tipo)}</div>
+              <div className="text-sm font-medium mt-0.5">{n.titulo}</div>
+              <CuerpoNota texto={n.contenido_cliente || n.contenido} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, esAdmin }) {
   const [tab, setTab] = useState("tabla");
+  // Sube cada vez que se guarda una anotación, para que el banner de arriba
+  // vuelva a leer de la base sin tener que salir y entrar a la casa.
+  const [recargaNotas, setRecargaNotas] = useState(0);
   const [abonoMonto, setAbonoMonto] = useState(0);
   const [abonoModo, setAbonoModo] = useState("reducir_plazo");
   const [galeriaAmpliada, setGaleriaAmpliada] = useState(null); // { imagenes: [...], indice: 0 }
@@ -7782,6 +8212,8 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
         <div className="text-[11px] text-emerald-400 mb-4">El cliente tiene {fmt(prop.saldoAFavor)} guardado de un depósito anterior. Al aprobar su próximo pago vas a decidir si se aplica o se sigue guardando.</div>
       )}
 
+      <NotasFijadas propiedadId={prop.id} recarga={recargaNotas} />
+
       <div className="flex gap-1 mb-4 border-b border-[#2A3547] overflow-x-auto">
         {[
           ["tabla", "Tabla de pagos", Clock],
@@ -7789,6 +8221,7 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
           ["contrato", `Contrato${(prop.documentos || []).length ? ` (${prop.documentos.length})` : ""}`, FileText],
           ["fotos", `Fotos${(prop.fotos || []).length ? ` (${prop.fotos.length})` : ""}`, ImageIcon],
           ["condiciones", "Condiciones", Settings2],
+          ["notas", "Anotaciones", StickyNote],
           ["avisos", `Avisos${notifsAdmin.filter((n) => !n.leida).length ? ` (${notifsAdmin.filter((n) => !n.leida).length})` : ""}`, Bell],
         ].map(([id, label, Icon]) => (
           <button key={id} onClick={() => { setTab(id); if (id === "avisos") actualizar((p) => { p.notificaciones = (p.notificaciones || []).map((n) => (n.para === "inmobiliaria" ? { ...n, leida: true } : n)); return p; }); }}
@@ -8211,6 +8644,14 @@ function DetallePropiedad({ prop, proyecto, hoy, onVolver, actualizar, puede, es
 
           <VentanaCambioCondiciones />
         </div>
+      )}
+
+      {tab === "notas" && (
+        <PanelNotas
+          propiedadId={prop.id}
+          puede={puede}
+          onCambio={() => setRecargaNotas((v) => v + 1)}
+        />
       )}
 
       {tab === "avisos" && (
@@ -8987,6 +9428,8 @@ function VistaCliente({ propiedades, proyectos, seleccion, setSeleccion, hoy, ac
           <Printer size={13} /> {generandoPdf ? "Generando..." : "Descargar tabla de pagos (PDF)"}
         </button>
       </div>
+
+      <NotasCliente propiedadId={prop.id} />
 
       <div className="flex gap-1 border-b border-[#2A3547] mb-4">
         <button onClick={() => setTab("tabla")} className={`px-3 py-2 text-xs border-b-2 -mb-px flex items-center gap-1.5 ${tab === "tabla" ? "border-[#C9A227] text-[#EDE7D9]" : "border-transparent text-[#8A93A3]"}`}><Clock size={14} /> Tabla de pagos</button>

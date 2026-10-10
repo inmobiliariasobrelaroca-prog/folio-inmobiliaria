@@ -38,7 +38,7 @@ import Reportes from "./tesoreria/Reportes";
 
 // Se muestra en el encabezado del módulo. Sirve para saber de un
 // vistazo qué versión quedó desplegada, sin abrir el repositorio.
-const VERSION = "v99";
+const VERSION = "v102";
 
 // Mismo patrón de eventos de ventana que ya usa el aviso de código
 // pendiente. Permite poner el botón en el TopBar sin tener que pasar
@@ -69,9 +69,12 @@ export function BotonTesoreria({ perfil }) {
     <button
       onClick={() => window.dispatchEvent(new Event(EVENTO_ABRIR))}
       title="Tesorería"
-      className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5"
+      aria-label="Tesorería"
+      // Mismo blanco que el resto de la repisa de la barra de arriba:
+      // grande en el teléfono para poder atinarle, chico en la computadora.
+      className="text-[#8A93A3] hover:text-[#EDE7D9] p-2 min-[400px]:p-2.5 sm:p-1.5 rounded-lg hover:bg-[#1A2333] sm:hover:bg-transparent active:bg-[#1A2333] transition"
     >
-      <Calculator size={16} />
+      <Calculator size={18} />
     </button>
   );
 }

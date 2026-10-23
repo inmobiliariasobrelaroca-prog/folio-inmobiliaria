@@ -22,6 +22,27 @@ const hoyISO = () => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+// Bitácora de uso del cotizador: abrir el cotizador, abrir el plano, tocar un
+// lote, elegir producto, cotizar. Antes solo quedaba rastro de la cotización
+// terminada, y eso deja invisible a quien atiende gente todo el día y no
+// cierra nada.
+//
+// Falla en silencio a propósito, igual que el registro de cotizaciones: no se
+// le va a arruinar una venta a nadie porque la bitácora no entre. La
+// identidad la pone el servidor (registrar_evento lee auth.uid), para que un
+// asesor no pueda firmar eventos con el nombre de otro.
+const registrarEvento = (tipo, datos = {}) => {
+  supabase.rpc("registrar_evento", {
+    p_tipo: tipo,
+    p_propiedad: datos.propiedadId || null,
+    p_propiedad_nombre: datos.propiedadNombre || null,
+    p_lote: datos.lote != null ? String(datos.lote) : null,
+    p_detalle: datos.detalle || null,
+  }).then(({ error }) => {
+    if (error) console.error("No se registró el evento de uso:", error);
+  });
+};
+
 import {
   Plus, Zap, Bell, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CheckCircle2,
   AlertTriangle, Clock, TrendingDown, Calculator, Upload, X, Lock, Sparkles, Settings2, Building2, FolderOpen,
@@ -2389,8 +2410,22 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const tasaMax = esLote ? 12 : (cond.tasa_interes_maxima != null ? Number(cond.tasa_interes_maxima) : null);
   const plazoMaxProducto = esLote ? 10 : (propiedad.financiamiento_plazo_max_anios || null);
 
+  // Queda anotado que este asesor abrió el cotizador sobre esta propiedad.
+  useEffect(() => {
+    registrarEvento("abrio_cotizador", {
+      propiedadId: propiedad.id,
+      propiedadNombre: propiedad.nombre,
+    });
+  }, [propiedad.id]);
+
   // Al cambiar de producto se recargan los valores de arranque
   const aplicarProducto = (l, modo) => {
+    registrarEvento("eligio_producto", {
+      propiedadId: propiedad.id,
+      propiedadNombre: propiedad.nombre,
+      lote: l?.numero,
+      detalle: { modo },
+    });
     setLote(l); setModoVenta(modo);
     if (modo === "lote") {
       setPrecio(l.precio_lote ?? ""); setEnganche(8000); setTasaAnual(12); setAnios(10);
@@ -2403,7 +2438,15 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   };
 
   // Tocar un lote en el plano no elige producto todavía: solo muestra ese lote
-  const soloVerLote = (l) => { setLote(l); setModoVenta(null); };
+  const soloVerLote = (l) => {
+    registrarEvento("selecciono_lote", {
+      propiedadId: propiedad.id,
+      propiedadNombre: propiedad.nombre,
+      lote: l?.numero,
+      detalle: { sector: l?.sector ?? null, estado: l?.estado ?? null },
+    });
+    setLote(l); setModoVenta(null);
+  };
 
   const precioNum = Number(precio) || 0;
   const engancheNum = Number(enganche) || 0;
@@ -2611,6 +2654,20 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     }).then(({ error }) => {
       if (error) console.error("No se registró la cotización:", error);
     });
+
+    // La misma cotización también entra a la bitácora de uso, para poder
+    // verla al lado de cuántas veces abrió el plano y cuántos lotes miró.
+    registrarEvento("cotizo", {
+      propiedadId: propiedad.id,
+      propiedadNombre: propiedad.nombre,
+      lote: lote?.numero,
+      detalle: {
+        accion,
+        precio: precioNum || null,
+        con_cliente: !!cliente.trim(),
+        bajo_precio_lista: !!precioNecesitaAutorizacion,
+      },
+    });
   };
 
   const descargarPdf = async () => {
@@ -2723,7 +2780,16 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
 
           {propiedad.proyecto_venta_id && (
             <div className="space-y-2">
-              <button type="button" onClick={() => setVerMapa(!verMapa)}
+              <button type="button"
+                onClick={() => {
+                  if (!verMapa) {
+                    registrarEvento("abrio_plano", {
+                      propiedadId: propiedad.id,
+                      propiedadNombre: propiedad.nombre,
+                    });
+                  }
+                  setVerMapa(!verMapa);
+                }}
                 className="w-full text-[11px] bg-[#2A3547] hover:bg-[#3a4864] py-2 rounded-md">
                 {verMapa ? "Ocultar el plano"
                   : (lote ? `Lote ${lote.numero} · ${esLote ? "terreno" : "casa"} · cambiar`
@@ -3441,71 +3507,96 @@ function AppInterno({ perfil, cerrarSesion }) {
   );
 }
 
+// Los accesos de la barra de arriba estaban todos en una sola fila. En la
+// computadora caben, pero en un teléfono llegaron a ser diez botones de
+// 16px apretados contra el logo: imposibles de atinar con el dedo.
+//
+// Ahora el logo y lo que se usa siempre (modo, actualizar, salir) quedan en
+// la primera fila, y los accesos a los módulos bajan a una repisa propia
+// que se reparte de borde a borde. En pantalla ancha vuelve a ser una sola
+// fila, porque la repisa deja de ocupar el ancho completo.
+//
+// 44px es el mínimo con el que un dedo acierta sin pelear. En el teléfono
+// cada botón mide eso; en la computadora se encogen a lo de antes.
+const ICONO_BARRA =
+  "text-[#8A93A3] hover:text-[#EDE7D9] p-2 min-[400px]:p-2.5 sm:p-1.5 rounded-lg " +
+  "hover:bg-[#1A2333] sm:hover:bg-transparent active:bg-[#1A2333] transition";
+
 function TopBar({ perfil, modo, setModo, cerrarSesion, puedeVerEquipo, onEquipo, puedeVerCatalogo, onCatalogo, onCotizar, onBoletas, onOfertas, onPropietario, onClientes, onActualizar, actualizando }) {
+  const esInmo = modo === "inmobiliaria";
   return (
-    <div className="border-b border-[#2A3547] bg-[#0C121C] px-5 py-4 sticky top-0 z-10">
-      <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <div className="flex items-center gap-2">
-          <img src={logoEmblema} alt="Sobre la Roca" className="w-9 h-9 object-contain" />
-          <div>
-            <div className="font-serif text-lg leading-tight tracking-tight">Sobre la Roca</div>
-            <div className="text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight">Control Financiero</div>
+    <div className="border-b border-[#2A3547] bg-[#0C121C] px-4 sm:px-5 py-2.5 sm:py-4 sticky top-0 z-10">
+      <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-y-1.5">
+
+        {/* Identidad */}
+        <div className="flex items-center gap-2 order-1 min-w-0">
+          <img src={logoEmblema} alt="Sobre la Roca" className="w-8 h-8 sm:w-9 sm:h-9 object-contain shrink-0" />
+          <div className="min-w-0">
+            <div className="font-serif text-base sm:text-lg leading-tight tracking-tight truncate">Sobre la Roca</div>
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-widest text-[#8A93A3] leading-tight truncate">Control Financiero</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {onActualizar && (
-            <button onClick={onActualizar} disabled={actualizando} title="Actualizar desde la base de datos" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5 disabled:opacity-40">
-              <RefreshCw size={16} className={actualizando ? "animate-spin" : ""} />
+
+        {/* Repisa de módulos. w-full la manda a su propia línea en el
+            teléfono; sm:w-auto la devuelve a la fila del logo. */}
+        <div className="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-end gap-0 sm:gap-1 pt-1.5 sm:pt-0 border-t border-[#2A3547]/70 sm:border-0">
+          {puedeVerEquipo && esInmo && (
+            <button onClick={onEquipo} title="Equipo y roles" aria-label="Equipo y roles" className={ICONO_BARRA}>
+              <Users size={18} />
             </button>
           )}
-          {setModo && (
-            <div className="flex rounded-full bg-[#1A2333] p-1 text-xs">
-              <button onClick={() => setModo("inmobiliaria")} className={`px-3 py-1.5 rounded-full transition ${modo === "inmobiliaria" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
-              <button onClick={() => setModo("cliente")} className={`px-3 py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
-            </div>
-          )}
-          {puedeVerEquipo && modo === "inmobiliaria" && (
-            <button onClick={onEquipo} title="Equipo y roles" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Users size={16} />
-            </button>
-          )}
-          {puedeVerCatalogo && modo === "inmobiliaria" && (
-            <button onClick={onCatalogo} title="Catálogo de ventas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Globe size={16} />
+          {puedeVerCatalogo && esInmo && (
+            <button onClick={onCatalogo} title="Catálogo de ventas" aria-label="Catálogo de ventas" className={ICONO_BARRA}>
+              <Globe size={18} />
             </button>
           )}
           {/* Acceso directo al cotizador, sin pasar por el catálogo */}
-          {puedeVerCatalogo && modo === "inmobiliaria" && onCotizar && (
-            <button onClick={onCotizar} title="Cotizador" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Tag size={16} />
+          {puedeVerCatalogo && esInmo && onCotizar && (
+            <button onClick={onCotizar} title="Cotizador" aria-label="Cotizador" className={ICONO_BARRA}>
+              <Tag size={18} />
             </button>
           )}
           {/* Bandeja de boletas: para cuando llegan muchas juntas y de casas
               distintas. La de una casa puntual se sube desde su cuota. */}
-          {modo === "inmobiliaria" && onBoletas && (
-            <button onClick={onBoletas} title="Boletas por asignar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Inbox size={16} />
+          {esInmo && onBoletas && (
+            <button onClick={onBoletas} title="Boletas por asignar" aria-label="Boletas por asignar" className={ICONO_BARRA}>
+              <Inbox size={18} />
+            </button>
+          )}
+          {onPropietario && (
+            <button onClick={onPropietario} title="Casas administradas" aria-label="Casas administradas" className={ICONO_BARRA}>
+              <Home size={18} />
             </button>
           )}
           {/* Ofertas por debajo del precio de lista, esperando respuesta */}
-          {onPropietario && (
-            <button onClick={onPropietario} title="Casas administradas" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Home size={16} />
+          {puedeVerCatalogo && esInmo && onOfertas && (
+            <button onClick={onOfertas} title="Ofertas por autorizar" aria-label="Ofertas por autorizar" className={ICONO_BARRA}>
+              <Sparkles size={18} />
             </button>
           )}
-          {puedeVerCatalogo && modo === "inmobiliaria" && onOfertas && (
-            <button onClick={onOfertas} title="Ofertas por autorizar" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-              <Sparkles size={16} />
+          <BotonTesoreria perfil={perfil} />
+          {onClientes && esInmo && (
+            <button onClick={onClientes} title="Clientes" aria-label="Clientes" className={ICONO_BARRA}>
+              <Contact size={18} />
             </button>
           )}
-<BotonTesoreria perfil={perfil} />
-{onClientes && modo === "inmobiliaria" && (
-  <button onClick={onClientes} title="Clientes" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-    <Contact size={16} />
-  </button>
-)}
-          <button onClick={cerrarSesion} title="Cerrar sesión" className="text-[#8A93A3] hover:text-[#EDE7D9] p-1.5">
-            <LogOut size={16} />
+          {onActualizar && (
+            <button onClick={onActualizar} disabled={actualizando} title="Actualizar desde la base de datos" aria-label="Actualizar" className={`${ICONO_BARRA} disabled:opacity-40`}>
+              <RefreshCw size={18} className={actualizando ? "animate-spin" : ""} />
+            </button>
+          )}
+        </div>
+
+        {/* Modo y salida: siempre arriba, junto al nombre */}
+        <div className="flex items-center gap-1 sm:gap-2 order-2 sm:order-3 shrink-0">
+          {setModo && (
+            <div className="flex rounded-full bg-[#1A2333] p-0.5 sm:p-1 text-[10px] sm:text-xs">
+              <button onClick={() => setModo("inmobiliaria")} className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition ${esInmo ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Inmobiliaria</button>
+              <button onClick={() => setModo("cliente")} className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition ${modo === "cliente" ? "bg-[#C9A227] text-[#101826] font-medium" : "text-[#8A93A3]"}`}>Cliente</button>
+            </div>
+          )}
+          <button onClick={cerrarSesion} title="Cerrar sesión" aria-label="Cerrar sesión" className={ICONO_BARRA}>
+            <LogOut size={18} />
           </button>
         </div>
       </div>
@@ -4892,6 +4983,142 @@ function PantallaAsesoresVenta({ onVolver }) {
 // Bitácora del cotizador: cuántas cotizaciones hace cada asesor, sobre qué
 // lotes, y quiénes dejaron su nombre y teléfono. Los interesados son lo más
 // valioso de aquí: son las personas a las que se les puede dar seguimiento.
+// Monitoreo del cotizador: qué tanto lo usa cada vendedor.
+//
+// La cotización terminada no cuenta toda la historia. Alguien puede pasar la
+// tarde abriendo el plano con un cliente al lado y no cerrar nada, y en el
+// reporte viejo aparecía igual que quien no abrió la app. Acá se ve el camino
+// completo: abrió el cotizador, abrió el plano, tocó lotes, cotizó.
+function PanelUsoCotizador() {
+  const [filas, setFilas] = useState([]);
+  const [dias, setDias] = useState(30);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    setCargando(true);
+    supabase.rpc("uso_cotizador", { p_dias: dias }).then(({ data, error }) => {
+      if (!vivo) return;
+      if (error) console.error("No se pudo leer el uso del cotizador:", error);
+      setFilas(data || []);
+      setCargando(false);
+    });
+    return () => { vivo = false; };
+  }, [dias]);
+
+  const diasDesde = (iso) => {
+    if (!iso) return null;
+    return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  };
+
+  const activos = filas.filter((f) => f.activo);
+  const totCotiz = activos.reduce((s, f) => s + Number(f.cotizaciones), 0);
+  const totLotes = activos.reduce((s, f) => s + Number(f.selecciono_lote), 0);
+  const sinUsar = activos.filter((f) => !f.ultima_actividad).length;
+
+  return (
+    <div className="mb-8">
+      <h2 className="font-serif text-lg mb-1">Uso del cotizador</h2>
+      <p className="text-xs text-[#8A93A3] mb-3 leading-relaxed">
+        Cada vez que un vendedor abre el cotizador, abre el plano, toca un lote
+        o manda una cotización queda anotado acá. Tocar el mismo lote varias
+        veces seguidas cuenta como una sola vez.
+      </p>
+
+      <div className="flex gap-1.5 mb-3">
+        {[[7, "7 días"], [30, "30 días"], [90, "3 meses"], [0, "Todo"]].map(([d, t]) => (
+          <button key={d} onClick={() => setDias(d)}
+            className={`text-[11px] px-2.5 py-1.5 rounded-md ${
+              dias === d ? "bg-[#C9A227] text-[#101826] font-medium" : "bg-[#2A3547] text-[#8A93A3]"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {cargando ? (
+        <div className="text-sm text-[#8A93A3]">Cargando...</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <TarjetaCotiz rotulo="Lotes vistos" valor={totLotes} />
+            <TarjetaCotiz rotulo="Cotizaciones" valor={totCotiz} />
+            <TarjetaCotiz rotulo="Sin usarlo" valor={sinUsar}
+                          alerta={sinUsar > 0}
+                          pie={`de ${activos.length} vendedores`} />
+          </div>
+
+          <div className="space-y-1.5">
+            {filas.filter((f) => f.activo).map((f) => {
+              const d = diasDesde(f.ultima_actividad);
+              const nunca = !f.ultima_actividad;
+              const frio = d != null && d >= 15;
+              return (
+                <div key={f.usuario_id}
+                  className={`bg-[#161F2E] border rounded-lg p-3 ${
+                    nunca ? "border-red-900/70" : frio ? "border-amber-900/70" : "border-[#2A3547]"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm truncate">{f.nombre}</div>
+                      <div className="text-[10px] text-[#6b7280]">código {f.codigo}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-mono text-lg leading-none">{f.cotizaciones}</div>
+                      <div className="text-[10px] text-[#6b7280]">cotizaciones</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5 mt-2.5">
+                    {[["Entró", f.abrio_cotizador], ["Plano", f.abrio_plano],
+                      ["Lotes", f.selecciono_lote], ["Distintos", f.lotes_distintos]].map(([t, v]) => (
+                      <div key={t} className="bg-[#0C121C] rounded-md py-1.5 text-center">
+                        <div className="font-mono text-sm">{v}</div>
+                        <div className="text-[9px] uppercase tracking-wide text-[#6b7280]">{t}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-[11px] text-[#8A93A3] mt-2">
+                    {nunca ? (
+                      <span className="text-red-400">Nunca ha usado el cotizador</span>
+                    ) : (
+                      <>
+                        <span className={frio ? "text-amber-400" : ""}>
+                          {d === 0 ? "Activo hoy" : d === 1 ? "Última vez ayer" : `Última vez hace ${d} días`}
+                        </span>
+                        {Number(f.dias_activos) > 0 &&
+                          ` · ${f.dias_activos} día${f.dias_activos === 1 ? "" : "s"} con actividad`}
+                        {Number(f.cotizaciones) > 0 && (
+                          <> · {f.con_cliente} con datos del interesado</>
+                        )}
+                        {/* Las cotizaciones viejas no traen eventos que las
+                            acompanen, asi que el porcentaje se dispara arriba
+                            de 100 y no dice nada. Mejor callarlo. */}
+                        {f.pct_cierre != null && Number(f.selecciono_lote) >= 3
+                          && Number(f.pct_cierre) <= 100 && (
+                          <> · cotiza {f.pct_cierre}% de lo que mira</>
+                        )}
+                      </>
+                    )}
+                    {Number(f.con_descuento) > 0 && (
+                      <span className="text-amber-400"> · {f.con_descuento} bajo precio de lista</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-[10px] text-[#6b7280] mt-3 leading-relaxed">
+            El monitoreo arrancó el 19 de octubre de 2026. Las cotizaciones
+            anteriores a esa fecha sí aparecen, pero los lotes y el plano no:
+            de antes no hay registro.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReporteCotizaciones() {
   const [porAsesor, setPorAsesor] = useState([]);
   const [porLote, setPorLote] = useState([]);
@@ -5236,6 +5463,8 @@ function PantallaActividadVenta({ onVolver }) {
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl">Actividad</h1>
       </div>
+      <PanelUsoCotizador />
+
       <ReporteCotizaciones />
 
       <h2 className="font-serif text-lg mt-8 mb-1.5">Solicitudes desde el sitio</h2>

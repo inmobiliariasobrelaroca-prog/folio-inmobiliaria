@@ -2418,6 +2418,25 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     });
   }, [propiedad.id]);
 
+  // El plano no es genérico: el dibujo y las coordenadas de los lotes están
+  // hechos a la medida de Retalhuleu. Antes bastaba con que la propiedad
+  // tuviera proyecto para que saliera el botón, y un proyecto nuevo sin
+  // lotes terminaba enseñando el plano de Reu. Ahora el proyecto dice si
+  // tiene plano propio.
+  const [tienePlano, setTienePlano] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    if (!propiedad.proyecto_venta_id) { setTienePlano(false); return; }
+    supabase.from("proyectos_venta").select("tiene_plano")
+      .eq("id", propiedad.proyecto_venta_id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!vivo) return;
+        if (error) console.error("No se pudo saber si el proyecto tiene plano:", error);
+        setTienePlano(!!data?.tiene_plano);
+      });
+    return () => { vivo = false; };
+  }, [propiedad.proyecto_venta_id]);
+
   // Al cambiar de producto se recargan los valores de arranque
   const aplicarProducto = (l, modo) => {
     registrarEvento("eligio_producto", {
@@ -2778,7 +2797,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             )}
           </div>
 
-          {propiedad.proyecto_venta_id && (
+          {propiedad.proyecto_venta_id && tienePlano && (
             <div className="space-y-2">
               <button type="button"
                 onClick={() => {

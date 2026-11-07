@@ -1771,6 +1771,23 @@ async function construirPdfCotizacion(d) {
   doc.line(xIzq, 24, xDer, 24);
 
   y = 31;
+
+  // Aviso de que el lote lo tiene que autorizar el administrador. Va arriba
+  // y en caja ámbar a propósito: metido en la letra chica del pie nadie lo
+  // lee, y es justo lo que el cliente tiene que entender antes de ilusionarse.
+  if (d.avisoAprobacion) {
+    const lineas = doc.splitTextToSize(d.avisoAprobacion, anchoUtil - 8);
+    const alto = 7 + lineas.length * 4;
+    doc.setFillColor(253, 246, 221);
+    doc.setDrawColor(201, 162, 39);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(xIzq, y - 4, anchoUtil, alto, 1, 1, "FD");
+    doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(140, 100, 10);
+    doc.text(lineas, xIzq + 4, y + 1.5);
+    doc.setFont(undefined, "normal");
+    y += alto + 3;
+  }
+
   const filaInfo = (izqLbl, izqVal, derLbl, derVal) => {
     doc.setFont(undefined, "bold"); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
     doc.text(izqLbl, xIzq, y);
@@ -2507,6 +2524,28 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   // tuviera proyecto para que saliera el botón, y un proyecto nuevo sin
   // lotes terminaba enseñando el plano de Reu. Ahora el proyecto dice si
   // tiene plano propio.
+  // Qué lotes lleva este vendedor. Si no tiene límite — que es el caso de
+  // casi todos — manda "todos" y nada de esto se nota. Se pregunta aquí y no
+  // se recibe por parámetro para que valga por cualquier camino que lo haya
+  // traído al cotizador.
+  const [alcanceLotes, setAlcanceLotes] = useState({ restringido: false, lotes: [] });
+  useEffect(() => {
+    let vivo = true;
+    supabase.rpc("mi_alcance_lotes").then(({ data, error }) => {
+      if (!vivo) return;
+      if (error) {
+        // Sin dato se asume sin límite: así funcionó siempre.
+        console.error("No se pudo leer el alcance de lotes:", error);
+        return;
+      }
+      setAlcanceLotes({
+        restringido: !!data?.restringido,
+        lotes: Array.isArray(data?.lotes) ? data.lotes : [],
+      });
+    });
+    return () => { vivo = false; };
+  }, []);
+
   const [tienePlano, setTienePlano] = useState(false);
   useEffect(() => {
     let vivo = true;
@@ -2642,6 +2681,17 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     ? `PENDIENTE DE AUTORIZACIÓN: ${pendientes.join(", ")}. Válida solo si la inmobiliaria lo aprueba por escrito.`
     : "";
 
+  // Hay vendedores que llevan solo algunos lotes del residencial. Pueden
+  // cotizar cualquiera — eso no se les bloquea — pero si el lote no es de
+  // los suyos, la cotización sale avisando que la autoriza el administrador.
+  const loteAjeno = !!lote && alcanceLotes.restringido
+    && !alcanceLotes.lotes.includes(lote.id);
+  const avisoLoteAjeno = loteAjeno
+    ? `IMPORTANTE: ${esLote ? `el lote ${lote.numero}` : `la casa del lote ${lote.numero}`}`
+      + ` figura como apartado. Esta cotización NO es una oferta en firme:`
+      + ` el administrador del proyecto tiene que aprobarla antes.`
+    : "";
+
   const telLimpio = whatsapp.replace(/\D/g, "");
   const telConPais = telLimpio.length === 8 ? `502${telLimpio}` : telLimpio;
   const mensajeWhatsapp =
@@ -2661,6 +2711,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     `\nSistema: ${esSaldos ? "Sobre saldos" : "Cuota nivelada"}` +
     `\n\nAquí puedes ver tu propiedad: ${linkPropiedadVenta(propiedad)}` +
     (asesor?.nombre ? `\nTu asesor: ${asesor.nombre}${asesor.telefono ? ` · ${asesor.telefono}` : ""}` : "") +
+    (avisoLoteAjeno ? `\n\n${avisoLoteAjeno}` : "") +
     (textoPendientes ? `\n\n${textoPendientes}` : "");
   const urlWhatsapp = `https://wa.me/${telConPais}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
@@ -2721,6 +2772,7 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
     totalMensualTexto: fmt(totalMensual),
     notaTablaParcial: meses > mesesTabla ? `primeros ${mesesTabla} meses de ${meses}` : "",
     filasTabla: tabla.map((f) => [f.numero, fmtDate(f.fecha), fmt(f.capital), fmt(f.interes), fmt(f.pago), fmt(f.saldoFinal)]),
+    avisoAprobacion: avisoLoteAjeno,
     disclaimerTexto:
       (textoPendientes ? textoPendientes + " " : "") +
       `Mora de ${fmt(MORA_DIARIA_COTIZACION_ASESOR)} por día pasados ${DIAS_GRACIA_COTIZACION_ASESOR} días de gracia. ` +
@@ -3020,6 +3072,26 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             </div>
           )}
 
+          {/* Lote que este vendedor no lleva. No se le impide cotizarlo, pero
+              tiene que verlo antes de mandarle nada al cliente. */}
+          {avisoLoteAjeno && (
+            <div className="rounded-md border-2 border-[#C9A227] bg-[#C9A227]/15 p-3 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={17} className="text-[#C9A227] shrink-0 mt-px" />
+                <div>
+                  <div className="text-[12px] font-semibold text-[#C9A227]">
+                    {esLote ? `El lote ${lote.numero} está apartado` : `La casa del lote ${lote.numero} está apartada`}
+                  </div>
+                  <div className="text-[11px] text-[#EDE7D9] mt-1">
+                    Comunicate con el administrador del proyecto antes de
+                    ofrecerla. Podés cotizar, pero la cotización va a salir
+                    diciendo que primero la tiene que aprobar él.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {textoPendientes && (
             <div className="text-[11px] text-amber-400 bg-amber-950/30 border border-amber-800/60 rounded-md p-2.5 leading-relaxed">
               <div className="font-medium mb-0.5">Necesita autorización</div>
@@ -3058,6 +3130,13 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
               <div className="text-[9px] uppercase tracking-widest text-gray-500">Cotización de financiamiento</div>
             </div>
           </div>
+          {/* Mismo aviso que lleva el PDF, arriba y en caja: que el cliente
+              lo vea antes que los números. */}
+          {avisoLoteAjeno && (
+            <div className="border-2 border-[#C9A227] bg-[#FDF6DD] text-[#8C640A] font-bold text-[10px] p-2.5 mb-4 leading-relaxed">
+              {avisoLoteAjeno}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
             <div><b>Propiedad:</b> {propiedad.nombre}{propiedad.codigo ? ` (#${propiedad.codigo})` : ""}</div>
             <div><b>Fecha:</b> {fmtDate(hoy)}</div>

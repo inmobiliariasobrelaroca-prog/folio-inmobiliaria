@@ -11,7 +11,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { X, Check } from "lucide-react";
+import { X, Check, AlertTriangle } from "lucide-react";
 
 // El dibujo del plano vive en public/plano-reu.svg: el mismo que se manda
 // por WhatsApp, con calles, áreas verdes, garita y Fase 2. Se le quitaron
@@ -71,6 +71,19 @@ const ROTULO = {
   no_disponible: "Todavía no a la venta",
 };
 
+// Hay vendedores que solo trabajan algunos lotes del residencial (pedido de
+// Carlos, 2026-11-06: Eddy Ixcot lleva del 18 al 24 y las casas 37 a 39).
+//
+// Los demás lotes NO se le bloquean: puede cotizarlos y apartarlos igual que
+// cualquier vendedor. Lo que pasa es que se le pintan de amarillo, como
+// apartados, y le sale una alerta para que hable con el administrador antes
+// de ofrecer algo que a lo mejor no se puede vender. La cotización que
+// salga de ahí avisa que está sujeta a autorización.
+//
+// Es el mismo amarillo del apartado a propósito: para ese vendedor, ese lote
+// está apartado. Quien no tiene límite no nota ningún cambio.
+const COLOR_AJENO = COLOR.apartado;
+
 const fmtQ = (n) =>
   "Q " + Number(n || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -87,8 +100,23 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
   const [apartando, setApartando] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [zoom, setZoom] = useState(false);
+  // Qué lotes le tocan a quien está viendo. Si no tiene límite, mandan
+  // todos y el plano se comporta como siempre.
+  const [alcance, setAlcance] = useState({ restringido: false, lotes: [] });
 
   const cargar = async () => {
+    // El alcance se pregunta siempre: también la miniatura debe pintar en
+    // rojo lo que no es suyo, para que las dos vistas digan lo mismo.
+    const { data: alc, error: errAlc } = await supabase.rpc("mi_alcance_lotes");
+    if (errAlc) {
+      // Si no se pudo saber, se asume sin límite: es como funcionó siempre.
+      console.error("No se pudo leer el alcance de lotes:", errAlc);
+    }
+    setAlcance({
+      restringido: !!alc?.restringido,
+      lotes: Array.isArray(alc?.lotes) ? alc.lotes : [],
+    });
+
     if (miniatura) {
       const { data: ls } = await supabase.from("lotes").select("*").eq("proyecto_venta_id", proyectoVentaId).order("numero");
       setLotes(ls || []);
@@ -104,6 +132,10 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
     setCargando(false);
   };
   useEffect(() => { cargar(); }, [proyectoVentaId]);
+
+  // Un lote es ajeno solo cuando el usuario está limitado y ese lote no
+  // está en su lista.
+  const esAjeno = (l) => alcance.restringido && !alcance.lotes.includes(l.id);
 
   if (cargando) {
     return miniatura ? null : <div className="text-sm text-[#8A93A3]">Cargando el plano...</div>;
@@ -132,7 +164,9 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
           {Object.entries(GEO).map(([num, g]) => {
             const l = porNumero[num];
             if (!l) return null;
-            return <path key={num} d={g.d} fill={COLOR[l.estado]} fillOpacity={0.45} />;
+            return <path key={num} d={g.d}
+                         fill={esAjeno(l) ? COLOR_AJENO : COLOR[l.estado]}
+                         fillOpacity={0.45} />;
           })}
         </svg>
       </div>
@@ -164,17 +198,20 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
             {Object.entries(GEO).map(([num, g]) => {
               const l = porNumero[num];
               if (!l) return null;
+              const ajeno = esAjeno(l);
               const activo = l.estado === "disponible";
               return (
                 <g key={num} onClick={() => { setSel(l.id); setApartando(false); onSeleccionar && onSeleccionar(l); }}
                    style={{ cursor: activo || puedeApartar ? "pointer" : "default" }}>
-                  <path d={g.d} fill={COLOR[l.estado]}
+                  <path d={g.d} fill={ajeno ? COLOR_AJENO : COLOR[l.estado]}
                         fillOpacity={sel === l.id ? 0.62 : 0.38}
                         stroke={sel === l.id ? "#101826" : "none"} strokeWidth="2.5" />
                   {l.estado === "vendido" && (
                     <circle cx={g.cx} cy={g.cy} r="9" fill="#d62828" stroke="#7f1010" strokeWidth="0.7" />
                   )}
-                  {l.estado === "apartado" && (
+                  {/* El punto dorado del apartado también sale sobre un lote
+                      que no le toca a este vendedor: para él está apartado. */}
+                  {(l.estado === "apartado" || (ajeno && l.estado !== "vendido")) && (
                     <circle cx={g.cx} cy={g.cy} r="9" fill="#C9A227" stroke="#7a6316" strokeWidth="0.7" />
                   )}
                   {/* Marca de que ahí va casa */}
@@ -192,12 +229,14 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
       {!elegido && (
         <p className="text-[10px] text-[#8A93A3]">
           Tocá un lote para ver su precio. Los que dicen Fase 2 todavía no se venden.
+          {alcance.restringido && " Los que salen en amarillo están apartados: consultá antes de ofrecerlos."}
         </p>
       )}
 
       {elegido && (
         <PanelLote
           precioCasa={precioCasa}
+          ajeno={esAjeno(elegido)}
           lote={elegido}
           apartado={apartadoDe}
           puedeApartar={puedeApartar}
@@ -220,7 +259,7 @@ export default function MapaLotes({ proyectoVentaId, onCotizar, onSeleccionar, p
 // porque cambia el precio y lo que el cliente termina firmando.
 
 function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar,
-                     apartando, setApartando, onListo, precioCasa }) {
+                     apartando, setApartando, onListo, precioCasa, ajeno = false }) {
   const [destino, setDestino] = useState(null);
   const [nombre, setNombre] = useState("");
   const [tel, setTel] = useState("");
@@ -261,7 +300,11 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
           <div className="text-sm">Lote {lote.numero} · sector {lote.sector}</div>
           <div className="text-[11px] text-[#8A93A3]">
             {lote.area_m2 ? `${lote.area_m2} m² de terreno · ` : ""}
-            <span style={{ color: COLOR[lote.estado] }}>{ROTULO[lote.estado]}</span>
+            {/* A quien tiene lotes asignados no se le dice "disponible" sobre
+                uno que no lleva él: para ese vendedor está apartado. */}
+            <span style={{ color: ajeno ? COLOR_AJENO : COLOR[lote.estado] }}>
+              {ajeno ? ROTULO.apartado : ROTULO[lote.estado]}
+            </span>
             {lote.obra_estado === "construccion" && " · casa en construcción"}
             {lote.obra_estado === "acabados" && " · casa en acabados finales"}
           </div>
@@ -272,12 +315,32 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
         </button>
       </div>
 
-      {apartado && (
+      {apartado && !ajeno && (
         <div className="mt-2 text-[11px] bg-[#0C121C] border border-amber-800/60 rounded-md p-2">
           Apartado por <b>{apartado.cliente_nombre}</b> con {fmtQ(apartado.monto)} el{" "}
           {apartado.fecha}
           {apartado.destino && ` · para ${apartado.destino === "casa" ? "casa" : "terreno"}`}
           {apartado.vence ? `, vence el ${apartado.vence}` : ""}.
+        </div>
+      )}
+
+      {/* Lote que este vendedor no lleva. Puede cotizarlo y apartarlo igual
+          que cualquiera, pero no sin ver primero esta alerta: la idea es que
+          no ofrezca algo que a lo mejor ya está comprometido. */}
+      {ajeno && (
+        <div className="mt-2 rounded-md border-2 border-[#C9A227] bg-[#C9A227]/15 p-2.5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="text-[#C9A227] shrink-0 mt-px" />
+            <div>
+              <div className="text-[12px] font-semibold text-[#C9A227]">
+                {lote.destino === "casa" ? "Esta casa está apartada" : `El lote ${lote.numero} está apartado`}
+              </div>
+              <div className="text-[11px] text-[#EDE7D9] mt-0.5">
+                Antes de ofrecerlo, comunicate con el administrador del proyecto.
+                Si cotizás, la cotización va a salir sujeta a autorización.
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -344,6 +407,12 @@ function PanelLote({ lote, apartado, puedeApartar, asesorId, onCerrar, onCotizar
             {fmtQ(destino === "casa" ? precioCasaAqui : precioLote)}. Queda bloqueado
             para los demás vendedores.
           </p>
+          {ajeno && (
+            <p className="text-[10px] text-[#C9A227]">
+              Ojo: este no es de los que llevás vos. El apartado queda
+              registrado, pero lo tiene que autorizar el administrador.
+            </p>
+          )}
           <input value={nombre} onChange={(e) => setNombre(e.target.value)}
             placeholder="Nombre de quien aparta"
             className="w-full bg-[#0C121C] border border-[#2A3547] rounded p-2 text-[11px]" />

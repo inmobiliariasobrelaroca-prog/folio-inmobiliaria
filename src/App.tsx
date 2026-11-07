@@ -10,6 +10,7 @@ import Propietario from "./Propietario";
 import logoEmblema from "./assets/emblema_sr.png";
 import jsPDF from "jspdf";
 import ModuloTesoreria, { BotonTesoreria } from "./ModuloTesoreria";
+import BrochureVenta from "./BrochureVenta";
 import CambiarClave from "./CambiarClave";
 import autoTable from "jspdf-autotable";
 
@@ -387,14 +388,93 @@ function fileToBase64(file) {
   });
 }
 
-// Placeholder: lectura automática del comprobante con IA de visión.
-// Estructura lista pero DESACTIVADA — se activa cuando la app viva en la nube.
-// Nota para cuando se active: si la fecha que la IA lee en la foto del depósito NO coincide
-// con la fecha de subida (fila.comprobante.fecha), no decidir solo — generar una notificación
-// para la inmobiliaria alertando la discrepancia, para que un humano decida a mano si el
-// excedente se trata como a tiempo (abono a capital) o tarde (crédito al siguiente mes).
-async function leerComprobanteConIA(_imagenBase64) {
-  return null; // { montoDetectado, fechaDetectada, referencia }
+// ---------- Lectura de la boleta ----------
+// Esto era un hueco reservado desde hace meses. Ya está vivo: lo atiende la
+// Edge Function "lector-boletas", que mira la imagen y devuelve monto, fecha,
+// banco y referencia.
+//
+// La regla que se respeta en las dos pantallas que lo usan: el lector PROPONE
+// y la persona confirma. Lo leído se muestra siempre en pantalla y los campos
+// quedan editables, porque una boleta borrosa o una foto torcida se leen mal y
+// una fecha equivocada cobra mora que el cliente no debe.
+
+// Las cámaras de teléfono sacan fotos de 4 MB. Para leer una boleta sobra con
+// 1600px de ancho, y así el envío es rápido y la lectura cuesta menos.
+async function encogerParaLectura(file) {
+  if (file.type === "application/pdf") {
+    const data = await fileToBase64(file);
+    return { base64: String(data).split(",")[1], mime: "application/pdf" };
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const escala = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const ancho = Math.round(bitmap.width * escala);
+    const alto = Math.round(bitmap.height * escala);
+    const lienzo = document.createElement("canvas");
+    lienzo.width = ancho;
+    lienzo.height = alto;
+    lienzo.getContext("2d").drawImage(bitmap, 0, 0, ancho, alto);
+    return { base64: lienzo.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg" };
+  } catch {
+    // Si el navegador no puede con el canvas, se manda tal cual.
+    const data = await fileToBase64(file);
+    return { base64: String(data).split(",")[1], mime: file.type || "image/jpeg" };
+  }
+}
+
+// Una boleta no puede estar fechada en el futuro. Si el lector devuelve algo
+// así, es que leyó mal — casi siempre por confundir el día con el mes — y se
+// descarta en vez de meterlo en la casilla.
+function fechaUsable(fecha, hoy) {
+  return fecha && fecha <= hoy ? fecha : null;
+}
+
+async function leerBoleta(file) {
+  const { base64, mime } = await encogerParaLectura(file);
+  const { data, error } = await supabase.functions.invoke("lector-boletas", {
+    body: { imagen_base64: base64, mime },
+  });
+  if (error) throw new Error(error.message || "No se pudo leer la boleta");
+  if (!data?.ok) throw new Error(data?.error || "No se pudo leer la boleta");
+  return data; // { monto, fecha, banco, referencia, concepto, confianza, revisar, observaciones }
+}
+
+// Panel con lo que el lector encontró. Se muestra siempre, también cuando
+// acierta: quien sube tiene que poder comparar contra el papel.
+function LoQueLeyo({ leyendo, lectura, error }) {
+  if (leyendo) {
+    return (
+      <div className="text-[11px] text-[#C9A227] flex items-center gap-1.5 bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2">
+        <Upload size={12} className="animate-pulse" /> Leyendo la boleta...
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="text-[11px] text-[#8A93A3] bg-[#0C121C] border border-[#2A3547] rounded-md px-2.5 py-2">
+        No se pudo leer la boleta sola. Escribe el monto y la fecha a mano.
+      </div>
+    );
+  }
+  if (!lectura) return null;
+
+  const dudosa = lectura.revisar || lectura.confianza == null;
+  return (
+    <div className={`text-[11px] rounded-md px-2.5 py-2 border ${
+      dudosa ? "bg-[#2A1F08] border-[#D9A441] text-[#F0D9A0]"
+             : "bg-[#0C2318] border-[#2F6B4A] text-[#A8DCBF]"}`}>
+      <div className="font-medium mb-1">
+        {dudosa ? "Leí esto, pero compáralo con la boleta" : "Leído de la boleta"}
+      </div>
+      <div className="font-mono">
+        {lectura.monto != null ? fmt(lectura.monto) : "monto ilegible"}
+        {lectura.fecha ? `  ·  ${fmtDate(lectura.fecha)}` : "  ·  fecha ilegible"}
+        {lectura.banco ? `  ·  ${lectura.banco}` : ""}
+      </div>
+      {lectura.referencia && <div className="opacity-80 mt-0.5">Ref. {lectura.referencia}</div>}
+      {lectura.observaciones && <div className="opacity-80 mt-0.5">{lectura.observaciones}</div>}
+    </div>
+  );
 }
 
 function nuevaNotificacion(para, mensaje) {
@@ -1372,7 +1452,7 @@ function PantallaAsesor({ perfil, cerrarSesion }) {
       setError("");
       const { data: props, error: errProps } = await supabase
         .from("propiedades_venta")
-        .select("*, proyectos_venta(nombre), fotos_propiedad_venta(archivo_url, orden)")
+        .select("*, proyectos_venta(nombre, ubicacion), fotos_propiedad_venta(archivo_url, orden)")
         .order("nombre");
       if (errProps) { setError(errProps.message); setCargando(false); return; }
       const ids = (props || []).map((p) => p.id);
@@ -2373,6 +2453,10 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
   const [sistema, setSistema] = useState("nivelada");
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [errorPdf, setErrorPdf] = useState("");
+  // Brochure para redes. Solo aparece cuando la propiedad trae sus fotos
+  // cargadas, que es el caso del asesor; desde el catálogo se abre por su
+  // propio botón, que sí tiene la lista completa de fotos.
+  const [brochure, setBrochure] = useState(false);
   // Un lote se puede vender de dos formas y no son el mismo producto:
   // como terreno (Q180,000, o Q200,000 el 3 y el 4; enganche Q8,000, hasta
   // 10 años) o para construirle casa (Q580,000, enganche Q40,000, 25 años).
@@ -2735,6 +2819,25 @@ function CotizadorAsesor({ propiedad, puedeEnviar, puedeVerMinimo, asesor, onVol
             </div>
           </div>
         </button>
+
+        {!lote && (propiedad.fotos_propiedad_venta || []).length > 0 && (
+          <div className="max-w-sm mx-auto px-5 pt-4">
+            <button onClick={() => setBrochure(true)}
+              className="w-full flex items-center justify-center gap-2 text-[12px] bg-[#161F2E] border border-[#2A3547] hover:border-[#C9A227] text-[#EDE7D9] py-2 rounded-md">
+              <ImageIcon size={14} className="text-[#C9A227]" /> Brochure para redes
+            </button>
+          </div>
+        )}
+
+        {brochure && (
+          <BrochureVenta
+            propiedad={propiedad}
+            proyecto={propiedad.proyectos_venta}
+            fotos={propiedad.fotos_propiedad_venta || []}
+            asesor={asesor}
+            onCerrar={() => setBrochure(false)}
+          />
+        )}
 
         <div className="max-w-sm mx-auto p-5 pb-28 space-y-4">
           {/* Lo que está guardado para esta casa. Sirve de referencia sin
@@ -3482,6 +3585,7 @@ function AppInterno({ perfil, cerrarSesion }) {
             hoy={hoy}
             onNuevo={() => setPantalla("nuevoProyecto")}
             onAbrir={(id) => { setProyectoSel(id); setPantalla("propiedades"); }}
+            onAbrirPropiedad={(id) => { setSeleccion(id); setPantalla("detalle"); }}
             onActualizar={actualizarProyecto}
             puedeCrear={puede("crear_proyectos_propiedades")}
           />
@@ -4658,6 +4762,7 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver, usuario }) {
   // límites de rango, porque quien entra por el catálogo es la inmobiliaria.
   const [cotizando, setCotizando] = useState(false);
   const [condiciones, setCondiciones] = useState(null);
+  const [brochure, setBrochure] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -4668,7 +4773,7 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver, usuario }) {
     const { data: fs } = await supabase.from("fotos_propiedad_venta").select("*").eq("propiedad_venta_id", propiedadId).order("orden");
     let proy = null;
     if (prop?.proyecto_venta_id) {
-      const { data } = await supabase.from("proyectos_venta").select("id, nombre, foto_portada, foto_destacada").eq("id", prop.proyecto_venta_id).maybeSingle();
+      const { data } = await supabase.from("proyectos_venta").select("id, nombre, ubicacion, foto_portada, foto_destacada").eq("id", prop.proyecto_venta_id).maybeSingle();
       proy = data;
     }
     setP(prop);
@@ -4789,11 +4894,26 @@ function PantallaDetallePropiedadVenta({ propiedadId, onVolver, usuario }) {
       <div className="flex items-center gap-2 mb-5">
         <button onClick={onVolver} className="text-[#8A93A3]"><ChevronLeft size={20} /></button>
         <h1 className="font-serif text-2xl flex-1">{p.nombre || "Propiedad"}</h1>
+        <button onClick={() => setBrochure(true)}
+          title="Brochure para redes"
+          className="text-[11px] bg-[#2A3547] hover:bg-[#35425a] text-[#EDE7D9] font-medium px-3 py-1.5 rounded-md shrink-0 flex items-center gap-1.5">
+          <ImageIcon size={13} className="text-[#C9A227]" /> Brochure
+        </button>
         <button onClick={() => setCotizando(true)}
           className="text-[11px] bg-[#C9A227] text-[#101826] font-medium px-3 py-1.5 rounded-md shrink-0">
           Cotizar
         </button>
       </div>
+
+      {brochure && (
+        <BrochureVenta
+          propiedad={p}
+          proyecto={proyecto}
+          fotos={fotos}
+          asesor={usuario}
+          onCerrar={() => setBrochure(false)}
+        />
+      )}
 
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-2">
@@ -5794,11 +5914,72 @@ function engancheAjustado(prop) {
 
 // ---------- Proyectos ----------
 
-function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onActualizar, puedeCrear }) {
+// ---------- Boletas esperando aprobación, de todas las casas ----------
+// Hasta ahora, para ver una boleta por revisar había que entrar casa por
+// casa. La de Wilmin estuvo 60 días esperando y nadie se enteró; por eso se
+// subió otra vez y terminó cobrando una mora que no existía.
+function BoletasPorRevisar({ onAbrirPropiedad }) {
+  const [filas, setFilas] = useState([]);
+
+  const cargar = async () => {
+    const { data, error } = await supabase
+      .from("comprobantes")
+      .select("id, monto_depositado, fecha_pago_real, created_at, cuotas(numero, propiedad_id, propiedades(folio, direccion, cliente_nombre, proyecto_id))")
+      .eq("estado", "revision")
+      .order("created_at", { ascending: true });
+    if (error) { console.error("Boletas por revisar:", error); return; }
+    setFilas((data || []).filter((b) => b.cuotas));
+  };
+  useEffect(() => { cargar(); }, []);
+
+  if (filas.length === 0) return null;
+
+  const dias = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+
+  return (
+    <div className="mb-5 bg-[#2A1F08] border border-[#D9A441] rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#D9A441]/40">
+        <Inbox size={15} className="text-[#D9A441]" />
+        <span className="text-sm font-medium text-[#F0D9A0]">
+          {filas.length} boleta{filas.length > 1 ? "s" : ""} esperando aprobación
+        </span>
+      </div>
+      <div className="divide-y divide-[#D9A441]/20">
+        {filas.map((b) => {
+          const prop = b.cuotas.propiedades || {};
+          const d = dias(b.created_at);
+          return (
+            <button key={b.id}
+              onClick={() => onAbrirPropiedad && onAbrirPropiedad(b.cuotas.propiedad_id)}
+              className="w-full text-left px-4 py-2.5 hover:bg-[#3A2C10] transition flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-[#F0D9A0] truncate">
+                  {prop.folio || prop.direccion} · cuota {b.cuotas.numero}
+                </div>
+                <div className="text-[11px] text-[#C9A227]/80 truncate">{prop.cliente_nombre}</div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-mono text-sm text-[#F0D9A0]">{fmt(b.monto_depositado)}</div>
+                <div className={`text-[11px] ${d >= 7 ? "text-red-400 font-medium" : "text-[#C9A227]/80"}`}>
+                  {d === 0 ? "hoy" : `${d} día${d > 1 ? "s" : ""} esperando`}
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#D9A441] shrink-0" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ListaProyectos({ proyectos, propiedades, hoy, onNuevo, onAbrir, onAbrirPropiedad, onActualizar, puedeCrear }) {
   const [editando, setEditando] = useState(null);
 
   return (
     <div className="max-w-3xl mx-auto p-5 pb-24">
+      <BoletasPorRevisar onAbrirPropiedad={onAbrirPropiedad} />
+
       <div className="flex items-center justify-between mb-5">
         <h1 className="font-serif text-2xl">Proyectos</h1>
         {puedeCrear && (
@@ -6728,6 +6909,33 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
   const [destino, setDestino] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  // Lectura de la boleta. El lector llena monto y fecha; quien sube revisa.
+  const [leyendo, setLeyendo] = useState(false);
+  const [lectura, setLectura] = useState(null);
+  const [errorLectura, setErrorLectura] = useState(false);
+
+  const elegirArchivo = async (file) => {
+    setArchivo(file);
+    setLectura(null);
+    setErrorLectura(false);
+    if (!file) return;
+    setLeyendo(true);
+    try {
+      const d = await leerBoleta(file);
+      const fechaOk = fechaUsable(d.fecha, hoy);
+      setLectura({ ...d, fecha: fechaOk, revisar: d.revisar || (d.fecha && !fechaOk) });
+      // Solo se rellena lo que de verdad se leyó. Si algo salió ilegible se
+      // deja lo que ya había, en vez de borrarlo con un vacío.
+      if (d.monto != null) setMonto(String(d.monto));
+      if (fechaOk) setFecha(fechaOk);
+      if (d.referencia && !nota) setNota(`${d.banco ? d.banco + " " : ""}Ref. ${d.referencia}`);
+    } catch (e) {
+      console.error("Lector de boletas:", e);
+      setErrorLectura(true);
+    } finally {
+      setLeyendo(false);
+    }
+  };
 
   if (!puede || !puede("aprobar_rechazar_pagos")) return null;
   if (!f.id || f.estado === "pagado") return null;
@@ -6804,15 +7012,18 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
             <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <FileText size={13} className="text-[#C9A227] shrink-0" />
               <span className="text-[11px] truncate flex-1">{archivo.name}</span>
-              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0"><X size={13} /></button>
+              <button onClick={() => { setArchivo(null); setLectura(null); setErrorLectura(false); }}
+                className="text-[#8A93A3] shrink-0"><X size={13} /></button>
             </div>
           ) : (
             <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
               <Upload size={12} /> Elegir la boleta
               <input type="file" accept="image/*,application/pdf" className="hidden"
-                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
+                onChange={(e) => elegirArchivo(e.target.files && e.target.files[0])} />
             </label>
           )}
+
+          <LoQueLeyo leyendo={leyendo} lectura={lectura} error={errorLectura} />
 
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
@@ -9337,6 +9548,65 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
   const [archivos, setArchivos] = useState([]);
   const [fechaPagoReal, setFechaPagoReal] = useState(hoy);
   const [notaCliente, setNotaCliente] = useState("");
+  // Lectura de las boletas. Una lectura por archivo, para poder sumar los
+  // montos cuando el pago viene partido en dos depósitos.
+  const [lecturas, setLecturas] = useState([]);
+  const [leyendo, setLeyendo] = useState(false);
+  const [errorLectura, setErrorLectura] = useState(false);
+
+  const agregarArchivos = async (nuevos) => {
+    if (!nuevos.length) return;
+    setArchivos([...archivos, ...nuevos]);
+    setLeyendo(true);
+    setErrorLectura(false);
+    try {
+      const leidas = [];
+      for (const file of nuevos) leidas.push(await leerBoleta(file));
+      const todas = [...lecturas, ...leidas];
+      setLecturas(todas);
+
+      const montos = todas.map((l) => l.monto).filter((m) => m != null);
+      if (montos.length) setMonto(String(montos.reduce((a, b) => a + b, 0)));
+
+      // Con dos depósitos, el pago queda completo con el último: esa es la
+      // fecha contra la que se mide la mora.
+      const fechas = todas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort();
+      if (fechas.length) setFechaPagoReal(fechas[fechas.length - 1]);
+    } catch (e) {
+      console.error("Lector de boletas:", e);
+      setErrorLectura(true);
+    } finally {
+      setLeyendo(false);
+    }
+  };
+
+  // Al quitar una boleta se quita también su lectura y se rehacen el monto
+  // y la fecha con las que quedan.
+  const quitarArchivo = (i) => {
+    const quedanArchivos = archivos.filter((_, j) => j !== i);
+    const quedanLecturas = lecturas.filter((_, j) => j !== i);
+    setArchivos(quedanArchivos);
+    setLecturas(quedanLecturas);
+    const montos = quedanLecturas.map((l) => l.monto).filter((m) => m != null);
+    setMonto(montos.length ? String(montos.reduce((a, b) => a + b, 0)) : 0);
+    const fechas = quedanLecturas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort();
+    setFechaPagoReal(fechas.length ? fechas[fechas.length - 1] : hoy);
+  };
+
+  // Lo que se le enseña al cliente cuando mandó más de una boleta.
+  const resumenLectura = lecturas.length === 0 ? null : lecturas.length === 1
+    ? { ...lecturas[0], fecha: fechaUsable(lecturas[0].fecha, hoy),
+        revisar: lecturas[0].revisar || (lecturas[0].fecha && !fechaUsable(lecturas[0].fecha, hoy)) }
+    : {
+        monto: lecturas.every((l) => l.monto != null)
+          ? lecturas.reduce((s, l) => s + l.monto, 0) : null,
+        fecha: lecturas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort().pop() || null,
+        banco: lecturas[0].banco,
+        referencia: null,
+        observaciones: `Suma de ${lecturas.length} boletas.`,
+        confianza: Math.min(...lecturas.map((l) => l.confianza ?? 0)),
+        revisar: lecturas.some((l) => l.revisar),
+      };
 
   const montoNum = Number(monto) || 0;
   const { moraPendiente, luzPendiente, luzMoraPendiente, montoRequerido } = calcularEstadoPago(f, hoy, prop);
@@ -9420,7 +9690,7 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
             <div key={i} className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <FileText size={13} className="text-[#C9A227] shrink-0" />
               <span className="text-[11px] truncate flex-1">{a.name}</span>
-              <button type="button" onClick={() => setArchivos(archivos.filter((_, j) => j !== i))}
+              <button type="button" onClick={() => quitarArchivo(i)}
                 className="text-[#8A93A3] hover:text-[#EDE7D9] shrink-0"><X size={13} /></button>
             </div>
           ))}
@@ -9433,10 +9703,12 @@ function FormularioComprobante({ f, prop, hoy, subiendo, onEnviar }) {
         <input type="file" accept="image/*,application/pdf" multiple className="hidden"
           onChange={(e) => {
             const nuevos = Array.from(e.target.files || []);
-            if (nuevos.length) setArchivos([...archivos, ...nuevos]);
+            agregarArchivos(nuevos);
             e.target.value = "";
           }} />
       </label>
+
+      <LoQueLeyo leyendo={leyendo} lectura={resumenLectura} error={errorLectura} />
       {archivos.length > 1 && (
         <div className="text-[11px] text-[#8A93A3]">
           Las {archivos.length} boletas quedan juntas como un solo pago de {fmt(montoNum)}.

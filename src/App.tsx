@@ -6901,7 +6901,8 @@ function VisorGaleria({ galeria, setGaleria }) {
 // copia vieja y la cuota volvía a quedar pendiente (le pasó a Vilma).
 function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
   const [abierto, setAbierto] = useState(false);
-  const [archivo, setArchivo] = useState(null);
+  // Un mismo pago puede venir partido en varias boletas (p. ej. Q5,000 + Q2,000).
+  const [archivos, setArchivos] = useState([]);
   const [monto, setMonto] = useState("");
   const [fecha, setFecha] = useState(hoy);
   const [nota, setNota] = useState("");
@@ -6909,26 +6910,39 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
   const [destino, setDestino] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  // Lectura de la boleta. El lector llena monto y fecha; quien sube revisa.
+  // Lectura de las boletas. Una lectura por archivo, para poder sumar los
+  // montos cuando el pago viene partido en dos o más depósitos.
   const [leyendo, setLeyendo] = useState(false);
-  const [lectura, setLectura] = useState(null);
+  const [lecturas, setLecturas] = useState([]);
   const [errorLectura, setErrorLectura] = useState(false);
 
-  const elegirArchivo = async (file) => {
-    setArchivo(file);
-    setLectura(null);
-    setErrorLectura(false);
-    if (!file) return;
+  // Rellena monto y fecha con lo leído. Solo pisa lo que de verdad se leyó:
+  // si algo salió ilegible se deja lo que ya había, en vez de borrarlo.
+  const aplicarLecturas = (todas) => {
+    const montos = todas.map((l) => l.monto).filter((m) => m != null);
+    if (montos.length) setMonto(String(montos.reduce((a, b) => a + b, 0)));
+    // Con dos depósitos el pago queda completo con el último: esa es la
+    // fecha contra la que se mide la mora.
+    const fechas = todas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort();
+    if (fechas.length) setFecha(fechas[fechas.length - 1]);
+    const refs = todas.map((l) => l.referencia).filter(Boolean);
+    if (refs.length && !nota) {
+      const banco = todas.find((l) => l.banco)?.banco;
+      setNota(`${banco ? banco + " " : ""}Ref. ${refs.join(" / ")}`);
+    }
+  };
+
+  const agregarArchivos = async (nuevos) => {
+    if (!nuevos.length) return;
+    setArchivos([...archivos, ...nuevos]);
     setLeyendo(true);
+    setErrorLectura(false);
     try {
-      const d = await leerBoleta(file);
-      const fechaOk = fechaUsable(d.fecha, hoy);
-      setLectura({ ...d, fecha: fechaOk, revisar: d.revisar || (d.fecha && !fechaOk) });
-      // Solo se rellena lo que de verdad se leyó. Si algo salió ilegible se
-      // deja lo que ya había, en vez de borrarlo con un vacío.
-      if (d.monto != null) setMonto(String(d.monto));
-      if (fechaOk) setFecha(fechaOk);
-      if (d.referencia && !nota) setNota(`${d.banco ? d.banco + " " : ""}Ref. ${d.referencia}`);
+      const leidas = [];
+      for (const file of nuevos) leidas.push(await leerBoleta(file));
+      const todas = [...lecturas, ...leidas];
+      setLecturas(todas);
+      aplicarLecturas(todas);
     } catch (e) {
       console.error("Lector de boletas:", e);
       setErrorLectura(true);
@@ -6936,6 +6950,40 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
       setLeyendo(false);
     }
   };
+
+  // Al quitar una boleta se quita también su lectura y se rehacen el monto
+  // y la fecha con las que quedan.
+  const quitarArchivo = (i) => {
+    const quedanArchivos = archivos.filter((_, j) => j !== i);
+    const quedanLecturas = lecturas.filter((_, j) => j !== i);
+    setArchivos(quedanArchivos);
+    setLecturas(quedanLecturas);
+    if (quedanArchivos.length === 0) {
+      setErrorLectura(false);
+      setMonto(String(Math.round(requerido * 100) / 100));
+      setFecha(hoy);
+      return;
+    }
+    const montos = quedanLecturas.map((l) => l.monto).filter((m) => m != null);
+    if (montos.length) setMonto(String(montos.reduce((a, b) => a + b, 0)));
+    const fechas = quedanLecturas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort();
+    setFecha(fechas.length ? fechas[fechas.length - 1] : hoy);
+  };
+
+  // Lo que se enseña arriba del formulario cuando vino más de una boleta.
+  const resumenLectura = lecturas.length === 0 ? null : lecturas.length === 1
+    ? { ...lecturas[0], fecha: fechaUsable(lecturas[0].fecha, hoy),
+        revisar: lecturas[0].revisar || (lecturas[0].fecha && !fechaUsable(lecturas[0].fecha, hoy)) }
+    : {
+        monto: lecturas.every((l) => l.monto != null)
+          ? lecturas.reduce((s, l) => s + l.monto, 0) : null,
+        fecha: lecturas.map((l) => fechaUsable(l.fecha, hoy)).filter(Boolean).sort().pop() || null,
+        banco: lecturas.find((l) => l.banco)?.banco || null,
+        referencia: null,
+        observaciones: `Suma de ${lecturas.length} boletas.`,
+        confianza: Math.min(...lecturas.map((l) => l.confianza ?? 0)),
+        revisar: lecturas.some((l) => l.revisar),
+      };
 
   if (!puede || !puede("aprobar_rechazar_pagos")) return null;
   if (!f.id || f.estado === "pagado") return null;
@@ -6958,16 +7006,16 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
   const aTiempo = fechaCalc <= limite;
   const preguntaDestino = excedente > 0.009 && aTiempo;
 
-  const listo = archivo && montoNum > 0 && fecha && (!preguntaDestino || destino);
+  const listo = archivos.length > 0 && montoNum > 0 && fecha && (!preguntaDestino || destino);
 
   const guardar = async () => {
     setError(""); setGuardando(true);
     try {
-      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${prop.id}/${f.id}-${Date.now()}.${ext}`;
-      const { error: e1 } = await supabase.storage
-        .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
-      if (e1) throw new Error(e1.message);
+      // Mismo helper que usa el cliente: sube todas las boletas del pago y
+      // deja la primera como principal y el resto en imagenes_extra.
+      const subido = await subirImagenComprobante(prop.id, f.numero, archivos);
+      if (!subido) throw new Error("No se pudieron subir las boletas. Revisá la conexión e intentá de nuevo.");
+      const { path, extras } = subido;
 
       const resultado = faltante > 0.009 ? "parcial" : excedente > 0.009 ? "excedente" : "completo";
       const destinoFinal = resultado === "excedente"
@@ -6979,16 +7027,23 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
         destinoExcedente: destinoFinal, fechaPagoReal: fecha,
         notaCliente: nota.trim() || null,
       };
-      await guardarComprobanteEnBD(f.id, path, datos);
+      await guardarComprobanteEnBD(subido.cuotaId, path, datos, extras);
 
       const { data: firmada } = await supabase.storage
         .from("comprobantes").createSignedUrl(path, 3600);
+      const extrasFirmadas = [];
+      for (const ruta of extras) {
+        const { data: fe } = await supabase.storage
+          .from("comprobantes").createSignedUrl(ruta, 3600);
+        if (fe?.signedUrl) extrasFirmadas.push(fe.signedUrl);
+      }
 
       // Se aprueba en el mismo paso, por la cascada de siempre
       onAprobar(idx, usarGuardado, {
         ...datos,
         imagen: firmada?.signedUrl || null,
         imagenUrlCruda: path,
+        imagenesExtra: extrasFirmadas,
         fecha: fecha,
         estado: "revision",
       });
@@ -7008,22 +7063,30 @@ function SubirBoletaCuota({ f, idx, prop, hoy, puede, onAprobar }) {
         </button>
       ) : (
         <div className="space-y-2">
-          {archivo ? (
-            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+          {archivos.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <FileText size={13} className="text-[#C9A227] shrink-0" />
-              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
-              <button onClick={() => { setArchivo(null); setLectura(null); setErrorLectura(false); }}
+              <span className="text-[11px] truncate flex-1">{a.name}</span>
+              {lecturas[i]?.monto != null && (
+                <span className="text-[10px] font-mono text-[#8A93A3] shrink-0">{fmt(lecturas[i].monto)}</span>
+              )}
+              <button onClick={() => quitarArchivo(i)}
                 className="text-[#8A93A3] shrink-0"><X size={13} /></button>
             </div>
-          ) : (
-            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
-              <Upload size={12} /> Elegir la boleta
-              <input type="file" accept="image/*,application/pdf" className="hidden"
-                onChange={(e) => elegirArchivo(e.target.files && e.target.files[0])} />
-            </label>
-          )}
+          ))}
 
-          <LoQueLeyo leyendo={leyendo} lectura={lectura} error={errorLectura} />
+          <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
+            <Upload size={12} />
+            {archivos.length === 0 ? "Elegir la boleta" : "Agregar otra boleta del mismo pago"}
+            <input type="file" accept="image/*,application/pdf" multiple className="hidden"
+              onChange={(e) => {
+                const nuevos = Array.from(e.target.files || []);
+                e.target.value = "";
+                agregarArchivos(nuevos);
+              }} />
+          </label>
+
+          <LoQueLeyo leyendo={leyendo} lectura={resumenLectura} error={errorLectura} />
 
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
@@ -7204,7 +7267,8 @@ function IngresoDeCuota({ f, prop, hoy, actualizar, puede }) {
 
 function AdjuntarBoleta({ f, propiedadId, actualizar }) {
   const [abierto, setAbierto] = useState(false);
-  const [archivo, setArchivo] = useState(null);
+  // La boleta histórica también puede venir partida en varias imágenes.
+  const [archivos, setArchivos] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
@@ -7218,13 +7282,21 @@ function AdjuntarBoleta({ f, propiedadId, actualizar }) {
   const guardar = async () => {
     setError(""); setGuardando(true);
     try {
-      const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${propiedadId}/${crypto.randomUUID()}-${Date.now()}.${ext}`;
-      const { error: e1 } = await supabase.storage
-        .from("comprobantes").upload(path, archivo, { contentType: archivo.type });
-      if (e1) throw new Error(e1.message);
+      const rutas = [];
+      for (let i = 0; i < archivos.length; i++) {
+        const file = archivos[i];
+        const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+        const path = `${propiedadId}/${crypto.randomUUID()}-${Date.now()}-${i}.${ext}`;
+        const { error: e1 } = await supabase.storage
+          .from("comprobantes").upload(path, file, { contentType: file.type });
+        if (e1) throw new Error(e1.message);
+        rutas.push(path);
+      }
+      const path = rutas[0];
+      const extras = rutas.slice(1);
       const { error: e2 } = await supabase.from("comprobantes")
-        .update({ imagen_url: path }).eq("id", comp.id);
+        .update({ imagen_url: path, imagenes_extra: extras.length > 0 ? extras : null })
+        .eq("id", comp.id);
       if (e2) throw new Error(e2.message);
 
       // actualizar espera una función que transforme la propiedad. Llamarla
@@ -7233,12 +7305,20 @@ function AdjuntarBoleta({ f, propiedadId, actualizar }) {
       const { data: firmada } = await supabase.storage
         .from("comprobantes").createSignedUrl(path, 3600);
 
-      setAbierto(false); setArchivo(null);
+      const extrasFirmadas = [];
+      for (const ruta of extras) {
+        const { data: fe } = await supabase.storage
+          .from("comprobantes").createSignedUrl(ruta, 3600);
+        if (fe?.signedUrl) extrasFirmadas.push(fe.signedUrl);
+      }
+
+      setAbierto(false); setArchivos([]);
       actualizar && actualizar((p) => {
         const fila = p.tabla.find((x) => x.numero === f.numero);
         if (fila?.comprobante) {
           fila.comprobante.imagenUrlCruda = path;
           fila.comprobante.imagen = firmada?.signedUrl || fila.comprobante.imagen;
+          fila.comprobante.imagenesExtra = extrasFirmadas;
         }
         return p;
       });
@@ -7259,29 +7339,34 @@ function AdjuntarBoleta({ f, propiedadId, actualizar }) {
         </button>
       ) : (
         <div className="space-y-2">
-          {archivo ? (
-            <div className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
+          {archivos.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 bg-[#0C121C] border border-[#2A3547] rounded-md p-2">
               <FileText size={13} className="text-[#C9A227] shrink-0" />
-              <span className="text-[11px] truncate flex-1">{archivo.name}</span>
-              <button onClick={() => setArchivo(null)} className="text-[#8A93A3] shrink-0">
+              <span className="text-[11px] truncate flex-1">{a.name}</span>
+              <button onClick={() => setArchivos(archivos.filter((_, j) => j !== i))}
+                className="text-[#8A93A3] shrink-0">
                 <X size={13} />
               </button>
             </div>
-          ) : (
-            <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
-              <Upload size={12} /> Elegir la imagen
-              <input type="file" accept="image/*,application/pdf" className="hidden"
-                onChange={(e) => setArchivo(e.target.files && e.target.files[0])} />
-            </label>
-          )}
+          ))}
+          <label className="flex items-center justify-center gap-1.5 text-[11px] bg-[#2A3547] py-2 rounded-md cursor-pointer">
+            <Upload size={12} />
+            {archivos.length === 0 ? "Elegir la imagen" : "Agregar otra imagen de la misma boleta"}
+            <input type="file" accept="image/*,application/pdf" multiple className="hidden"
+              onChange={(e) => {
+                const nuevos = Array.from(e.target.files || []);
+                e.target.value = "";
+                setArchivos([...archivos, ...nuevos]);
+              }} />
+          </label>
           {error && <div className="text-[11px] text-red-400">{error}</div>}
           <div className="flex gap-2">
-            <button onClick={() => { setAbierto(false); setArchivo(null); setError(""); }}
+            <button onClick={() => { setAbierto(false); setArchivos([]); setError(""); }}
               disabled={guardando}
               className="flex-1 text-[10px] bg-[#2A3547] disabled:opacity-40 py-1.5 rounded">
               Cancelar
             </button>
-            <button onClick={guardar} disabled={!archivo || guardando}
+            <button onClick={guardar} disabled={archivos.length === 0 || guardando}
               className="flex-1 text-[10px] bg-[#C9A227] disabled:opacity-40 text-[#101826] font-medium py-1.5 rounded">
               {guardando ? "Subiendo..." : "Guardar"}
             </button>
